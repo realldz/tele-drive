@@ -37,7 +37,7 @@ export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: s
   useEffect(() => {
     axios.get(`${API_URL}/files/config`)
       .then(res => setMaxChunkSize(res.data.maxChunkSize))
-      .catch(() => {});
+      .catch(() => { });
   }, []);
 
   const resetState = () => {
@@ -293,7 +293,7 @@ export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: s
             <UploadCloud className="w-10 h-10 text-gray-400" />
             <p className="text-sm font-medium text-gray-700">Kéo thả file vào đây hoặc nhấn để chọn</p>
             <p className="text-xs text-gray-500">
-              Hỗ trợ mọi định dạng &bull; File &gt; {formatSize(maxChunkSize)} sẽ tự động chia nhỏ &amp; upload song song
+              Hỗ trợ mọi định dạng. File tải lên sẽ được mã hoá và lưu trữ an toàn.
             </p>
           </div>
         </>

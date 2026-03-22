@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { Folder, FileText, Home, ChevronRight, Download, Trash2, FolderPlus, LogOut, User, HardDrive, MoreVertical, Edit2, Move, Share2, Loader2, Search, LayoutGrid, List, Menu, X, ShieldAlert } from 'lucide-react';
+import { Folder, FileText, Home, ChevronRight, Download, Trash2, FolderPlus, LogOut, User, HardDrive, MoreVertical, Edit2, Move, Share2, Loader2, Search, LayoutGrid, List, Menu, X, ShieldAlert, KeyRound } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-context';
 import UploadZone from '@/components/upload-zone';
@@ -369,6 +369,9 @@ export default function Dashboard() {
           </button>
           <button onClick={() => { router.push('/trash'); setIsMobileSidebarOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium hover:bg-white/5 text-slate-300 transition-colors">
             <Trash2 size={20} /> Thùng rác
+          </button>
+          <button onClick={() => { router.push('/s3-keys'); setIsMobileSidebarOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium hover:bg-white/5 text-slate-300 transition-colors">
+            <KeyRound size={20} /> S3 Access Keys
           </button>
           
           {user?.role === 'ADMIN' && (
