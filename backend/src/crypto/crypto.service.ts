@@ -1,0 +1,138 @@
+import { Injectable, Logger } from '@nestjs/common';
+import * as crypto from 'crypto';
+import { Transform, TransformCallback } from 'stream';
+
+/**
+ * Transform stream that handles AES-256-CTR decryption with an arbitrary random-access byte offset.
+ * It computes the correct block index, fast-forwards the IV, and drops the leading bytes of the first block 
+ * to align perfectly with the requested offset.
+ */
+export class AesCtrOffsetStream extends Transform {
+  private decipher: crypto.Decipher;
+  private dropped = 0;
+  private bytesToDrop: number;
+
+  constructor(algo: string, key: Buffer, iv: Buffer, byteOffset: number) {
+    super();
+    this.bytesToDrop = byteOffset % 16;
+    const blockIndex = Math.floor(byteOffset / 16);
+    
+    // Increment the 16-byte IV by blockIndex (Big-Endian integer addition)
+    const newIv = Buffer.from(iv);
+    // JS Number is exact up to 2^53, blockIndex easily fits for files up to TBs
+    let carry = blockIndex;
+    for (let i = 15; i >= 0 && carry > 0; i--) {
+      const sum = newIv[i] + carry;
+      newIv[i] = sum & 0xff;
+      carry = Math.floor(sum / 256);
+    }
+    
+    this.decipher = crypto.createDecipheriv(algo, key, newIv);
+
+    this.decipher.on('data', (chunk: Buffer) => {
+      if (this.dropped < this.bytesToDrop) {
+        const toDrop = Math.min(this.bytesToDrop - this.dropped, chunk.length);
+        this.dropped += toDrop;
+        if (toDrop < chunk.length) {
+          this.push(chunk.subarray(toDrop));
+        }
+      } else {
+        this.push(chunk);
+      }
+    });
+
+    this.decipher.on('end', () => this.push(null));
+    this.decipher.on('error', (err) => this.emit('error', err));
+  }
+
+  _transform(chunk: Buffer, _encoding: BufferEncoding, callback: TransformCallback) {
+    this.decipher.write(chunk);
+    callback();
+  }
+
+  _flush(callback: TransformCallback) {
+    this.decipher.end();
+    // 'end' event will automatically be pushed via the on('end') listener above
+    callback();
+  }
+}
+
+@Injectable()
+export class CryptoService {
+  private readonly logger = new Logger(CryptoService.name);
+  private MASTER_SECRET: string;
+  private readonly ALGO = 'aes-256-ctr';
+
+  constructor() {
+    this.MASTER_SECRET = process.env.MASTER_SECRET || 'default_secret_key_32_bytes_long.';
+    
+    // Ensure MASTER_SECRET is exactly 32 bytes for aes-256
+    if (Buffer.from(this.MASTER_SECRET).length !== 32) {
+      if (process.env.NODE_ENV === 'production') {
+        throw new Error('MASTER_SECRET must be exactly 32 bytes long for aes-256-ctr');
+      }
+      this.logger.warn('MASTER_SECRET is not 32 bytes! Padding/truncating for development.');
+      this.MASTER_SECRET = this.MASTER_SECRET.padEnd(32, '0').slice(0, 32);
+    }
+  }
+
+  /**
+   * Generates a 32-byte Data Encryption Key (DEK) for a file
+   */
+  generateFileKey(): Buffer {
+    return crypto.randomBytes(32);
+  }
+
+  /**
+   * Generates a random 16-byte Initialization Vector (IV)
+   */
+  generateIv(): Buffer {
+    return crypto.randomBytes(16);
+  }
+
+  /**
+   * Encrypts the Data Encryption Key with the system's MASTER_SECRET
+   * Returns "ivHex:encryptedDekHex" string format
+   */
+  encryptKey(dek: Buffer): string {
+    const iv = crypto.randomBytes(16);
+    const cipher = crypto.createCipheriv(this.ALGO, Buffer.from(this.MASTER_SECRET), iv);
+    const encrypted = Buffer.concat([cipher.update(dek), cipher.final()]);
+    return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
+  }
+
+  /**
+   * Decrypts the DEK using the system's MASTER_SECRET
+   */
+  decryptKey(encryptedDekHex: string): Buffer {
+    const [ivHex, encryptedHex] = encryptedDekHex.split(':');
+    const iv = Buffer.from(ivHex, 'hex');
+    const encrypted = Buffer.from(encryptedHex, 'hex');
+    const decipher = crypto.createDecipheriv(this.ALGO, Buffer.from(this.MASTER_SECRET), iv);
+    return Buffer.concat([decipher.update(encrypted), decipher.final()]);
+  }
+
+  /**
+   * Creates a CipherStream to pipe upload data to Telegram
+   */
+  createEncryptStream(dek: Buffer, iv: Buffer): crypto.Cipher {
+    return crypto.createCipheriv(this.ALGO, dek, iv);
+  }
+
+  /**
+   * Creates a DecipherStream to decrypt downloaded data from Telegram
+   */
+  createDecryptStream(dek: Buffer, iv: Buffer): crypto.Decipher {
+    return crypto.createDecipheriv(this.ALGO, dek, iv);
+  }
+
+  /**
+   * Creates a DecipherStream suitable for random access streaming (Range Requests)
+   */
+  createOffsetDecryptStream(dek: Buffer, iv: Buffer, byteOffset: number): Transform {
+    if (byteOffset === 0) {
+      return this.createDecryptStream(dek, iv);
+    }
+    return new AesCtrOffsetStream(this.ALGO, dek, iv, byteOffset);
+  }
+}

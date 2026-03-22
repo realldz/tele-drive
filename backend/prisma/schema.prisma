@@ -1,0 +1,115 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+/// Bảng key-value lưu cấu hình toàn cục hệ thống
+/// Admin có thể thay đổi qua API
+model SystemSetting {
+  key       String   @id
+  value     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model User {
+  id                  String       @id @default(uuid())
+  username            String       @unique
+  password            String       // Hash bằng bcrypt
+  role                String       @default("USER") // ADMIN | USER
+  quota               BigInt       @default(15000000000) // 15GB mặc định
+  usedSpace           BigInt       @default(0) // Cache dung lượng đã sử dụng
+  dailyBandwidthLimit BigInt?      // null = theo SystemSetting
+  dailyBandwidthUsed  BigInt       @default(0)
+  lastBandwidthReset  DateTime     @default(now())
+  folders             Folder[]
+  files               FileRecord[]
+  createdAt           DateTime     @default(now())
+  updatedAt           DateTime     @updatedAt
+}
+
+/// Tracking guest download bandwidth theo IP
+model GuestTracker {
+  ipAddress          String   @id
+  dailyBandwidthUsed BigInt   @default(0)
+  lastBandwidthReset DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+}
+
+model Folder {
+  id        String       @id @default(uuid())
+  name      String
+  parentId  String?
+  parent    Folder?      @relation("FolderToFolder", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Folder[]     @relation("FolderToFolder")
+  userId    String
+  user      User         @relation(fields: [userId], references: [id])
+  files     FileRecord[]
+  deletedAt DateTime?    // Soft delete (Thùng rác)
+  
+  // Sharing
+  visibility String      @default("PRIVATE") // PRIVATE | PUBLIC_LINK
+  shareToken String?     @unique
+
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model FileRecord {
+  id                String      @id @default(uuid())
+  filename          String
+  size              BigInt      // Đổi từ Int sang BigInt
+  mimeType          String
+  telegramFileId    String?     // Null nếu file được chia chunks
+  telegramMessageId Int?
+  isChunked         Boolean     @default(false)
+  totalChunks       Int         @default(1)
+  status            String      @default("complete") // "uploading" | "complete"
+
+  // Sharing
+  visibility        String      @default("PRIVATE") // PRIVATE | PUBLIC_LINK | SHARED
+  shareToken        String?     @unique // Token tạo URL chia sẻ
+
+  // Per-file download quota
+  downloadLimit24h  Int?        // Giới hạn số lần tải/24h (null = không giới hạn)
+  downloads24h      Int         @default(0)
+  bandwidthLimit24h BigInt?     // Giới hạn băng thông/24h cho file này
+  bandwidthUsed24h  BigInt      @default(0)
+  lastDownloadReset DateTime    @default(now())
+
+  // Encryption metadata
+  isEncrypted       Boolean     @default(false)
+  encryptionAlgo    String?     // VD: "aes-256-ctr"
+  encryptionIv      String?     // IV cho file (hex string)
+  encryptedKey      String?     // DEK đã mã hoá bằng MASTER_SECRET
+
+  // Soft delete
+  deletedAt         DateTime?   // Thùng rác
+
+  folderId          String?
+  folder            Folder?     @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User        @relation(fields: [userId], references: [id])
+  chunks            FileChunk[]
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+}
+
+model FileChunk {
+  id                String     @id @default(uuid())
+  fileId            String
+  file              FileRecord @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  chunkIndex        Int        // 0, 1, 2, ...
+  size              Int
+  telegramFileId    String
+  telegramMessageId Int?
+  encryptionIv      String?    // IV riêng cho từng chunk
+  createdAt         DateTime   @default(now())
+
+  @@unique([fileId, chunkIndex])
+}
