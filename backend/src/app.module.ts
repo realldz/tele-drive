@@ -15,6 +15,7 @@ import { CryptoModule } from './crypto/crypto.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TrashCleanupService } from './common/trash-cleanup.service';
+import { S3Module } from './s3/s3.module';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { TrashCleanupService } from './common/trash-cleanup.service';
     UserModule,
     SettingsModule,
     CryptoModule,
+    S3Module,
   ],
   controllers: [AppController],
   providers: [

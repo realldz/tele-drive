@@ -28,6 +28,7 @@ model User {
   lastBandwidthReset  DateTime     @default(now())
   folders             Folder[]
   files               FileRecord[]
+  s3Credentials       S3Credential[]
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
 }
@@ -88,6 +89,9 @@ model FileRecord {
   encryptionIv      String?     // IV cho file (hex string)
   encryptedKey      String?     // DEK đã mã hoá bằng MASTER_SECRET
 
+  // ETag — MD5 của plaintext content (PutObject), hoặc MD5-of-part-MD5s-N (Multipart)
+  etag              String?     // Stored at upload time for S3 ETag compatibility
+
   // Soft delete
   deletedAt         DateTime?   // Thùng rác
 
@@ -100,6 +104,19 @@ model FileRecord {
   updatedAt         DateTime    @updatedAt
 }
 
+/// S3 Credentials — AccessKeyId/SecretAccessKey per user cho S3-compatible API
+model S3Credential {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessKeyId     String   @unique // 20 ký tự, format AKIA...
+  secretAccessKey String   // 40 ký tự, encrypted lưu trữ
+  label           String   @default("Default") // Tên gợi nhớ cho key
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
 model FileChunk {
   id                String     @id @default(uuid())
   fileId            String
@@ -109,6 +126,7 @@ model FileChunk {
   telegramFileId    String
   telegramMessageId Int?
   encryptionIv      String?    // IV riêng cho từng chunk
+  etag              String?    // MD5 của plaintext part data (dùng cho S3 multipart ETag)
   createdAt         DateTime   @default(now())
 
   @@unique([fileId, chunkIndex])

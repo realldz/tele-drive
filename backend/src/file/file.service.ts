@@ -96,7 +96,8 @@ export class FileService {
       // 2) Encrypt and Upload lên Telegram
       const cipher = this.cryptoService.createEncryptStream(dek, iv);
       const encryptedBuffer = Buffer.concat([cipher.update(file.buffer), cipher.final()]);
-      const { fileId: telegramFileId, messageId: telegramMessageId } = await this.telegram.uploadFile(encryptedBuffer, filename);
+      // Use record.id as the Telegram filename to avoid leaking the real filename
+      const { fileId: telegramFileId, messageId: telegramMessageId } = await this.telegram.uploadFile(encryptedBuffer, record.id);
 
       // 3) Thành công -> Update trạng thái và cộng dung lượng
       const updated = await this.prisma.$transaction(async (tx) => {
@@ -195,7 +196,8 @@ export class FileService {
       return existing;
     }
 
-    const chunkFilename = `${fileRecord.filename}.part${String(chunkIndex).padStart(3, '0')}`;
+    // Use record id as chunk filename to avoid leaking the real filename on Telegram
+    const chunkFilename = `${fileRecord.id}.part${String(chunkIndex).padStart(3, '0')}`;
 
     // Get DEK and generate new IV for this chunk
     let dek: Buffer | null = null;
