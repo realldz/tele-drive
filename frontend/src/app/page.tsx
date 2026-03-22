@@ -1,22 +1,22 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import axios from 'axios';
-import { Folder, FileText, Home, ChevronRight, Download, Trash2, FolderPlus, LogOut, User, HardDrive, MoreVertical, Edit2, Move, Share2, Loader2, Search, LayoutGrid, List, Menu, X, ShieldAlert, KeyRound } from 'lucide-react';
+import { Folder, FileText, Download, Trash2, FolderPlus, MoreVertical, Loader2, Search, LayoutGrid, List } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-context';
+import Sidebar from '@/components/sidebar';
+import Breadcrumbs from '@/components/breadcrumbs';
+import ContextMenu from '@/components/context-menu';
 import UploadZone from '@/components/upload-zone';
 import RenameDialog from '@/components/rename-dialog';
 import ShareDialog from '@/components/share-dialog';
 import MoveDialog from '@/components/move-dialog';
 import toast from 'react-hot-toast';
-
-const API_URL = 'http://localhost:3001';
-
-interface QuotaInfo {
-  usedSpace: number;
-  quota: number;
-}
+import {
+  formatSize, fetchFolderContent, fetchBreadcrumbs,
+  createFolder, deleteFolder, restoreFolder, deleteFile, restoreFile,
+  abortUpload, headDownload, getDownloadUrl, renameItem, moveItem,
+} from '@/lib/api';
 
 export default function Dashboard() {
   const { user, token, isLoading, logout } = useAuth();
@@ -29,13 +29,20 @@ export default function Dashboard() {
   const [newFolderName, setNewFolderName] = useState('');
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
-  const [quotaInfo, setQuotaInfo] = useState<QuotaInfo | null>(null);
   const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set());
 
   // UI Polish States
-  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
+    if (typeof window !== 'undefined') {
+      return (localStorage.getItem('viewMode') as 'grid' | 'list') || 'grid';
+    }
+    return 'grid';
+  });
   const [searchQuery, setSearchQuery] = useState('');
-  const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  // Persist viewMode to localStorage
+  useEffect(() => {
+    localStorage.setItem('viewMode', viewMode);
+  }, [viewMode]);
 
   const filteredFolders = folders.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredFiles = files.filter(f => f.filename.toLowerCase().includes(searchQuery.toLowerCase()));
@@ -69,36 +76,20 @@ export default function Dashboard() {
     }
   }, [isLoading, token, router]);
 
-  // Fetch quota info
-  const fetchQuota = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await axios.get(`${API_URL}/users/me`);
-      setQuotaInfo({
-        usedSpace: Number(res.data.usedSpace),
-        quota: Number(res.data.quota),
-      });
-    } catch (error) {
-      // Quota info is non-critical, silently fail
-    }
-  }, [token]);
-
   const fetchContent = useCallback(async () => {
     if (!token) return;
     try {
-      const url = currentFolderId ? `${API_URL}/folders/content?folderId=${currentFolderId}` : `${API_URL}/folders/content`;
-      const res = await axios.get(url);
-      setFolders(res.data.folders);
-      setFiles(res.data.files);
+      const data = await fetchFolderContent(currentFolderId);
+      setFolders(data.folders);
+      setFiles(data.files);
 
       if (currentFolderId) {
-        const bcRes = await axios.get(`${API_URL}/folders/${currentFolderId}/breadcrumbs`);
-        setBreadcrumbs(bcRes.data);
+        const bc = await fetchBreadcrumbs(currentFolderId);
+        setBreadcrumbs(bc);
       } else {
         setBreadcrumbs([]);
       }
     } catch (error: any) {
-      // Nếu 401, redirect về login
       if (error?.response?.status === 401) {
         logout();
         router.push('/login');
@@ -109,8 +100,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     fetchContent();
-    fetchQuota();
-  }, [fetchContent, fetchQuota]);
+  }, [fetchContent]);
 
   // Polling fetchContent if there are files currently uploading on the server
   useEffect(() => {
@@ -127,10 +117,7 @@ export default function Dashboard() {
     if (!newFolderName.trim() || isCreatingFolder) return;
     setIsCreatingFolder(true);
     try {
-      await axios.post(`${API_URL}/folders`, {
-        name: newFolderName,
-        parentId: currentFolderId,
-      });
+      await createFolder(newFolderName, currentFolderId);
       setNewFolderName('');
       setShowNewFolder(false);
       fetchContent();
@@ -144,9 +131,8 @@ export default function Dashboard() {
   const handleDeleteFolder = async (e: any, id: string) => {
     e.stopPropagation();
     try {
-      await axios.delete(`${API_URL}/folders/${id}`);
+      await deleteFolder(id);
       fetchContent();
-      fetchQuota();
       toast.success(
         (t) => (
           <span className="flex items-center gap-2">
@@ -155,11 +141,8 @@ export default function Dashboard() {
               onClick={async () => {
                 toast.dismiss(t.id);
                 try {
-                  await axios.patch(`${API_URL}/folders/${id}/restore`, {}, {
-                    headers: { Authorization: `Bearer ${token}` }
-                  });
+                  await restoreFolder(id);
                   fetchContent();
-                  fetchQuota();
                 } catch(err) {
                   alert('Lỗi hoàn tác');
                 }
@@ -180,7 +163,7 @@ export default function Dashboard() {
   const handleDeleteFile = async (e: any, id: string) => {
     e.stopPropagation();
     try {
-      await axios.delete(`${API_URL}/files/${id}`);
+      await deleteFile(id);
       fetchContent();
       toast.success(
         (t) => (
@@ -190,9 +173,7 @@ export default function Dashboard() {
               onClick={async () => {
                 toast.dismiss(t.id);
                 try {
-                  await axios.patch(`${API_URL}/files/${id}/restore`, {}, {
-                    headers: { Authorization: `Bearer ${token}` }
-                  });
+                  await restoreFile(id);
                   fetchContent();
                 } catch(err) {
                   alert('Lỗi hoàn tác');
@@ -214,11 +195,8 @@ export default function Dashboard() {
   const handleDeleteStuckFile = async (e: any, id: string) => {
     e.stopPropagation();
     try {
-      await axios.post(`${API_URL}/files/upload/${id}/abort`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await abortUpload(id);
       fetchContent();
-      fetchQuota();
     } catch (error: any) {
       alert(error?.response?.data?.message || 'Lỗi xoá file đang kẹt');
     }
@@ -232,10 +210,9 @@ export default function Dashboard() {
   const handleDownload = async (fileId: string, filename: string) => {
     setDownloadingFiles((prev) => new Set(prev).add(fileId));
     try {
-      // Kiểm tra nhanh quota / quyền trước khi kích hoạt download
-      await axios.head(`${API_URL}/files/${fileId}/download`);
+      await headDownload(fileId);
 
-      const downloadUrl = `${API_URL}/files/${fileId}/download?token=${token}`;
+      const downloadUrl = getDownloadUrl(fileId, token!);
       const link = document.createElement('a');
       link.href = downloadUrl;
       link.setAttribute('download', filename);
@@ -255,11 +232,6 @@ export default function Dashboard() {
         return next;
       });
     }
-  };
-
-  const handleLogout = () => {
-    logout();
-    router.push('/login');
   };
 
   const handleDragStart = (e: React.DragEvent, item: any, type: 'file' | 'folder') => {
@@ -292,13 +264,7 @@ export default function Dashboard() {
     }
 
     try {
-      const endpoint = draggedItem.type === 'folder' ? 'folders' : 'files';
-      await axios.patch(`${API_URL}/${endpoint}/${draggedItem.id}/move`, { 
-        folderId: targetFolderId, 
-        parentId: targetFolderId 
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await moveItem(draggedItem.type, draggedItem.id, targetFolderId);
       fetchContent();
     } catch (error: any) {
       alert(error.response?.data?.message || 'Lỗi di chuyển');
@@ -325,114 +291,22 @@ export default function Dashboard() {
   // Chưa login (redirect sẽ xảy ra bởi useEffect)
   if (!token) return null;
 
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-  };
-
-  const quotaPercentage = quotaInfo ? Math.min((quotaInfo.usedSpace / quotaInfo.quota) * 100, 100) : 0;
-
   return (
     <div className="h-screen bg-white flex overflow-hidden">
-      
-      {/* Mobile Sidebar Overlay */}
-      {isMobileSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-20 md:hidden"
-          onClick={() => setIsMobileSidebarOpen(false)}
-        />
-      )}
 
-      {/* Sidebar */}
-      <aside className={`fixed md:static inset-y-0 left-0 w-64 bg-slate-900 border-r border-slate-800 flex flex-col transition-transform duration-300 z-30 ${isMobileSidebarOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}`}>
-        <div className="p-6 flex items-center justify-between">
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            Tele-Drive
-          </h1>
-          <button className="md:hidden text-slate-400 hover:text-white" onClick={() => setIsMobileSidebarOpen(false)}>
-            <X size={24} />
-          </button>
-        </div>
-
-        <nav className="flex-1 px-4 space-y-2 overflow-y-auto">
-          <button 
-            onClick={() => { setShowNewFolder(!showNewFolder); setIsMobileSidebarOpen(false); }}
-            className="w-full flex items-center gap-3 bg-blue-600 hover:bg-blue-500 px-4 py-3 rounded-lg font-medium transition-colors text-white shadow-sm mb-6"
-          >
-            <FolderPlus size={18} /> Thư mục mới
-          </button>
-
-          <button onClick={() => { router.push('/'); setIsMobileSidebarOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium bg-white/10 text-white transition-colors">
-            <Home size={20} /> Trang chủ
-          </button>
-          <button onClick={() => { router.push('/trash'); setIsMobileSidebarOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium hover:bg-white/5 text-slate-300 transition-colors">
-            <Trash2 size={20} /> Thùng rác
-          </button>
-          <button onClick={() => { router.push('/s3-keys'); setIsMobileSidebarOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium hover:bg-white/5 text-slate-300 transition-colors">
-            <KeyRound size={20} /> S3 Access Keys
-          </button>
-          
-          {user?.role === 'ADMIN' && (
-            <>
-              <div className="pt-4 mt-4 border-t border-slate-800"></div>
-              <button 
-                onClick={() => router.push('/admin')}
-                className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium hover:bg-white/5 text-amber-400 transition-colors"
-              >
-                <ShieldAlert size={20} /> Admin Panel
-              </button>
-            </>
-          )}
-        </nav>
-
-        <div className="p-4 border-t border-slate-800">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center flex-shrink-0">
-              <User size={20} className="text-slate-400" />
-            </div>
-            <div className="overflow-hidden">
-              <p className="font-medium text-white truncate text-sm">{user?.username}</p>
-              <button onClick={handleLogout} className="text-xs text-slate-400 hover:text-white transition-colors flex items-center gap-1 mt-1">
-                <LogOut size={12} /> Đăng xuất
-              </button>
-            </div>
-          </div>
-          {quotaInfo && (
-            <div className="bg-slate-800 rounded-lg p-3">
-              <div className="flex justify-between items-center mb-2 text-xs text-slate-300">
-                <span className="flex items-center gap-1"><HardDrive size={12} /> Đã dùng</span>
-                <span>{quotaPercentage.toFixed(1)}%</span>
-              </div>
-              <div className="w-full bg-slate-700 rounded-full h-1.5 mb-2">
-                <div
-                  className={`h-1.5 rounded-full transition-all ${quotaPercentage > 90 ? 'bg-red-500' : 'bg-blue-500'}`}
-                  style={{ width: `${quotaPercentage}%` }}
-                />
-              </div>
-              <div className="text-[10px] text-slate-400 text-center font-medium">
-                {formatSize(quotaInfo.usedSpace)} / {formatSize(quotaInfo.quota)}
-              </div>
-            </div>
-          )}
-        </div>
-      </aside>
+      <Sidebar />
 
       {/* Main Area */}
       <main className="flex-1 flex flex-col min-w-0 bg-white relative">
-        
+
         {/* Topbar */}
         <header className="h-16 border-b border-gray-100 flex items-center justify-between px-4 lg:px-6 bg-white w-full flex-shrink-0 z-10 transition-shadow">
           <div className="flex items-center gap-4 flex-1">
-            <button className="p-2 -ml-2 text-gray-600 hover:bg-gray-100 rounded-lg md:hidden" onClick={() => setIsMobileSidebarOpen(true)}>
-              <Menu size={24} />
-            </button>
             <div className="relative max-w-xl w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input 
-                type="text" 
-                placeholder="Tìm kiếm tệp và thư mục..." 
+              <input
+                type="text"
+                placeholder="Tìm kiếm tệp và thư mục..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 rounded-xl outline-none transition-all text-sm font-medium"
@@ -440,6 +314,12 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2 ml-4">
+            <button
+              onClick={() => setShowNewFolder(!showNewFolder)}
+              className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg font-medium transition-colors text-white text-sm shadow-sm"
+            >
+              <FolderPlus size={16} /> <span className="hidden sm:inline">Thư mục mới</span>
+            </button>
             <div className="hidden sm:flex bg-gray-50 p-1 rounded-lg border border-gray-200">
               <button 
                 onClick={() => setViewMode('grid')}
@@ -463,38 +343,14 @@ export default function Dashboard() {
         <div className="flex-1 overflow-y-auto">
           
           {/* Breadcrumbs */}
-          <div 
-            className="px-6 py-4 flex flex-wrap items-center gap-2 text-sm text-gray-600 font-medium border-b border-gray-50"
-          >
-            <button 
-              onClick={() => setCurrentFolderId(undefined)}
-              onDragOver={(e) => handleDragOver(e, null)}
-              onDragLeave={handleDragLeave}
-              onDrop={(e) => handleDrop(e, null)}
-              className={`hover:text-blue-600 flex items-center gap-1 transition-colors px-2 py-1.5 rounded-md cursor-pointer ${
-                dragOverFolderId === null ? 'bg-blue-50 text-blue-700 ring-2 ring-blue-200' : 'hover:bg-gray-50'
-              }`}
-            >
-              <Home size={16} /> Drive Của Tôi
-            </button>
-            
-            {breadcrumbs.map((bc) => (
-              <div key={bc.id} className="flex items-center gap-2">
-                <ChevronRight size={16} className="text-gray-400" />
-                <button 
-                  onClick={() => setCurrentFolderId(bc.id)}
-                  onDragOver={(e) => handleDragOver(e, bc.id)}
-                  onDragLeave={handleDragLeave}
-                  onDrop={(e) => handleDrop(e, bc.id)}
-                  className={`hover:text-blue-600 transition-colors px-2 py-1.5 rounded-md cursor-pointer ${
-                    dragOverFolderId === bc.id ? 'bg-blue-50 text-blue-700 ring-2 ring-blue-200' : 'hover:bg-gray-50'
-                  }`}
-                >
-                  {bc.name}
-                </button>
-              </div>
-            ))}
-          </div>
+          <Breadcrumbs
+            items={breadcrumbs}
+            onNavigate={setCurrentFolderId}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onDrop={handleDrop}
+            dragOverFolderId={dragOverFolderId}
+          />
 
           <div className="p-6">
             
@@ -771,7 +627,7 @@ export default function Dashboard() {
             {/* Upload Zone */}
             <div className="mt-8 pt-6 border-t border-gray-100">
               <h3 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider">Tải lên dữ liệu mới</h3>
-              <UploadZone folderId={currentFolderId} onUploadSuccess={() => { fetchContent(); fetchQuota(); }} />
+              <UploadZone folderId={currentFolderId} onUploadSuccess={() => { fetchContent(); }} />
             </div>
 
           </div>
@@ -780,45 +636,20 @@ export default function Dashboard() {
 
       {/* Context Menu */}
       {contextMenu.isOpen && contextMenu.item && (
-        <div 
-          className="fixed bg-white border border-gray-200 rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] w-48 py-2 z-50 text-sm"
-          style={{ 
-            top: Math.min(contextMenu.y, window.innerHeight - 200), 
-            left: Math.min(contextMenu.x, window.innerWidth - 200) 
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          itemType={contextMenu.type}
+          onRename={() => handleOpenDialog('rename')}
+          onMove={() => handleOpenDialog('move')}
+          onShare={() => handleOpenDialog('share')}
+          onDelete={(e) => {
+            contextMenu.type === 'folder'
+              ? handleDeleteFolder(e, contextMenu.item.id)
+              : handleDeleteFile(e, contextMenu.item.id);
+            setContextMenu(prev => ({ ...prev, isOpen: false }));
           }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <button 
-            onClick={() => handleOpenDialog('rename')}
-            className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors"
-          >
-            <Edit2 size={16} /> Đổi tên
-          </button>
-          <button 
-            onClick={() => handleOpenDialog('move')}
-            className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors"
-          >
-            <Move size={16} /> Di chuyển
-          </button>
-          <button 
-            onClick={() => handleOpenDialog('share')}
-            className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-blue-600 font-medium cursor-pointer transition-colors"
-          >
-            <Share2 size={16} /> Chia sẻ
-          </button>
-          <div className="border-t border-gray-100 my-1"></div>
-          <button 
-            onClick={(e) => {
-              contextMenu.type === 'folder' 
-                ? handleDeleteFolder(e, contextMenu.item.id) 
-                : handleDeleteFile(e, contextMenu.item.id);
-              setContextMenu(prev => ({ ...prev, isOpen: false }));
-            }}
-            className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-red-600 font-medium cursor-pointer transition-colors"
-          >
-            <Trash2 size={16} /> Xoá
-          </button>
-        </div>
+        />
       )}
 
       {/* Dialogs */}
@@ -829,10 +660,7 @@ export default function Dashboard() {
         itemType={dialogItemType}
         onConfirm={async (newName) => {
           try {
-            const endpoint = dialogItemType === 'folder' ? 'folders' : 'files';
-            await axios.patch(`${API_URL}/${endpoint}/${dialogItem.id}/rename`, { name: newName }, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
+            await renameItem(dialogItemType, dialogItem.id, newName);
             setActiveDialog('none');
             fetchContent();
           } catch (error) {
@@ -846,16 +674,9 @@ export default function Dashboard() {
         onClose={() => setActiveDialog('none')}
         itemToMove={dialogItem}
         itemType={dialogItemType}
-        token={token}
         onConfirm={async (destFolderId) => {
           try {
-            const endpoint = dialogItemType === 'folder' ? 'folders' : 'files';
-            await axios.patch(`${API_URL}/${endpoint}/${dialogItem.id}/move`, { 
-              folderId: destFolderId, // cho file
-              parentId: destFolderId  // cho folder
-            }, {
-              headers: { Authorization: `Bearer ${token}` }
-            });
+            await moveItem(dialogItemType, dialogItem.id, destFolderId);
             setActiveDialog('none');
             fetchContent();
           } catch (error: any) {
@@ -869,7 +690,6 @@ export default function Dashboard() {
         onClose={() => setActiveDialog('none')}
         item={dialogItem}
         itemType={dialogItemType}
-        token={token}
       />
 
     </div>

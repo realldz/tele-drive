@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Folder, ChevronRight, Home } from 'lucide-react';
-import axios from 'axios';
+import { fetchFolderContent, fetchBreadcrumbs } from '@/lib/api';
 
 interface MoveDialogProps {
   isOpen: boolean;
@@ -8,12 +8,9 @@ interface MoveDialogProps {
   onConfirm: (destinationFolderId: string | null) => Promise<void> | void;
   itemToMove: any;
   itemType: 'file' | 'folder';
-  token: string | null;
 }
 
-const API_URL = 'http://localhost:3001';
-
-export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, itemType, token }: MoveDialogProps) {
+export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, itemType }: MoveDialogProps) {
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folders, setFolders] = useState<any[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<any[]>([]);
@@ -21,27 +18,17 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const fetchFolders = useCallback(async (parentId: string | null) => {
-    if (!token) return;
     setIsLoading(true);
     try {
-      const url = parentId 
-        ? `${API_URL}/folders/content?folderId=${parentId}` 
-        : `${API_URL}/folders/content`;
-      const res = await axios.get(url, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
-      // Lọc bỏ chính folder đang muốn di chuyển (nếu đang di chuyển folder)
-      const visibleFolders = res.data.folders.filter((f: any) => 
+      const data = await fetchFolderContent(parentId || undefined);
+      const visibleFolders = data.folders.filter((f: any) =>
         itemType !== 'folder' || f.id !== itemToMove.id
       );
       setFolders(visibleFolders);
 
       if (parentId) {
-        const bcRes = await axios.get(`${API_URL}/folders/${parentId}/breadcrumbs`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        setBreadcrumbs(bcRes.data);
+        const bc = await fetchBreadcrumbs(parentId);
+        setBreadcrumbs(bc);
       } else {
         setBreadcrumbs([]);
       }
@@ -50,7 +37,7 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
     } finally {
       setIsLoading(false);
     }
-  }, [token, itemType, itemToMove]);
+  }, [itemType, itemToMove]);
 
   useEffect(() => {
     if (isOpen) {

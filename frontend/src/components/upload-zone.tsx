@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import axios, { CancelTokenSource } from 'axios';
+import axios from 'axios';
 import { UploadCloud, X, Loader2 } from 'lucide-react';
+import { API_URL, formatSize, fetchUploadConfig, abortUpload } from '@/lib/api';
 
-const API_URL = 'http://localhost:3001';
 const CONCURRENCY = 3;
 
 interface UploadState {
@@ -35,8 +35,8 @@ export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: s
   const simpleAbortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    axios.get(`${API_URL}/files/config`)
-      .then(res => setMaxChunkSize(res.data.maxChunkSize))
+    fetchUploadConfig()
+      .then(data => setMaxChunkSize(data.maxChunkSize))
       .catch(() => { });
   }, []);
 
@@ -77,8 +77,8 @@ export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: s
     const fileId = activeFileIdRef.current;
     if (fileId) {
       try {
-        const result = await axios.post(`${API_URL}/files/upload/${fileId}/abort`);
-        console.log(`Upload aborted: ${result.data.deletedChunks} chunks deleted from Telegram`);
+        await abortUpload(fileId);
+        console.log(`Upload aborted for file ${fileId}`);
       } catch (err) {
         console.warn('Abort API call failed (file may already be cleaned up):', err);
       }
@@ -272,13 +272,6 @@ export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: s
     overallPercent = 99;
     isServerProcessing = true;
   }
-
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
-    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
-  };
 
   return (
     <div className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:bg-gray-50 transition-colors relative">

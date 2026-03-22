@@ -19,14 +19,16 @@ export class S3AuthService {
 
   /**
    * Verify AWS Signature V4 and return userId if valid.
+   * Supports both Authorization header and presigned URL (query string) auth.
    * Returns null if verification fails.
    */
   async verifySignature(req: any): Promise<string | null> {
     try {
       const authHeader: string | undefined = req.headers['authorization'];
+
+      // Presigned URL fallback — check query string params
       if (!authHeader || !authHeader.startsWith('AWS4-HMAC-SHA256 ')) {
-        this.logger.debug('Missing or invalid Authorization header');
-        return null;
+        return this.verifyPresignedUrl(req);
       }
 
       // Parse Authorization header
@@ -98,6 +100,120 @@ export class S3AuthService {
       return credential.userId;
     } catch (err: any) {
       this.logger.error(`S3 auth error: ${err.message}`, err.stack);
+      return null;
+    }
+  }
+
+  /**
+   * Verify presigned URL (query-string-based AWS Signature V4).
+   *
+   * Query params used:
+   *   X-Amz-Algorithm=AWS4-HMAC-SHA256
+   *   X-Amz-Credential=<AccessKeyId>/<Date>/<Region>/<Service>/aws4_request
+   *   X-Amz-Date=<YYYYMMDDTHHMMSSZ>
+   *   X-Amz-Expires=<seconds>
+   *   X-Amz-SignedHeaders=<headers>
+   *   X-Amz-Signature=<hex>
+   */
+  private async verifyPresignedUrl(req: any): Promise<string | null> {
+    try {
+      const url = new URL(req.url, `http://${req.headers['host'] || 'localhost'}`);
+      const params = url.searchParams;
+
+      const algorithm = params.get('X-Amz-Algorithm');
+      if (algorithm !== 'AWS4-HMAC-SHA256') {
+        this.logger.debug('Missing or invalid Authorization header / presigned params');
+        return null;
+      }
+
+      const credentialStr = params.get('X-Amz-Credential');
+      const dateTime = params.get('X-Amz-Date');
+      const expiresStr = params.get('X-Amz-Expires');
+      const signedHeadersStr = params.get('X-Amz-SignedHeaders');
+      const signature = params.get('X-Amz-Signature');
+
+      if (!credentialStr || !dateTime || !expiresStr || !signedHeadersStr || !signature) {
+        this.logger.debug('Presigned URL missing required query params');
+        return null;
+      }
+
+      // Parse credential: <AccessKeyId>/<Date>/<Region>/<Service>/aws4_request
+      const credParts = credentialStr.split('/');
+      if (credParts.length < 5) {
+        this.logger.debug('Presigned URL: invalid credential format');
+        return null;
+      }
+      const [accessKeyId, date, region, service] = credParts;
+      const credentialScope = credParts.slice(1).join('/');
+
+      // Expiration check
+      const expires = parseInt(expiresStr, 10);
+      if (isNaN(expires) || expires < 1 || expires > 604800) {
+        this.logger.warn(`Presigned URL: invalid Expires value: ${expiresStr}`);
+        return null;
+      }
+
+      if (dateTime.length !== 16) {
+        this.logger.debug('Presigned URL: invalid X-Amz-Date format');
+        return null;
+      }
+      const reqTime = new Date(
+        `${dateTime.slice(0,4)}-${dateTime.slice(4,6)}-${dateTime.slice(6,8)}T${dateTime.slice(9,11)}:${dateTime.slice(11,13)}:${dateTime.slice(13,15)}Z`,
+      );
+      const expirationTime = reqTime.getTime() + expires * 1000;
+      if (Date.now() > expirationTime) {
+        this.logger.warn('Presigned URL: URL has expired');
+        return null;
+      }
+
+      // Look up credential
+      const credential = await this.prisma.s3Credential.findUnique({
+        where: { accessKeyId },
+        include: { user: true },
+      });
+
+      if (!credential || !credential.isActive) {
+        this.logger.warn(`Presigned URL auth failed: AccessKeyId not found or inactive: ${accessKeyId}`);
+        return null;
+      }
+
+      const secretAccessKey = this.decryptSecret(credential.secretAccessKey);
+      const signedHeaders = signedHeadersStr.split(';');
+
+      // Build canonical request — for presigned URLs, exclude X-Amz-Signature
+      // from canonical query string and use UNSIGNED-PAYLOAD as payload hash
+      const canonicalRequest = this.buildCanonicalRequestPresigned(req, signedHeaders);
+      const canonicalRequestHash = crypto
+        .createHash('sha256')
+        .update(canonicalRequest)
+        .digest('hex');
+
+      // Build string to sign
+      const stringToSign = [
+        'AWS4-HMAC-SHA256',
+        dateTime,
+        credentialScope,
+        canonicalRequestHash,
+      ].join('\n');
+
+      // Derive signing key
+      const signingKey = this.deriveSigningKey(secretAccessKey, date, region, service);
+
+      // Compute expected signature
+      const expectedSignature = crypto
+        .createHmac('sha256', signingKey)
+        .update(stringToSign)
+        .digest('hex');
+
+      if (expectedSignature !== signature) {
+        this.logger.warn(`Presigned URL auth failed: signature mismatch for AccessKeyId: ${accessKeyId}`);
+        return null;
+      }
+
+      this.logger.debug(`Presigned URL auth success: userId=${credential.userId}, accessKeyId=${accessKeyId}`);
+      return credential.userId;
+    } catch (err: any) {
+      this.logger.error(`Presigned URL auth error: ${err.message}`, err.stack);
       return null;
     }
   }
@@ -195,6 +311,50 @@ export class S3AuthService {
       canonicalHeaderLines + '\n',
       signedHeadersStr,
       payloadHash,
+    ].join('\n');
+  }
+
+  /**
+   * Build canonical request for presigned URLs.
+   * Differs from header-based auth:
+   *   - X-Amz-Signature is excluded from canonical query string
+   *   - Payload hash is always UNSIGNED-PAYLOAD
+   */
+  private buildCanonicalRequestPresigned(req: any, signedHeaders: string[]): string {
+    const method = req.method.toUpperCase();
+
+    const url = new URL(req.url, `http://${req.headers['host'] || 'localhost'}`);
+    const canonicalUri = url.pathname || '/';
+
+    // Canonical Query String — sorted by key, excluding X-Amz-Signature
+    const queryParams: [string, string][] = [];
+    url.searchParams.forEach((value, key) => {
+      if (key !== 'X-Amz-Signature') {
+        queryParams.push([key, value]);
+      }
+    });
+    queryParams.sort(([a], [b]) => a.localeCompare(b));
+    const canonicalQueryString = queryParams
+      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+      .join('&');
+
+    // Canonical Headers
+    const canonicalHeaderLines = signedHeaders
+      .map((h) => {
+        const val = req.headers[h.toLowerCase()];
+        return `${h.toLowerCase()}:${Array.isArray(val) ? val.join(',') : (val || '')}`;
+      })
+      .join('\n');
+
+    const signedHeadersStr = signedHeaders.join(';');
+
+    return [
+      method,
+      canonicalUri,
+      canonicalQueryString,
+      canonicalHeaderLines + '\n',
+      signedHeadersStr,
+      'UNSIGNED-PAYLOAD',
     ].join('\n');
   }
 

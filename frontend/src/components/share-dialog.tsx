@@ -1,19 +1,15 @@
 import React, { useState, useEffect } from 'react';
-import { X, Copy, Check, Globe, Lock, Share2 } from 'lucide-react'; // Added Share2
-import axios from 'axios';
-
-// Define API_URL constant
-const API_URL = 'http://localhost:3001';
+import { X, Copy, Check, Globe, Lock, Share2 } from 'lucide-react';
+import { shareItem, unshareItem } from '@/lib/api';
 
 interface ShareDialogProps {
   isOpen: boolean;
   onClose: () => void;
   item: any;
   itemType: 'file' | 'folder';
-  token: string | null;
 }
 
-export default function ShareDialog({ isOpen, onClose, item, itemType, token }: ShareDialogProps) {
+export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDialogProps) {
   const [isSharing, setIsSharing] = useState(false); // Replaced isGenerating
   const [copied, setCopied] = useState(false);
 
@@ -37,11 +33,7 @@ export default function ShareDialog({ isOpen, onClose, item, itemType, token }: 
   const handleShare = async () => {
     setIsSharing(true);
     try {
-      const endpoint = itemType === 'folder' ? 'folders' : 'files';
-      await axios.post(`${API_URL}/${endpoint}/${item.id}/share`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      // Reload page to reflect new share status and token
+      await shareItem(itemType, item.id);
       window.location.reload();
     } catch (error) {
       alert('Lỗi tạo liên kết chia sẻ');
@@ -53,11 +45,7 @@ export default function ShareDialog({ isOpen, onClose, item, itemType, token }: 
   const handleUnshare = async () => {
     setIsSharing(true);
     try {
-      const endpoint = itemType === 'folder' ? 'folders' : 'files';
-      await axios.post(`${API_URL}/${endpoint}/${item.id}/unshare`, {}, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      // Reload page to reflect new share status
+      await unshareItem(itemType, item.id);
       window.location.reload();
     } catch (error) {
       alert('Lỗi thu hồi liên kết chia sẻ');

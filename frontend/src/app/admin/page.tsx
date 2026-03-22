@@ -1,13 +1,16 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import axios from 'axios';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-context';
 import { Users, Settings, Database, ArrowLeft, Trash2, Edit2, Loader2, HardDrive, ShieldAlert, Menu, X, LogOut, User } from 'lucide-react';
 import toast from 'react-hot-toast';
-
-const API_URL = 'http://localhost:3001';
+import {
+  fetchUsers as fetchUsersApi, fetchSettings as fetchSettingsApi,
+  updateSetting, updateUserRole, updateUserQuota, updateUserBandwidth,
+  deleteUser as deleteUserApi, fetchUserFiles as fetchUserFilesApi,
+  deleteUserFile as deleteUserFileApi,
+} from '@/lib/api';
 
 type UserRole = 'ADMIN' | 'USER';
 
@@ -72,10 +75,8 @@ export default function AdminDashboard() {
 
   const fetchUsers = async () => {
     try {
-      const res = await axios.get(`${API_URL}/users`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setUsers(res.data);
+      const data = await fetchUsersApi();
+      setUsers(data);
     } catch (err) {
       toast.error('Lỗi lấy danh sách người dùng');
     }
@@ -83,12 +84,10 @@ export default function AdminDashboard() {
 
   const fetchSettings = async () => {
     try {
-      const res = await axios.get(`${API_URL}/settings`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setSettings(res.data);
+      const data = await fetchSettingsApi();
+      setSettings(data);
       const initial: Record<string, string> = {};
-      res.data.forEach((s: Setting) => { initial[s.key] = s.value; });
+      data.forEach((s: Setting) => { initial[s.key] = s.value; });
       setEditingSettings(initial);
     } catch (err) {
       toast.error('Lỗi lấy cấu hình hệ thống');
@@ -97,10 +96,8 @@ export default function AdminDashboard() {
 
   const fetchUserFiles = async (userId: string) => {
     try {
-      const res = await axios.get(`${API_URL}/users/${userId}/files`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setUserFiles(res.data);
+      const data = await fetchUserFilesApi(userId);
+      setUserFiles(data);
     } catch (err) {
       toast.error('Lỗi lấy danh sách tệp của người dùng');
     }
@@ -108,9 +105,7 @@ export default function AdminDashboard() {
 
   const handleUpdateSetting = async (key: string, value: string) => {
     try {
-      await axios.put(`${API_URL}/settings/${key}`, { value }, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await updateSetting(key, value);
       toast.success('Đã cập nhật cấu hình');
       fetchSettings();
     } catch (err) {
@@ -131,23 +126,11 @@ export default function AdminDashboard() {
     e.preventDefault();
     if (!editingUser) return;
     try {
-      // Update role
-      await axios.patch(`${API_URL}/users/${editingUser.id}/role`, 
-        { role: editForm.role },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      // Update quota
+      await updateUserRole(editingUser.id, editForm.role);
       const quotaBytes = editForm.quotaGB * 1024 * 1024 * 1024;
-      await axios.patch(`${API_URL}/users/${editingUser.id}/quota`, 
-        { quota: quotaBytes.toString() },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
-      // Update bandwidth
+      await updateUserQuota(editingUser.id, quotaBytes.toString());
       const bwBytes = editForm.bandwidthLimitGB > 0 ? (editForm.bandwidthLimitGB * 1024 * 1024 * 1024).toString() : null;
-      await axios.patch(`${API_URL}/users/${editingUser.id}/bandwidth-limit`, 
-        { dailyBandwidthLimit: bwBytes },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      await updateUserBandwidth(editingUser.id, bwBytes);
       toast.success('Đã cập nhật thông tin người dùng');
       setEditingUser(null);
       fetchUsers();
@@ -159,9 +142,7 @@ export default function AdminDashboard() {
   const handleDeleteUser = async (id: string, username: string) => {
     if (!confirm(`Bạn có chắc muốn xoá vĩnh viễn user "${username}" và TOÀN BỘ dữ liệu của họ? Hành động này không thể hoàn tác!`)) return;
     try {
-      await axios.delete(`${API_URL}/users/${id}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await deleteUserApi(id);
       toast.success('Đã xoá người dùng');
       fetchUsers();
     } catch (err: any) {
@@ -173,9 +154,7 @@ export default function AdminDashboard() {
     if (!selectedUser) return;
     if (!confirm('Bạn có chắc muốn xoá vĩnh viễn tệp này của người dùng?')) return;
     try {
-      await axios.delete(`${API_URL}/users/${selectedUser.id}/files/${fileId}`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      await deleteUserFileApi(selectedUser.id, fileId);
       toast.success('Đã xoá tệp');
       fetchUserFiles(selectedUser.id);
     } catch (err) {

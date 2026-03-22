@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
 
 interface RenameDialogProps {
@@ -12,6 +12,13 @@ interface RenameDialogProps {
 export default function RenameDialog({ isOpen, onClose, onConfirm, initialName, itemType }: RenameDialogProps) {
   const [name, setName] = useState(initialName);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Sync name state when dialog opens with a different item
+  useEffect(() => {
+    if (isOpen) {
+      setName(initialName);
+    }
+  }, [isOpen, initialName]);
 
   if (!isOpen) return null;
 
