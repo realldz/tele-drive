@@ -323,6 +323,33 @@ export class FolderService {
   }
 
   /**
+   * Xoá vĩnh viễn folder từ thùng rác — đệ quy xoá tất cả nội dung bên trong.
+   */
+  async permanentDelete(id: string, userId: string) {
+    const folder = await this.prisma.folder.findFirst({
+      where: { id, userId, deletedAt: { not: null } },
+    });
+    if (!folder) throw new NotFoundException('Thư mục không tồn tại trong thùng rác');
+
+    // Đệ quy thu thập tất cả file IDs trong thư mục và các thư mục con
+    const allFileIds = await this.collectAllFileIds(id);
+
+    // Xoá tất cả files khỏi Telegram (song song để nhanh)
+    const deletePromises = allFileIds.map(fileId =>
+      this.fileService.delete(fileId).catch(err =>
+        this.logger.warn(`Failed to delete file ${fileId} from Telegram during folder cleanup: ${err}`)
+      )
+    );
+    await Promise.allSettled(deletePromises);
+
+    // Xoá thư mục — cascade xoá children folders + file records còn sót
+    await this.prisma.folder.delete({ where: { id } });
+
+    this.logger.log(`Folder permanently deleted from trash: "${folder.name}" (id: ${id}, files cleaned: ${allFileIds.length})`);
+    return folder;
+  }
+
+  /**
    * Soft delete thư mục — đệ quy soft-delete tất cả file/subfolder bên trong.
    * Giữ nguyên usedSpace.
    */

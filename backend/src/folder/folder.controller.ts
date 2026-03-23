@@ -68,7 +68,7 @@ export class FolderController {
   // Xoá vĩnh viễn folder (permanent delete từ thùng rác)
   @Delete(':id/permanent')
   permanentDelete(@Param('id') id: string, @Req() req: any) {
-    return this.folderService.delete(id, req.user.userId);
+    return this.folderService.permanentDelete(id, req.user.userId);
   }
 
   // Chia sẻ thư mục
