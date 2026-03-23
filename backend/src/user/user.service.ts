@@ -1,6 +1,7 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FileService } from '../file/file.service';
+import * as bcrypt from 'bcrypt';
 
 @Injectable()
 export class UserService {
@@ -181,8 +182,53 @@ export class UserService {
     if (!file) throw new NotFoundException('File not found for this user');
 
     this.logger.warn(`Admin deleting file: "${file.filename}" (id: ${fileId}) of user ${targetUserId}`);
-    // fileService.delete sẽ handle việc xoá Telegram chunk và DB vĩnh viễn (hoặc tuỳ implementation của delete)
-    // Thực tế fileService.softDelete là cho user tự xoá. Admin xoá là xoá vĩnh viễn.
     return this.fileService.delete(fileId);
+  }
+
+  /**
+   * PATCH /users/me/password — User tự đổi mật khẩu
+   */
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const isMatch = await bcrypt.compare(currentPassword, user.password);
+    if (!isMatch) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    if (newPassword.length < 4) {
+      throw new BadRequestException('New password must be at least 4 characters');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashedPassword },
+    });
+
+    this.logger.log(`Password changed: user "${user.username}" (id: ${userId})`);
+    return { success: true };
+  }
+
+  /**
+   * PATCH /users/:id/password — Admin ép buộc reset mật khẩu cho user
+   */
+  async adminResetPassword(targetUserId: string, newPassword: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    if (newPassword.length < 4) {
+      throw new BadRequestException('New password must be at least 4 characters');
+    }
+
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+    await this.prisma.user.update({
+      where: { id: targetUserId },
+      data: { password: hashedPassword },
+    });
+
+    this.logger.log(`Admin reset password for user "${user.username}" (id: ${targetUserId})`);
+    return { success: true };
   }
 }

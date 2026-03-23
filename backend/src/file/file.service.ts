@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { fetchWithRetry } from '../telegram/telegram.service';
 import { Transform, TransformCallback, Readable } from 'stream';
 import Busboy from 'busboy';
 import * as crypto from 'crypto';
@@ -218,36 +219,50 @@ export class FileService {
         }
         fileProcessed = true;
 
-        const counter = new ByteCounter();
-        let uploadStream: Readable | Transform = stream.pipe(counter);
+        // Collect the stream into a buffer so we can retry on ECONNRESET.
+        // Chunks are typically ~20MB — safe to buffer in memory.
+        const chunks: Buffer[] = [];
+        let rawBytes = 0;
 
+        let dataStream: Readable | Transform = stream;
         if (dek && chunkIv) {
           const cipherStream = this.cryptoService.createEncryptStream(dek, chunkIv);
-          uploadStream = uploadStream.pipe(cipherStream);
+          dataStream = stream.pipe(cipherStream);
         }
 
-        this.logger.log(`Starting chunk upload to Telegram: ${chunkIndex + 1}/${fileRecord.totalChunks} for file "${fileRecord.filename}" (${fileRecord.id})`);
+        dataStream.on('data', (buf: Buffer) => {
+          chunks.push(buf);
+          rawBytes += buf.length;
+        });
 
-        this.telegram.uploadStream(uploadStream, chunkFilename)
-          .then(async ({ fileId: telegramFileId, messageId: telegramMessageId }) => {
-            const chunk = await this.prisma.fileChunk.create({
-              data: {
-                fileId,
-                chunkIndex,
-                size: counter.bytes,
-                telegramFileId,
-                telegramMessageId,
-                ...(chunkIv && { encryptionIv: chunkIv.toString('hex') }),
-              },
+        dataStream.on('error', (err: Error) => reject(err));
+
+        dataStream.on('end', () => {
+          const buffer = Buffer.concat(chunks);
+
+          this.logger.log(`Starting chunk upload to Telegram: ${chunkIndex + 1}/${fileRecord.totalChunks} for file "${fileRecord.filename}" (${fileRecord.id}), ${rawBytes} bytes`);
+
+          // uploadFile() has built-in retry with exponential backoff
+          this.telegram.uploadFile(buffer, chunkFilename)
+            .then(async ({ fileId: telegramFileId, messageId: telegramMessageId }) => {
+              const chunk = await this.prisma.fileChunk.create({
+                data: {
+                  fileId,
+                  chunkIndex,
+                  size: rawBytes,
+                  telegramFileId,
+                  telegramMessageId,
+                  ...(chunkIv && { encryptionIv: chunkIv.toString('hex') }),
+                },
+              });
+              this.logger.debug(`Chunk uploaded: ${chunkIndex + 1}/${fileRecord.totalChunks} for file ${fileId} (${rawBytes} bytes)`);
+              resolve(chunk);
+            })
+            .catch((err) => {
+              this.logger.error(`Chunk upload failed: ${chunkIndex}/${fileRecord.totalChunks} for file ${fileId}: ${err.message}`);
+              reject(err);
             });
-            this.logger.debug(`Chunk uploaded: ${chunkIndex + 1}/${fileRecord.totalChunks} for file ${fileId} (${counter.bytes} bytes)`);
-            resolve(chunk);
-          })
-          .catch((err) => {
-            stream.resume();
-            this.logger.error(`Chunk upload failed: ${chunkIndex}/${fileRecord.totalChunks} for file ${fileId}: ${err.message}`);
-            reject(err);
-          });
+        });
       });
 
       bb.on('error', (err: Error) => reject(err));
@@ -427,7 +442,7 @@ export class FileService {
     res.setHeader('Content-Length', downloadInfo.size.toString());
 
     if (!downloadInfo.isChunked) {
-      const fetchRes = await fetch(downloadInfo.urls[0]);
+      const fetchRes = await fetchWithRetry(downloadInfo.urls[0]);
       if (!fetchRes.ok || !fetchRes.body) {
         this.logger.error(`Failed to fetch file from Telegram: "${downloadInfo.filename}"`);
         res.status(500).send('Trích xuất file từ Telegram thất bại');
@@ -444,7 +459,7 @@ export class FileService {
       try {
         for (const chunk of downloadInfo.chunks) {
           const chunkUrl = await this.telegram.getFileLink(chunk.telegramFileId);
-          const fetchRes = await fetch(chunkUrl);
+          const fetchRes = await fetchWithRetry(chunkUrl);
           if (!fetchRes.ok || !fetchRes.body) {
             throw new Error('Failed to fetch chunk from Telegram');
           }
@@ -507,7 +522,7 @@ export class FileService {
     res.setHeader('Content-Disposition', 'inline');
 
     if (!downloadInfo.isChunked) {
-      const fetchRes = await fetch(downloadInfo.urls[0], {
+      const fetchRes = await fetchWithRetry(downloadInfo.urls[0], {
         headers: { Range: `bytes=${start}-${end}` }
       });
       if (!fetchRes.ok || !fetchRes.body) {
@@ -548,7 +563,7 @@ export class FileService {
       try {
         for (const chunkReq of chunksToFetch) {
           const chunkUrl = await this.telegram.getFileLink(chunkReq.telegramFileId);
-          const fetchRes = await fetch(chunkUrl, {
+          const fetchRes = await fetchWithRetry(chunkUrl, {
             headers: { Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}` }
           });
           if (!fetchRes.ok || !fetchRes.body) throw new Error('Fetch chunk error');

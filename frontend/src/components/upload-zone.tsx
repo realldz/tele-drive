@@ -6,7 +6,7 @@ import { UploadCloud, X, Loader2 } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import { API_URL, formatSize, fetchUploadConfig, abortUpload } from '@/lib/api';
 
-const CONCURRENCY = 1;
+const CONCURRENCY = 3;
 
 interface UploadState {
   status: 'idle' | 'uploading' | 'cancelling' | 'error';

@@ -15,6 +15,18 @@ export class UserController {
   }
 
   /**
+   * PATCH /users/me/password — User tự đổi mật khẩu
+   */
+  @Patch('me/password')
+  changePassword(
+    @Req() req: any,
+    @Body('currentPassword') currentPassword: string,
+    @Body('newPassword') newPassword: string,
+  ) {
+    return this.userService.changePassword(req.user.userId, currentPassword, newPassword);
+  }
+
+  /**
    * GET /users — Danh sách tất cả user (Admin only)
    */
   @UseGuards(AdminGuard)
@@ -93,5 +105,17 @@ export class UserController {
     @Param('fileId') fileId: string,
   ) {
     return this.userService.deleteUserFile(id, fileId);
+  }
+
+  /**
+   * PATCH /users/:id/password — Admin reset mật khẩu cho user (Admin only)
+   */
+  @UseGuards(AdminGuard)
+  @Patch(':id/password')
+  adminResetPassword(
+    @Param('id') id: string,
+    @Body('newPassword') newPassword: string,
+  ) {
+    return this.userService.adminResetPassword(id, newPassword);
   }
 }

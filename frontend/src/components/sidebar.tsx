@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import { Home, Trash2, KeyRound, ShieldAlert, LogOut, User, HardDrive, Menu, X } from 'lucide-react';
+import { Home, Trash2, KeyRound, ShieldAlert, LogOut, User, HardDrive, Menu, X, KeySquare } from 'lucide-react';
 import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/i18n-context';
 import LanguageSwitcher from '@/components/language-switcher';
-import { formatSize, fetchCurrentUser } from '@/lib/api';
+import { formatSize, fetchCurrentUser, changePassword } from '@/lib/api';
+import toast from 'react-hot-toast';
 
 interface QuotaInfo {
   usedSpace: number;
@@ -24,6 +25,9 @@ export default function Sidebar({ children }: SidebarProps) {
   const pathname = usePathname();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [quotaInfo, setQuotaInfo] = useState<QuotaInfo | null>(null);
+  const [showChangePassword, setShowChangePassword] = useState(false);
+  const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [pwLoading, setPwLoading] = useState(false);
 
   const fetchQuota = useCallback(async () => {
     if (!token) return;
@@ -45,6 +49,30 @@ export default function Sidebar({ children }: SidebarProps) {
   const handleLogout = () => {
     logout();
     router.push('/login');
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (pwForm.newPassword !== pwForm.confirmPassword) {
+      toast.error(t('password.mismatch'));
+      return;
+    }
+    if (pwForm.newPassword.length < 4) {
+      toast.error(t('password.tooShort'));
+      return;
+    }
+    setPwLoading(true);
+    try {
+      await changePassword(pwForm.currentPassword, pwForm.newPassword);
+      toast.success(t('password.changeSuccess'));
+      setShowChangePassword(false);
+      setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (err: any) {
+      const msg = err.response?.data?.message || t('password.changeError');
+      toast.error(msg);
+    } finally {
+      setPwLoading(false);
+    }
   };
 
   const quotaPercentage = quotaInfo ? Math.min((quotaInfo.usedSpace / quotaInfo.quota) * 100, 100) : 0;
@@ -113,9 +141,14 @@ export default function Sidebar({ children }: SidebarProps) {
             </div>
             <div className="overflow-hidden">
               <p className="font-medium text-white truncate text-sm">{user?.username}</p>
-              <button onClick={handleLogout} className="text-xs text-slate-400 hover:text-white transition-colors flex items-center gap-1 mt-1">
-                <LogOut size={12} /> {t('sidebar.logout')}
-              </button>
+              <div className="flex items-center gap-3 mt-1">
+                <button onClick={() => setShowChangePassword(true)} className="text-xs text-slate-400 hover:text-white transition-colors flex items-center gap-1">
+                  <KeySquare size={12} /> {t('password.change')}
+                </button>
+                <button onClick={handleLogout} className="text-xs text-slate-400 hover:text-white transition-colors flex items-center gap-1">
+                  <LogOut size={12} /> {t('sidebar.logout')}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -149,6 +182,70 @@ export default function Sidebar({ children }: SidebarProps) {
       >
         <Menu size={24} />
       </button>
+
+      {/* Change Password Modal */}
+      {showChangePassword && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden relative">
+            <div className="p-6 border-b border-gray-100">
+              <h3 className="text-lg font-bold text-gray-800">{t('password.changeTitle')}</h3>
+              <button className="absolute top-6 right-6 text-gray-400 hover:text-gray-600" onClick={() => { setShowChangePassword(false); setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' }); }}>
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleChangePassword} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('password.currentPassword')}</label>
+                <input
+                  type="password"
+                  value={pwForm.currentPassword}
+                  onChange={(e) => setPwForm({ ...pwForm, currentPassword: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring focus:ring-blue-100 outline-none"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('password.newPassword')}</label>
+                <input
+                  type="password"
+                  value={pwForm.newPassword}
+                  onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring focus:ring-blue-100 outline-none"
+                  required
+                  minLength={4}
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('password.confirmNewPassword')}</label>
+                <input
+                  type="password"
+                  value={pwForm.confirmPassword}
+                  onChange={(e) => setPwForm({ ...pwForm, confirmPassword: e.target.value })}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring focus:ring-blue-100 outline-none"
+                  required
+                  minLength={4}
+                />
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button
+                  type="button"
+                  onClick={() => { setShowChangePassword(false); setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' }); }}
+                  className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
+                >
+                  {t('common.cancel')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={pwLoading}
+                  className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg font-medium transition-colors"
+                >
+                  {pwLoading ? t('password.changing') : t('password.changeButton')}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </>
   );
 }

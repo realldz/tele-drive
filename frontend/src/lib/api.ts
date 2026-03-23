@@ -127,6 +127,16 @@ export async function fetchUsers() {
   return res.data;
 }
 
+// ── Password Management ─────────────────────────────────────────────────────
+
+export async function changePassword(currentPassword: string, newPassword: string) {
+  return api.patch(`${API_URL}/users/me/password`, { currentPassword, newPassword });
+}
+
+export async function adminResetPassword(userId: string, newPassword: string) {
+  return api.patch(`${API_URL}/users/${userId}/password`, { newPassword });
+}
+
 export async function fetchSettings() {
   const res = await api.get(`${API_URL}/settings`);
   return res.data;
