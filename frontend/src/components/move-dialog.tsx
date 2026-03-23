@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Folder, ChevronRight, Home } from 'lucide-react';
 import { fetchFolderContent, fetchBreadcrumbs } from '@/lib/api';
+import { useI18n } from '@/components/i18n-context';
 
 interface MoveDialogProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface MoveDialogProps {
 }
 
 export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, itemType }: MoveDialogProps) {
+  const { t } = useI18n();
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folders, setFolders] = useState<any[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<any[]>([]);
@@ -67,7 +69,7 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col h-[60vh]">
         <div className="flex justify-between items-center p-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-800">
-            Di chuyển {itemType === 'file' ? 'Tập tin' : 'Thư mục'}
+            {t(itemType === 'file' ? 'move.titleFile' : 'move.titleFolder')}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
@@ -99,9 +101,9 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
         {/* Danh sách folder */}
         <div className="flex-grow overflow-y-auto p-2">
           {isLoading ? (
-            <div className="text-center py-8 text-gray-500">Đang tải...</div>
+            <div className="text-center py-8 text-gray-500">{t('move.loading')}</div>
           ) : folders.length === 0 ? (
-            <div className="text-center py-8 text-gray-400 italic">Thư mục trống</div>
+            <div className="text-center py-8 text-gray-400 italic">{t('move.empty')}</div>
           ) : (
             folders.map(folder => (
               <div 
@@ -122,14 +124,14 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
             onClick={onClose}
             className="px-4 py-2 text-gray-600 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 transition-colors"
           >
-            Huỷ
+            {t('move.cancel')}
           </button>
           <button
             onClick={handleConfirm}
             disabled={isSubmitting}
             className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
           >
-            {isSubmitting ? 'Đang chuyển...' : 'Chuyển đến đây'}
+            {isSubmitting ? t('move.moving') : t('move.moveHere')}
           </button>
         </div>
       </div>

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-context';
+import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
 import { Users, Settings, Database, ArrowLeft, Trash2, Edit2, Loader2, HardDrive, ShieldAlert, Menu, X, LogOut, User } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -44,6 +45,7 @@ type Tab = 'USERS' | 'SETTINGS' | 'USER_FILES';
 export default function AdminDashboard() {
   const router = useRouter();
   const { user, token, logout } = useAuth();
+  const { t, locale } = useI18n();
   const [activeTab, setActiveTab] = useState<Tab>('USERS');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   
@@ -65,7 +67,7 @@ export default function AdminDashboard() {
       return;
     }
     if (user && user.role !== 'ADMIN') {
-      toast.error('Không có quyền truy cập');
+      toast.error(t('admin.noAccess'));
       router.push('/');
       return;
     }
@@ -78,7 +80,7 @@ export default function AdminDashboard() {
       const data = await fetchUsersApi();
       setUsers(data);
     } catch (err) {
-      toast.error('Lỗi lấy danh sách người dùng');
+      toast.error(t('admin.fetchUsersError'));
     }
   };
 
@@ -90,7 +92,7 @@ export default function AdminDashboard() {
       data.forEach((s: Setting) => { initial[s.key] = s.value; });
       setEditingSettings(initial);
     } catch (err) {
-      toast.error('Lỗi lấy cấu hình hệ thống');
+      toast.error(t('admin.fetchSettingsError'));
     }
   };
 
@@ -99,17 +101,17 @@ export default function AdminDashboard() {
       const data = await fetchUserFilesApi(userId);
       setUserFiles(data);
     } catch (err) {
-      toast.error('Lỗi lấy danh sách tệp của người dùng');
+      toast.error(t('admin.fetchUserFilesError'));
     }
   };
 
   const handleUpdateSetting = async (key: string, value: string) => {
     try {
       await updateSetting(key, value);
-      toast.success('Đã cập nhật cấu hình');
+      toast.success(t('admin.updateSettingSuccess'));
       fetchSettings();
     } catch (err) {
-      toast.error('Lỗi cập nhật cấu hình');
+      toast.error(t('admin.updateSettingError'));
     }
   };
 
@@ -131,34 +133,34 @@ export default function AdminDashboard() {
       await updateUserQuota(editingUser.id, quotaBytes.toString());
       const bwBytes = editForm.bandwidthLimitGB > 0 ? (editForm.bandwidthLimitGB * 1024 * 1024 * 1024).toString() : null;
       await updateUserBandwidth(editingUser.id, bwBytes);
-      toast.success('Đã cập nhật thông tin người dùng');
+      toast.success(t('admin.updateUserSuccess'));
       setEditingUser(null);
       fetchUsers();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi cập nhật');
+      toast.error(err.response?.data?.message || t('admin.updateUserError'));
     }
   };
 
   const handleDeleteUser = async (id: string, username: string) => {
-    if (!confirm(`Bạn có chắc muốn xoá vĩnh viễn user "${username}" và TOÀN BỘ dữ liệu của họ? Hành động này không thể hoàn tác!`)) return;
+    if (!confirm(t('admin.confirmDeleteUser', { username }))) return;
     try {
       await deleteUserApi(id);
-      toast.success('Đã xoá người dùng');
+      toast.success(t('admin.deleteUserSuccess'));
       fetchUsers();
     } catch (err: any) {
-      toast.error(err.response?.data?.message || 'Lỗi xoá người dùng');
+      toast.error(err.response?.data?.message || t('admin.deleteUserError'));
     }
   };
 
   const handleDeleteUserFile = async (fileId: string) => {
     if (!selectedUser) return;
-    if (!confirm('Bạn có chắc muốn xoá vĩnh viễn tệp này của người dùng?')) return;
+    if (!confirm(t('admin.confirmDeleteFile'))) return;
     try {
       await deleteUserFileApi(selectedUser.id, fileId);
-      toast.success('Đã xoá tệp');
+      toast.success(t('admin.deleteFileSuccess'));
       fetchUserFiles(selectedUser.id);
     } catch (err) {
-      toast.error('Lỗi xoá tệp');
+      toast.error(t('admin.deleteFileError'));
     }
   };
 
@@ -193,7 +195,7 @@ export default function AdminDashboard() {
 
         <div className="px-6 mb-4">
           <div className="inline-flex items-center gap-2 bg-amber-500/20 text-amber-500 px-3 py-1.5 rounded-lg text-sm font-bold tracking-wide border border-amber-500/30">
-            <ShieldAlert size={16} /> ADMIN PANEL
+            <ShieldAlert size={16} /> {t('admin.panel')}
           </div>
         </div>
 
@@ -203,14 +205,14 @@ export default function AdminDashboard() {
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${activeTab === 'USERS' || activeTab === 'USER_FILES' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}
           >
             <Users size={20} />
-            Người dùng
+            {t('admin.users')}
           </button>
           <button
             onClick={() => { setActiveTab('SETTINGS'); setIsMobileSidebarOpen(false); }}
             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${activeTab === 'SETTINGS' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}
           >
             <Settings size={20} />
-            Cấu hình Hệ thống
+            {t('admin.systemSettings')}
           </button>
           
           <div className="pt-4 mt-4 border-t border-slate-800"></div>
@@ -219,7 +221,7 @@ export default function AdminDashboard() {
             className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium text-slate-300 hover:bg-white/5 hover:text-white transition-colors"
           >
             <ArrowLeft size={20} />
-            Về trang chủ Drive
+            {t('admin.backHome')}
           </button>
         </nav>
 
@@ -231,7 +233,7 @@ export default function AdminDashboard() {
             <div className="overflow-hidden">
               <p className="font-medium text-white truncate text-sm">{user?.username}</p>
               <button onClick={handleLogout} className="text-xs text-slate-400 hover:text-white transition-colors flex items-center gap-1 mt-1">
-                <LogOut size={12} /> Đăng xuất
+                <LogOut size={12} /> {t('admin.logout')}
               </button>
             </div>
           </div>
@@ -251,14 +253,14 @@ export default function AdminDashboard() {
         <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8">
         {activeTab === 'SETTINGS' && (
           <div className="max-w-4xl mx-auto">
-            <h2 className="text-2xl font-bold mb-6 text-gray-800">Cấu hình hệ thống (Global Settings)</h2>
+            <h2 className="text-2xl font-bold mb-6 text-gray-800">{t('admin.settingsTitle')}</h2>
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="bg-gray-50 text-gray-600 text-sm">
-                    <th className="p-4 font-medium border-b">Key</th>
-                    <th className="p-4 font-medium border-b">Value (Bytes)</th>
-                    <th className="p-4 font-medium border-b text-right">Hành động</th>
+                    <th className="p-4 font-medium border-b">{t('admin.key')}</th>
+                    <th className="p-4 font-medium border-b">{t('admin.valueBytes')}</th>
+                    <th className="p-4 font-medium border-b text-right">{t('admin.action')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -284,13 +286,13 @@ export default function AdminDashboard() {
                           disabled={editingSettings[setting.key] === setting.value}
                           className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:bg-gray-100 disabled:text-gray-400 rounded-md text-sm font-medium transition-colors"
                         >
-                          Cập nhật
+                          {t('admin.update')}
                         </button>
                       </td>
                     </tr>
                   ))}
                   {settings.length === 0 && (
-                    <tr><td colSpan={3} className="p-4 text-center text-gray-500">Đang tải cấu hình...</td></tr>
+                    <tr><td colSpan={3} className="p-4 text-center text-gray-500">{t('admin.loadingSettings')}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -300,17 +302,17 @@ export default function AdminDashboard() {
 
         {activeTab === 'USERS' && !selectedUser && (
           <div className="max-w-6xl mx-auto">
-            <h2 className="text-2xl font-bold mb-6 text-gray-800">Danh sách Người dùng</h2>
+            <h2 className="text-2xl font-bold mb-6 text-gray-800">{t('admin.userList')}</h2>
             <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[800px]">
                 <thead>
                   <tr className="bg-gray-50 text-gray-600 text-sm">
-                    <th className="p-4 font-medium border-b">Tài khoản</th>
-                    <th className="p-4 font-medium border-b">Vai trò</th>
-                    <th className="p-4 font-medium border-b">Đã dùng / Dung lượng</th>
-                    <th className="p-4 font-medium border-b">Băng thông hôm nay</th>
-                    <th className="p-4 font-medium border-b">Ngày tạo</th>
-                    <th className="p-4 font-medium border-b text-right">Tuỳ chọn</th>
+                    <th className="p-4 font-medium border-b">{t('admin.account')}</th>
+                    <th className="p-4 font-medium border-b">{t('admin.role')}</th>
+                    <th className="p-4 font-medium border-b">{t('admin.usedQuota')}</th>
+                    <th className="p-4 font-medium border-b">{t('admin.bandwidthToday')}</th>
+                    <th className="p-4 font-medium border-b">{t('admin.createdDate')}</th>
+                    <th className="p-4 font-medium border-b text-right">{t('admin.options')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -329,9 +331,9 @@ export default function AdminDashboard() {
                         <span className="text-gray-500 text-xs">{formatBytes(u.usedSpace)} / {formatBytes(u.quota)}</span>
                       </td>
                       <td className="p-4 text-sm text-gray-600">
-                        {formatBytes(u.dailyBandwidthUsed)} / {u.dailyBandwidthLimit === null ? 'Không GH' : formatBytes(u.dailyBandwidthLimit)}
+                        {formatBytes(u.dailyBandwidthUsed)} / {u.dailyBandwidthLimit === null ? t('admin.noLimit') : formatBytes(u.dailyBandwidthLimit)}
                       </td>
-                      <td className="p-4 text-sm text-gray-500">{new Date(u.createdAt).toLocaleDateString('vi-VN')}</td>
+                      <td className="p-4 text-sm text-gray-500">{new Date(u.createdAt).toLocaleDateString(LOCALE_DATE_MAP[locale])}</td>
                       <td className="p-4 text-right space-x-2 whitespace-nowrap">
                         <button 
                           onClick={() => {
@@ -341,7 +343,7 @@ export default function AdminDashboard() {
                           }}
                           className="px-3 py-1.5 bg-gray-100 text-gray-700 hover:bg-gray-200 rounded-md text-sm font-medium transition-colors"
                         >
-                          Xem tệp
+                          {t('admin.viewFiles')}
                         </button>
                         <button 
                           onClick={() => {
@@ -354,21 +356,21 @@ export default function AdminDashboard() {
                           }}
                           className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-md text-sm font-medium transition-colors"
                         >
-                          Sửa
+                          {t('admin.edit')}
                         </button>
                         <button 
                           onClick={() => handleDeleteUser(u.id, u.username)}
                           disabled={user.id === u.id}
                           className="px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
                         >
-                          Xoá
+                          {t('admin.delete')}
                         </button>
                       </td>
                     </tr>
                   ))}
                   {users.length === 0 && (
                     <tr><td colSpan={6} className="p-8 text-center text-gray-500">
-                      <LoadingSpinner /> Đang tải danh sách người dùng...
+                      <LoadingSpinner /> {t('admin.loadingUsers')}
                     </td></tr>
                   )}
                 </tbody>
@@ -387,8 +389,8 @@ export default function AdminDashboard() {
                 <ArrowLeft size={20} />
               </button>
               <div>
-                <h2 className="text-2xl font-bold text-gray-800">Tệp của {selectedUser.username}</h2>
-                <p className="text-gray-500 text-sm">Chỉ hiển thị siêu dữ liệu, quản trị viên không có quyền tải xuống nội dung để đảm bảo quyền riêng tư.</p>
+                <h2 className="text-2xl font-bold text-gray-800">{t('admin.userFiles', { username: selectedUser.username })}</h2>
+                <p className="text-gray-500 text-sm">{t('admin.userFilesInfo')}</p>
               </div>
             </div>
             
@@ -396,11 +398,11 @@ export default function AdminDashboard() {
               <table className="w-full text-left border-collapse min-w-[600px]">
                 <thead>
                   <tr className="bg-gray-50 text-gray-600 text-sm">
-                    <th className="p-4 font-medium border-b">Tên tệp</th>
-                    <th className="p-4 font-medium border-b">Kích thước</th>
-                    <th className="p-4 font-medium border-b">Định dạng</th>
-                    <th className="p-4 font-medium border-b">Ngày tải lên</th>
-                    <th className="p-4 font-medium border-b text-right">Tuỳ chọn</th>
+                    <th className="p-4 font-medium border-b">{t('admin.fileName')}</th>
+                    <th className="p-4 font-medium border-b">{t('admin.fileSize')}</th>
+                    <th className="p-4 font-medium border-b">{t('admin.format')}</th>
+                    <th className="p-4 font-medium border-b">{t('admin.uploadDate')}</th>
+                    <th className="p-4 font-medium border-b text-right">{t('admin.options')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
@@ -409,16 +411,16 @@ export default function AdminDashboard() {
                       <td className="p-4 font-medium text-gray-800 flex items-center gap-2">
                         <HardDrive size={18} className="text-blue-500" />
                         <span className="truncate max-w-[200px]">{file.filename}</span>
-                        {file.isEncrypted && <span className="bg-green-100 text-green-700 text-[10px] px-1.5 py-0.5 rounded uppercase font-bold">Mã hoá</span>}
+                        {file.isEncrypted && <span className="bg-green-100 text-green-700 text-[10px] px-1.5 py-0.5 rounded uppercase font-bold">{t('admin.encrypted')}</span>}
                       </td>
                       <td className="p-4 text-sm text-gray-600">{formatBytes(file.size)}</td>
                       <td className="p-4 text-sm text-gray-500">{file.mimeType}</td>
-                      <td className="p-4 text-sm text-gray-500">{new Date(file.createdAt).toLocaleString('vi-VN')}</td>
+                      <td className="p-4 text-sm text-gray-500">{new Date(file.createdAt).toLocaleString(LOCALE_DATE_MAP[locale])}</td>
                       <td className="p-4 text-right">
                         <button
                           onClick={() => handleDeleteUserFile(file.id)}
                           className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors inline-block"
-                          title="Xoá tệp này vĩnh viễn"
+                          title={t('admin.deletePermanent')}
                         >
                           <Trash2 size={18} />
                         </button>
@@ -426,7 +428,7 @@ export default function AdminDashboard() {
                     </tr>
                   ))}
                   {userFiles.length === 0 && (
-                    <tr><td colSpan={5} className="p-8 text-center text-gray-500 italic">Người dùng này không có tệp nào ở thư mục gốc, hoặc đã bị xoá.</td></tr>
+                    <tr><td colSpan={5} className="p-8 text-center text-gray-500 italic">{t('admin.noFiles')}</td></tr>
                   )}
                 </tbody>
               </table>
@@ -441,26 +443,26 @@ export default function AdminDashboard() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden relative">
             <div className="p-6 border-b border-gray-100">
-              <h3 className="text-lg font-bold text-gray-800">Chỉnh sửa User: {editingUser.username}</h3>
+              <h3 className="text-lg font-bold text-gray-800">{t('admin.editUser', { username: editingUser.username })}</h3>
               <button className="absolute top-6 right-6 text-gray-400 hover:text-gray-600" onClick={() => setEditingUser(null)}><X size={20}/></button>
             </div>
             <form onSubmit={handleEditUserSubmit} className="p-6 space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Vai trò</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.roleLabel')}</label>
                 <select 
                   value={editForm.role}
                   onChange={(e) => setEditForm({ ...editForm, role: e.target.value })}
                   disabled={user?.id === editingUser.id}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring focus:ring-blue-100 outline-none disabled:bg-gray-100"
                 >
-                  <option value="USER">Người dùng (USER)</option>
-                  <option value="ADMIN">Quản trị viên (ADMIN)</option>
+                  <option value="USER">{t('admin.userRole')}</option>
+                  <option value="ADMIN">{t('admin.adminRole')}</option>
                 </select>
-                {user?.id === editingUser.id && <p className="text-xs text-orange-500 mt-1">Bạn không thể tự hạ quyền của chính mình</p>}
+                {user?.id === editingUser.id && <p className="text-xs text-orange-500 mt-1">{t('admin.cannotDemoteSelf')}</p>}
               </div>
               
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Dung lượng tối đa (GB)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.maxQuota')}</label>
                 <input 
                   type="number" min="1" step="0.1"
                   value={editForm.quotaGB}
@@ -471,15 +473,15 @@ export default function AdminDashboard() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Giới hạn Băng thông tải/ngày (GB)</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.bandwidthLimit')}</label>
                 <input 
                   type="number" min="0" step="0.1"
                   value={editForm.bandwidthLimitGB}
                   onChange={(e) => setEditForm({ ...editForm, bandwidthLimitGB: parseFloat(e.target.value) })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring focus:ring-blue-100 outline-none"
-                  placeholder="0 = Không giới hạn"
+                  placeholder={t('admin.bandwidthNoLimit')}
                 />
-                <p className="text-xs text-gray-500 mt-1">Cài bằng 0 để bỏ giới hạn</p>
+                <p className="text-xs text-gray-500 mt-1">{t('admin.zeroNoLimit')}</p>
               </div>
 
               <div className="flex justify-end gap-3 mt-6">
@@ -488,13 +490,13 @@ export default function AdminDashboard() {
                   onClick={() => setEditingUser(null)}
                   className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors"
                 >
-                  Huỷ
+                  {t('admin.cancel')}
                 </button>
                 <button
                   type="submit"
                   className="px-4 py-2 text-white bg-blue-600 hover:bg-blue-700 rounded-lg font-medium transition-colors"
                 >
-                  Lưu thay đổi
+                  {t('admin.save')}
                 </button>
               </div>
             </form>

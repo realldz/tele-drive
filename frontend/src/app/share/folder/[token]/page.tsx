@@ -4,12 +4,15 @@ import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import axios from 'axios';
 import { Download, FileText, AlertCircle, Folder, ChevronRight, Home } from 'lucide-react';
+import { useI18n } from '@/components/i18n-context';
+import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 
 const API_URL = 'http://localhost:3001';
 
 export default function SharedFolderPage() {
   const params = useParams();
   const token = params.token as string;
+  const { t } = useI18n();
 
   const [rootFolder, setRootFolder] = useState<any>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
@@ -35,7 +38,7 @@ export default function SharedFolderPage() {
       setFiles(res.data.files || []);
       setBreadcrumbs(res.data.breadcrumbs || []);
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Thư mục không tồn tại hoặc đã ngừng chia sẻ');
+      setError(err.response?.data?.message || t('shareFolder.folderNotFound'));
     } finally {
       setIsLoading(false);
     }
@@ -61,9 +64,9 @@ export default function SharedFolderPage() {
       window.URL.revokeObjectURL(url);
     } catch (err: any) {
       if (err?.response?.status === 429) {
-        alert('Tập tin này đã vượt quá giới hạn băng thông hôm nay.');
+        alert(t('shareFolder.bandwidthExceeded'));
       } else {
-        alert('Lỗi tải tập tin');
+        alert(t('shareFolder.downloadError'));
       }
     } finally {
       setDownloadingId(null);
@@ -80,11 +83,12 @@ export default function SharedFolderPage() {
   if (error) {
     return (
       <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
+        <GuestLanguageSwitcher />
         <div className="flex flex-col items-center bg-white p-8 rounded-2xl shadow-sm">
           <div className="w-16 h-16 bg-red-100 text-red-500 rounded-full flex items-center justify-center mb-4">
             <AlertCircle size={32} />
           </div>
-          <h2 className="text-xl font-semibold text-gray-800 mb-2">Không thể truy cập</h2>
+          <h2 className="text-xl font-semibold text-gray-800 mb-2">{t('shareFolder.cannotAccess')}</h2>
           <p className="text-gray-500">{error}</p>
         </div>
       </div>
@@ -93,12 +97,13 @@ export default function SharedFolderPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+      <GuestLanguageSwitcher />
       <div className="max-w-5xl mx-auto bg-white shadow-sm rounded-2xl overflow-hidden border border-gray-100">
         <div className="bg-slate-900 justify-between items-center text-white p-6 flex">
           <div>
             <h1 className="text-xl font-bold tracking-tight">Tele-Drive</h1>
             <p className="text-slate-400 text-sm mt-1">
-              Thư mục chia sẻ bởi: <span className="text-slate-200">{rootFolder?.user?.username || 'Người dùng'}</span>
+              {t('shareFolder.sharedBy')}: <span className="text-slate-200">{rootFolder?.user?.username || t('shareFolder.user')}</span>
             </p>
           </div>
         </div>
@@ -110,7 +115,7 @@ export default function SharedFolderPage() {
               onClick={() => setCurrentFolderId(undefined)}
               className="hover:text-blue-600 transition-colors flex items-center gap-1 font-medium whitespace-nowrap"
             >
-              <Home size={16} /> Trang chủ chia sẻ
+              <Home size={16} /> {t('shareFolder.shareHome')}
             </button>
             
             {breadcrumbs.map((crumb, index) => (
@@ -129,11 +134,11 @@ export default function SharedFolderPage() {
           </div>
 
           {isLoading ? (
-            <div className="text-center py-12 text-gray-500">Đang tải dữ liệu...</div>
+            <div className="text-center py-12 text-gray-500">{t('shareFolder.loading')}</div>
           ) : folders.length === 0 && files.length === 0 ? (
             <div className="text-center py-16 bg-gray-50 rounded-xl border border-dashed border-gray-200">
               <Folder size={48} className="mx-auto text-gray-300 mb-3" />
-              <p className="text-gray-500">Thư mục này trống</p>
+              <p className="text-gray-500">{t('shareFolder.emptyFolder')}</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -174,7 +179,7 @@ export default function SharedFolderPage() {
                     onClick={() => handleDownload(file)}
                     disabled={downloadingId === file.id}
                     className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-600 hover:text-white rounded-lg transition-colors flex-shrink-0 disabled:opacity-50"
-                    title="Tải xuống"
+                    title={t('shareFolder.download')}
                   >
                     <Download size={18} />
                   </button>

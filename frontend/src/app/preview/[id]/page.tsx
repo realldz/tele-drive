@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-context';
+import { useI18n } from '@/components/i18n-context';
 import axios from 'axios';
 import { FileIcon, Download, ArrowLeft, Loader2, FileText, Film, Image as ImageIcon, Music } from 'lucide-react';
 
@@ -20,7 +21,8 @@ export default function FilePreviewPage() {
   const fileId = params.id as string;
   const router = useRouter();
   const { token, isLoading: authLoading } = useAuth();
-  
+  const { t } = useI18n();
+
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -59,13 +61,13 @@ export default function FilePreviewPage() {
       <div className="flex h-screen flex-col items-center justify-center bg-gray-50 p-4">
         <div className="rounded-lg bg-white p-8 text-center shadow-md">
           <FileIcon className="mx-auto mb-4 h-16 w-16 text-red-400" />
-          <h2 className="mb-2 text-xl font-semibold">Error Loading Preview</h2>
-          <p className="mb-6 text-gray-600">{error || 'File not found'}</p>
+          <h2 className="mb-2 text-xl font-semibold">{t('preview.errorTitle')}</h2>
+          <p className="mb-6 text-gray-600">{error || t('preview.fileNotFound')}</p>
           <button
             onClick={() => router.back()}
             className="rounded bg-blue-500 px-4 py-2 font-semibold text-white hover:bg-blue-600 transition-colors"
           >
-            Go Back
+            {t('preview.goBack')}
           </button>
         </div>
       </div>
@@ -143,15 +145,15 @@ export default function FilePreviewPage() {
     return (
       <div className="flex h-full flex-col items-center justify-center bg-gray-50">
         <FileIcon className="mb-4 h-24 w-24 text-gray-400" />
-        <h3 className="mb-2 text-xl font-medium text-gray-800">Preview Not Available</h3>
-        <p className="mb-6 text-gray-500">This file type ({mimeType}) cannot be previewed in the browser.</p>
+        <h3 className="mb-2 text-xl font-medium text-gray-800">{t('preview.notAvailable')}</h3>
+        <p className="mb-6 text-gray-500">{t('preview.cannotPreview', { mimeType })}</p>
         <a
           href={downloadUrl}
           download={fileInfo.filename}
           className="flex items-center gap-2 rounded bg-blue-500 px-6 py-3 font-semibold text-white shadow hover:bg-blue-600 transition-colors"
         >
           <Download className="h-5 w-5" />
-          Download File
+          {t('preview.downloadFile')}
         </a>
       </div>
     );
@@ -173,7 +175,7 @@ export default function FilePreviewPage() {
           <button
             onClick={() => router.back()}
             className="rounded-full p-2 text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-            title="Go Back"
+            title={t('preview.goBack')}
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
@@ -196,7 +198,7 @@ export default function FilePreviewPage() {
             className="flex items-center gap-2 rounded-md bg-transparent px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
           >
             <Download className="h-4 w-4" />
-            <span className="hidden sm:inline-block">Download</span>
+            <span className="hidden sm:inline-block">{t('preview.download')}</span>
           </a>
         </div>
       </header>

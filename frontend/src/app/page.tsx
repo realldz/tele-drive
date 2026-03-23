@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { Folder, FileText, Download, Trash2, FolderPlus, MoreVertical, Loader2, Search, LayoutGrid, List } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-context';
+import { useI18n } from '@/components/i18n-context';
 import Sidebar from '@/components/sidebar';
 import Breadcrumbs from '@/components/breadcrumbs';
 import ContextMenu from '@/components/context-menu';
@@ -21,6 +22,7 @@ import {
 export default function Dashboard() {
   const { user, token, isLoading, logout } = useAuth();
   const router = useRouter();
+  const { t } = useI18n();
 
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [folders, setFolders] = useState<any[]>([]);
@@ -122,7 +124,7 @@ export default function Dashboard() {
       setShowNewFolder(false);
       fetchContent();
     } catch (error: any) {
-      alert(error?.response?.data?.message || 'Error creating folder');
+      alert(error?.response?.data?.message || t('dashboard.createFolderError'));
     } finally {
       setIsCreatingFolder(false);
     }
@@ -134,29 +136,29 @@ export default function Dashboard() {
       await deleteFolder(id);
       fetchContent();
       toast.success(
-        (t) => (
+        (toastInstance) => (
           <span className="flex items-center gap-2">
-            Đã xoá thư mục
+            {t('dashboard.deletedFolder')}
             <button
               onClick={async () => {
-                toast.dismiss(t.id);
+                toast.dismiss(toastInstance.id);
                 try {
                   await restoreFolder(id);
                   fetchContent();
                 } catch(err) {
-                  alert('Lỗi hoàn tác');
+                  alert(t('dashboard.undoError'));
                 }
               }}
               className="text-blue-500 font-semibold text-sm hover:underline ml-2 cursor-pointer"
             >
-              Hoàn tác
+              {t('dashboard.undo')}
             </button>
           </span>
         ),
         { duration: 5000 }
       );
     } catch (error: any) {
-      alert(error?.response?.data?.message || 'Error moving folder to trash');
+      alert(error?.response?.data?.message || t('dashboard.deleteStuckError'));
     }
   };
 
@@ -166,29 +168,29 @@ export default function Dashboard() {
       await deleteFile(id);
       fetchContent();
       toast.success(
-        (t) => (
+        (toastInstance) => (
           <span className="flex items-center gap-2">
-            Đã xoá tập tin
+            {t('dashboard.deletedFile')}
             <button
               onClick={async () => {
-                toast.dismiss(t.id);
+                toast.dismiss(toastInstance.id);
                 try {
                   await restoreFile(id);
                   fetchContent();
                 } catch(err) {
-                  alert('Lỗi hoàn tác');
+                  alert(t('dashboard.undoError'));
                 }
               }}
               className="text-blue-500 font-semibold text-sm hover:underline ml-2 cursor-pointer"
             >
-              Hoàn tác
+              {t('dashboard.undo')}
             </button>
           </span>
         ),
         { duration: 5000 }
       );
     } catch (error: any) {
-      alert(error?.response?.data?.message || 'Error moving file to trash');
+      alert(error?.response?.data?.message || t('dashboard.deleteStuckError'));
     }
   };
 
@@ -198,7 +200,7 @@ export default function Dashboard() {
       await abortUpload(id);
       fetchContent();
     } catch (error: any) {
-      alert(error?.response?.data?.message || 'Lỗi xoá file đang kẹt');
+      alert(error?.response?.data?.message || t('dashboard.deleteStuckError'));
     }
   };
 
@@ -221,9 +223,9 @@ export default function Dashboard() {
       link.remove();
     } catch (error: any) {
       if (error?.response?.status === 429) {
-        alert('Đã vượt giới hạn băng thông hàng ngày. Vui lòng thử lại vào ngày mai.');
+        alert(t('dashboard.bandwidthExceeded'));
       } else {
-        alert(error?.response?.data?.message || 'Lỗi tải xuống file');
+        alert(error?.response?.data?.message || t('dashboard.downloadError'));
       }
     } finally {
       setDownloadingFiles((prev) => {
@@ -267,7 +269,7 @@ export default function Dashboard() {
       await moveItem(draggedItem.type, draggedItem.id, targetFolderId);
       fetchContent();
     } catch (error: any) {
-      alert(error.response?.data?.message || 'Lỗi di chuyển');
+      alert(error.response?.data?.message || t('dashboard.moveError'));
     }
     setDraggedItem(null);
   };
@@ -283,7 +285,7 @@ export default function Dashboard() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-500">Loading...</div>
+        <div className="text-gray-500">{t('dashboard.loading')}</div>
       </div>
     );
   }
@@ -306,7 +308,7 @@ export default function Dashboard() {
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
               <input
                 type="text"
-                placeholder="Tìm kiếm tệp và thư mục..."
+                placeholder={t('dashboard.searchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 focus:bg-white focus:border-blue-500 focus:ring-4 focus:ring-blue-50 rounded-xl outline-none transition-all text-sm font-medium"
@@ -318,20 +320,20 @@ export default function Dashboard() {
               onClick={() => setShowNewFolder(!showNewFolder)}
               className="flex items-center gap-2 bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg font-medium transition-colors text-white text-sm shadow-sm"
             >
-              <FolderPlus size={16} /> <span className="hidden sm:inline">Thư mục mới</span>
+              <FolderPlus size={16} /> <span className="hidden sm:inline">{t('dashboard.newFolder')}</span>
             </button>
             <div className="hidden sm:flex bg-gray-50 p-1 rounded-lg border border-gray-200">
               <button 
                 onClick={() => setViewMode('grid')}
                 className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-                title="Dạng lưới"
+                title={t('dashboard.gridView')}
               >
                 <LayoutGrid size={18} />
               </button>
               <button 
                 onClick={() => setViewMode('list')}
                 className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
-                title="Dạng danh sách"
+                title={t('dashboard.listView')}
               >
                 <List size={18} />
               </button>
@@ -359,7 +361,7 @@ export default function Dashboard() {
               <div className="flex gap-2 p-4 mb-6 bg-blue-50/50 border border-blue-100 rounded-xl shadow-sm">
                 <input 
                   type="text" 
-                  placeholder="Tên thư mục mới..." 
+                  placeholder={t('dashboard.folderNamePlaceholder')} 
                   className="border border-blue-200 p-2.5 rounded-lg flex-grow outline-none focus:ring-2 focus:ring-blue-500"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
@@ -367,9 +369,9 @@ export default function Dashboard() {
                   autoFocus
                 />
                 <button onClick={handleCreateFolder} disabled={isCreatingFolder} className="bg-blue-600 text-white px-6 rounded-lg hover:bg-blue-700 font-medium transition-colors shadow-sm disabled:opacity-50">
-                  {isCreatingFolder ? 'Đang tạo...' : 'Tạo'}
+                  {isCreatingFolder ? t('dashboard.creating') : t('dashboard.create')}
                 </button>
-                <button onClick={() => setShowNewFolder(false)} className="bg-white border border-gray-200 text-gray-700 px-6 rounded-lg hover:bg-gray-50 font-medium transition-colors">Huỷ</button>
+                <button onClick={() => setShowNewFolder(false)} className="bg-white border border-gray-200 text-gray-700 px-6 rounded-lg hover:bg-gray-50 font-medium transition-colors">{t('common.cancel')}</button>
               </div>
             )}
 
@@ -379,9 +381,9 @@ export default function Dashboard() {
                   <Folder className="text-gray-300" size={32} />
                 </div>
                 {searchQuery ? (
-                  <p className="text-gray-500 font-medium">Không tìm thấy nội dung nào phù hợp.</p>
+                  <p className="text-gray-500 font-medium">{t('dashboard.noResults')}</p>
                 ) : (
-                  <p className="text-gray-500 font-medium">Thư mục trống. Hãy kéo thả file hoặc tạo thư mục mới!</p>
+                  <p className="text-gray-500 font-medium">{t('dashboard.emptyFolder')}</p>
                 )}
               </div>
             ) : (
@@ -389,7 +391,7 @@ export default function Dashboard() {
                 {/* Folders Section */}
                 {filteredFolders.length > 0 && (
                   <div className="mb-8">
-                    <h2 className="text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider">Thư mục</h2>
+                    <h2 className="text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider">{t('dashboard.folders')}</h2>
                     
                     {viewMode === 'grid' ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -431,8 +433,8 @@ export default function Dashboard() {
                         <table className="w-full text-left border-collapse">
                           <thead>
                             <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
-                              <th className="p-4 font-semibold w-full">Tên</th>
-                              <th className="p-4 font-semibold text-right whitespace-nowrap">Tuỳ chọn</th>
+                              <th className="p-4 font-semibold w-full">{t('dashboard.name')}</th>
+                              <th className="p-4 font-semibold text-right whitespace-nowrap">{t('dashboard.options')}</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
@@ -476,7 +478,7 @@ export default function Dashboard() {
                 {/* Files Section */}
                 {filteredFiles.length > 0 && (
                   <div>
-                    <h2 className="text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider">Tệp tin</h2>
+                    <h2 className="text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider">{t('dashboard.files')}</h2>
                     
                     {viewMode === 'grid' ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
@@ -499,7 +501,7 @@ export default function Dashboard() {
                                 <span className="text-xs text-gray-500 mt-1">
                                   {file.status === 'uploading' ? (
                                     <span className="text-blue-500 font-medium flex items-center gap-1">
-                                      <Loader2 size={12} className="animate-spin" /> Xử lí...
+                                      <Loader2 size={12} className="animate-spin" /> {t('dashboard.processing')}
                                     </span>
                                   ) : formatSize(Number(file.size))}
                                 </span>
@@ -511,7 +513,7 @@ export default function Dashboard() {
                                   onClick={(e) => handleDeleteStuckFile(e, file.id)}
                                   className="w-full p-2 text-red-500 bg-red-50 rounded-lg hover:bg-red-100 transition-colors flex items-center justify-center gap-1 text-sm font-medium"
                                 >
-                                  <Trash2 size={14} /> Kẹt? Xoá ngay
+                                  <Trash2 size={14} /> {t('dashboard.stuckDelete')}
                                 </button>
                               ) : (
                                 <>
@@ -533,9 +535,9 @@ export default function Dashboard() {
                                     className={`flex-1 flex items-center justify-center gap-1 border border-gray-100 bg-gray-50 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-100 text-gray-700 p-2 rounded-lg font-semibold text-sm transition-colors ${downloadingFiles.has(file.id) ? 'opacity-50 pointer-events-none' : ''}`}
                                   >
                                     {downloadingFiles.has(file.id) ? (
-                                      <><Loader2 size={14} className="animate-spin" /> Đang tải...</>
+                                      <><Loader2 size={14} className="animate-spin" /> {t('dashboard.downloading')}</>
                                     ) : (
-                                      <><Download size={14} /> Tải về</>
+                                      <><Download size={14} /> {t('dashboard.download')}</>
                                     )}
                                   </button>
                                 </>
@@ -549,9 +551,9 @@ export default function Dashboard() {
                         <table className="w-full text-left border-collapse">
                           <thead>
                             <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
-                              <th className="p-4 font-semibold">Tên tập tin</th>
-                              <th className="p-4 font-semibold hidden sm:table-cell">Kích thước</th>
-                              <th className="p-4 font-semibold text-right">Tuỳ chọn</th>
+                              <th className="p-4 font-semibold">{t('dashboard.fileName')}</th>
+                              <th className="p-4 font-semibold hidden sm:table-cell">{t('dashboard.size')}</th>
+                              <th className="p-4 font-semibold text-right">{t('dashboard.options')}</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
@@ -570,7 +572,7 @@ export default function Dashboard() {
                                       <span className="font-medium text-gray-800 block truncate max-w-[150px] sm:max-w-xs md:max-w-sm">{file.filename}</span>
                                       {file.status === 'uploading' && (
                                         <span className="text-blue-500 text-xs font-medium flex items-center gap-1 mt-0.5">
-                                          <Loader2 size={12} className="animate-spin" /> Đang xử lí...
+                                          <Loader2 size={12} className="animate-spin" /> {t('dashboard.listProcessing')}
                                         </span>
                                       )}
                                       {/* Show size on mobile under the name */}
@@ -626,7 +628,7 @@ export default function Dashboard() {
 
             {/* Upload Zone */}
             <div className="mt-8 pt-6 border-t border-gray-100">
-              <h3 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider">Tải lên dữ liệu mới</h3>
+              <h3 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider">{t('dashboard.uploadTitle')}</h3>
               <UploadZone folderId={currentFolderId} onUploadSuccess={() => { fetchContent(); }} />
             </div>
 
@@ -664,7 +666,7 @@ export default function Dashboard() {
             setActiveDialog('none');
             fetchContent();
           } catch (error) {
-            alert('Lỗi đổi tên');
+            alert(t('dashboard.renameError'));
           }
         }}
       />
@@ -680,7 +682,7 @@ export default function Dashboard() {
             setActiveDialog('none');
             fetchContent();
           } catch (error: any) {
-            alert(error.response?.data?.message || 'Lỗi di chuyển');
+            alert(error.response?.data?.message || t('dashboard.moveError'));
           }
         }}
       />

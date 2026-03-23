@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { FileText, Folder, Trash2, RotateCcw, Clock } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-context';
+import { useI18n } from '@/components/i18n-context';
 import Sidebar from '@/components/sidebar';
 import {
   formatSize, fetchTrash as fetchTrashApi,
@@ -12,6 +13,7 @@ import {
 
 export default function TrashPage() {
   const { token, isLoading, logout } = useAuth();
+  const { t } = useI18n();
   const router = useRouter();
 
   const [trashedFiles, setTrashedFiles] = useState<any[]>([]);
@@ -51,7 +53,7 @@ export default function TrashPage() {
   };
 
   const handlePermanentDeleteFile = async (id: string) => {
-    if (!confirm('Xoá vĩnh viễn file này? Hành động này không thể hoàn tác.')) return;
+    if (!confirm(t('trash.confirmDeleteFile'))) return;
     try {
       await permanentDeleteFile(id);
       fetchTrash();
@@ -70,7 +72,7 @@ export default function TrashPage() {
   };
 
   const handlePermanentDeleteFolder = async (id: string) => {
-    if (!confirm('Xoá vĩnh viễn thư mục này và toàn bộ nội dung? Hành động này không thể hoàn tác.')) return;
+    if (!confirm(t('trash.confirmDeleteFolder'))) return;
     try {
       await permanentDeleteFolder(id);
       fetchTrash();
@@ -82,7 +84,7 @@ export default function TrashPage() {
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-gray-500">Loading...</div>
+        <div className="text-gray-500">{t('dashboard.loading')}</div>
       </div>
     );
   }
@@ -112,11 +114,11 @@ export default function TrashPage() {
           <div className="flex items-center gap-4">
             <h2 className="text-xl font-bold flex items-center gap-2 text-gray-800">
               <Trash2 className="text-red-500" size={24} />
-              Thùng rác
+              {t('trash.title')}
             </h2>
           </div>
           <div className="text-sm font-medium text-gray-500 bg-gray-100 px-3 py-1.5 rounded-full">
-            {totalItems} mục
+            {t('trash.items', { count: String(totalItems) })}
           </div>
         </header>
 
@@ -125,7 +127,7 @@ export default function TrashPage() {
           {/* Info banner */}
           <div className="bg-amber-50 px-6 py-3 border-b border-amber-200 text-sm text-amber-800 flex items-center gap-2">
             <Clock size={16} />
-            Các mục trong thùng rác sẽ bị xoá vĩnh viễn sau 7 ngày.
+            {t('trash.infoBanner')}
           </div>
 
           <div className="p-6">
@@ -134,14 +136,14 @@ export default function TrashPage() {
                 <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border border-gray-100">
                   <Trash2 className="text-gray-300" size={32} />
                 </div>
-                <p className="text-gray-500 font-medium tracking-wide">Thùng rác đang trống</p>
+                <p className="text-gray-500 font-medium tracking-wide">{t('trash.empty')}</p>
               </div>
             ) : (
               <div className="space-y-8">
                 {/* Folders */}
                 {trashedFolders.length > 0 && (
                   <div>
-                    <h3 className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">Thư mục</h3>
+                    <h3 className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">{t('trash.folders')}</h3>
                     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                       <table className="w-full text-left border-collapse">
                         <tbody className="divide-y divide-gray-100">
@@ -152,7 +154,7 @@ export default function TrashPage() {
                                 <div>
                                   <span className="font-medium text-gray-800 block">{folder.name}</span>
                                   <span className="text-xs text-red-500 mt-0.5 block flex items-center gap-1">
-                                    <Clock size={10} /> {getDaysRemaining(folder.deletedAt)} ngày còn lại
+                                    <Clock size={10} /> {t('trash.daysRemaining', { days: String(getDaysRemaining(folder.deletedAt)) })}
                                   </span>
                                 </div>
                               </td>
@@ -162,13 +164,13 @@ export default function TrashPage() {
                                     onClick={() => handleRestoreFolder(folder.id)}
                                     className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium"
                                   >
-                                    <RotateCcw size={16} /> <span className="hidden sm:inline">Khôi phục</span>
+                                    <RotateCcw size={16} /> <span className="hidden sm:inline">{t('trash.restore')}</span>
                                   </button>
                                   <button
                                     onClick={() => handlePermanentDeleteFolder(folder.id)}
                                     className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium"
                                   >
-                                    <Trash2 size={16} /> <span className="hidden sm:inline">Xoá vĩnh viễn</span>
+                                    <Trash2 size={16} /> <span className="hidden sm:inline">{t('trash.permanentDelete')}</span>
                                   </button>
                                 </div>
                               </td>
@@ -183,7 +185,7 @@ export default function TrashPage() {
                 {/* Files */}
                 {trashedFiles.length > 0 && (
                   <div>
-                    <h3 className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">Tập tin</h3>
+                    <h3 className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">{t('trash.files')}</h3>
                     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                       <table className="w-full text-left border-collapse">
                         <tbody className="divide-y divide-gray-100">
@@ -196,7 +198,7 @@ export default function TrashPage() {
                                   <div className="text-xs mt-0.5 flex flex-wrap items-center gap-2">
                                     <span className="text-gray-500 font-medium bg-gray-100 px-1.5 py-0.5 rounded">{formatSize(Number(file.size))}</span>
                                     <span className="text-red-500 flex items-center gap-1">
-                                      <Clock size={10} /> {getDaysRemaining(file.deletedAt)} ngày còn lại
+                                      <Clock size={10} /> {t('trash.daysRemaining', { days: String(getDaysRemaining(file.deletedAt)) })}
                                     </span>
                                   </div>
                                 </div>
@@ -207,13 +209,13 @@ export default function TrashPage() {
                                     onClick={() => handleRestoreFile(file.id)}
                                     className="p-2 text-green-600 bg-green-50 hover:bg-green-100 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium"
                                   >
-                                    <RotateCcw size={16} /> <span className="hidden sm:inline">Khôi phục</span>
+                                    <RotateCcw size={16} /> <span className="hidden sm:inline">{t('trash.restore')}</span>
                                   </button>
                                   <button
                                     onClick={() => handlePermanentDeleteFile(file.id)}
                                     className="p-2 text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium"
                                   >
-                                    <Trash2 size={16} /> <span className="hidden sm:inline">Xoá vĩnh viễn</span>
+                                    <Trash2 size={16} /> <span className="hidden sm:inline">{t('trash.permanentDelete')}</span>
                                   </button>
                                 </div>
                               </td>

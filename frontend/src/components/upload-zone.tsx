@@ -3,9 +3,10 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { UploadCloud, X, Loader2 } from 'lucide-react';
+import { useI18n } from '@/components/i18n-context';
 import { API_URL, formatSize, fetchUploadConfig, abortUpload } from '@/lib/api';
 
-const CONCURRENCY = 3;
+const CONCURRENCY = 1;
 
 interface UploadState {
   status: 'idle' | 'uploading' | 'cancelling' | 'error';
@@ -18,6 +19,7 @@ interface UploadState {
 }
 
 export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: string, onUploadSuccess: () => void }) {
+  const { t } = useI18n();
   const [maxChunkSize, setMaxChunkSize] = useState<number>(19 * 1024 * 1024);
   const [uploadState, setUploadState] = useState<UploadState>({
     status: 'idle',
@@ -227,7 +229,7 @@ export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: s
     await Promise.all(workers);
 
     if (abortRef.current) {
-      throw new Error('Upload đã bị huỷ');
+      throw new Error(t('upload.aborted'));
     }
 
     await axios.post(`${API_URL}/files/upload/${fileId}/complete`);
@@ -256,7 +258,7 @@ export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: s
       setUploadState(prev => ({
         ...prev,
         status: 'error',
-        errorMessage: error?.response?.data?.message || error?.message || 'Tải lên thất bại',
+        errorMessage: error?.response?.data?.message || error?.message || t('upload.failed'),
       }));
     } finally {
       e.target.value = '';
@@ -284,9 +286,9 @@ export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: s
           />
           <div className="flex flex-col items-center justify-center space-y-2 pointer-events-none">
             <UploadCloud className="w-10 h-10 text-gray-400" />
-            <p className="text-sm font-medium text-gray-700">Kéo thả file vào đây hoặc nhấn để chọn</p>
+            <p className="text-sm font-medium text-gray-700">{t('upload.dragDrop')}</p>
             <p className="text-xs text-gray-500">
-              Hỗ trợ mọi định dạng. File tải lên sẽ được mã hoá và lưu trữ an toàn.
+              {t('upload.supportInfo')}
             </p>
           </div>
         </>
@@ -302,10 +304,10 @@ export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: s
             <button
               onClick={handleAbort}
               className="flex items-center gap-1 px-2 py-1 text-sm text-red-500 bg-red-50 rounded hover:bg-red-100 transition-colors flex-shrink-0 cursor-pointer"
-              title="Huỷ upload"
+              title={t('upload.cancelTitle')}
             >
               <X size={14} />
-              Huỷ
+              {t('upload.cancel')}
             </button>
           </div>
 
@@ -319,10 +321,10 @@ export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: s
           <div className="flex justify-between text-xs text-gray-500 mt-2">
             <span>
               {isServerProcessing
-                ? 'Đang xử lí trên máy chủ, vui lòng đợi phút chốc...'
+                ? t('upload.serverProcessing')
                 : uploadState.totalChunks > 1
-                  ? `Chunk ${uploadState.completedChunks}/${uploadState.totalChunks} (${CONCURRENCY} song song)`
-                  : 'Đang tải lên...'
+                  ? t('upload.chunkProgress', { completed: String(uploadState.completedChunks), total: String(uploadState.totalChunks), concurrency: String(CONCURRENCY) })
+                  : t('upload.uploading')
               }
             </span>
             <span>{formatSize(uploadState.uploadedBytes)} / {formatSize(uploadState.totalSize)} ({overallPercent}%)</span>
@@ -333,7 +335,7 @@ export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: s
       {uploadState.status === 'cancelling' && (
         <div className="flex flex-col items-center justify-center space-y-2 py-2">
           <Loader2 className="w-6 h-6 text-orange-500 animate-spin" />
-          <p className="text-sm font-medium text-orange-600">Đang huỷ upload và dọn dẹp dữ liệu trên Telegram...</p>
+          <p className="text-sm font-medium text-orange-600">{t('upload.cancelling')}</p>
         </div>
       )}
 
@@ -344,7 +346,7 @@ export default function UploadZone({ folderId, onUploadSuccess }: { folderId?: s
             onClick={resetState}
             className="text-sm text-blue-600 hover:underline cursor-pointer"
           >
-            Thử lại
+            {t('upload.retry')}
           </button>
         </div>
       )}

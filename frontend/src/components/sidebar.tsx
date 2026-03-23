@@ -4,6 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Home, Trash2, KeyRound, ShieldAlert, LogOut, User, HardDrive, Menu, X } from 'lucide-react';
 import { useAuth } from '@/components/auth-context';
+import { useI18n } from '@/components/i18n-context';
+import LanguageSwitcher from '@/components/language-switcher';
 import { formatSize, fetchCurrentUser } from '@/lib/api';
 
 interface QuotaInfo {
@@ -17,6 +19,7 @@ interface SidebarProps {
 
 export default function Sidebar({ children }: SidebarProps) {
   const { user, token, logout } = useAuth();
+  const { t } = useI18n();
   const router = useRouter();
   const pathname = usePathname();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
@@ -47,9 +50,9 @@ export default function Sidebar({ children }: SidebarProps) {
   const quotaPercentage = quotaInfo ? Math.min((quotaInfo.usedSpace / quotaInfo.quota) * 100, 100) : 0;
 
   const navItems = [
-    { href: '/', label: 'Trang chủ', icon: Home },
-    { href: '/trash', label: 'Thùng rác', icon: Trash2 },
-    { href: '/s3-keys', label: 'S3 Access Keys', icon: KeyRound },
+    { href: '/', label: t('sidebar.home'), icon: Home },
+    { href: '/trash', label: t('sidebar.trash'), icon: Trash2 },
+    { href: '/s3-keys', label: t('sidebar.s3Keys'), icon: KeyRound },
   ];
 
   return (
@@ -111,14 +114,17 @@ export default function Sidebar({ children }: SidebarProps) {
             <div className="overflow-hidden">
               <p className="font-medium text-white truncate text-sm">{user?.username}</p>
               <button onClick={handleLogout} className="text-xs text-slate-400 hover:text-white transition-colors flex items-center gap-1 mt-1">
-                <LogOut size={12} /> Đăng xuất
+                <LogOut size={12} /> {t('sidebar.logout')}
               </button>
             </div>
           </div>
+
+          <LanguageSwitcher />
+
           {quotaInfo && (
-            <div className="bg-slate-800 rounded-lg p-3">
+            <div className="bg-slate-800 rounded-lg p-3 mt-3">
               <div className="flex justify-between items-center mb-2 text-xs text-slate-300">
-                <span className="flex items-center gap-1"><HardDrive size={12} /> Đã dùng</span>
+                <span className="flex items-center gap-1"><HardDrive size={12} /> {t('sidebar.used')}</span>
                 <span>{quotaPercentage.toFixed(1)}%</span>
               </div>
               <div className="w-full bg-slate-700 rounded-full h-1.5 mb-2">

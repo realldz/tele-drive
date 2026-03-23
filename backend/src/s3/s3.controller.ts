@@ -208,7 +208,7 @@ export class S3Controller {
   // PUT /s3/:bucket/* — PutObject / UploadPart / CopyObject
   // ---------------------------------------------------------------------------
 
-  @Put(':bucket/*')
+  @Put(':bucket/*key')
   async handlePut(
     @Param('bucket') bucket: string,
     @Param() params: Record<string, string>,
@@ -216,7 +216,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = (req as any).s3UserId as string;
-    const key = params['0'] as string;
+    const key = params['key'] as string;
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
@@ -258,7 +258,7 @@ export class S3Controller {
   // POST /s3/:bucket/* — CreateMultipartUpload / CompleteMultipartUpload
   // ---------------------------------------------------------------------------
 
-  @Post(':bucket/*')
+  @Post(':bucket/*key')
   async handlePost(
     @Param('bucket') bucket: string,
     @Param() params: Record<string, string>,
@@ -266,7 +266,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = (req as any).s3UserId as string;
-    const key = params['0'] as string;
+    const key = params['key'] as string;
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
@@ -332,7 +332,7 @@ export class S3Controller {
   // GET /s3/:bucket/* — GetObject / ListParts
   // ---------------------------------------------------------------------------
 
-  @Get(':bucket/*')
+  @Get(':bucket/*key')
   async handleGet(
     @Param('bucket') bucket: string,
     @Param() params: Record<string, string>,
@@ -340,7 +340,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = (req as any).s3UserId as string;
-    const key = params['0'] as string;
+    const key = params['key'] as string;
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
@@ -387,7 +387,7 @@ export class S3Controller {
   // HEAD /s3/:bucket/* — HeadObject
   // ---------------------------------------------------------------------------
 
-  @Head(':bucket/*')
+  @Head(':bucket/*key')
   async headObject(
     @Param('bucket') bucket: string,
     @Param() params: Record<string, string>,
@@ -395,7 +395,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = (req as any).s3UserId as string;
-    const key = params['0'] as string;
+    const key = params['key'] as string;
 
     this.logger.log(`S3 HeadObject: s3://${bucket}/${key} (userId: ${userId})`);
     this.setRequestId(res);
@@ -425,7 +425,7 @@ export class S3Controller {
   // DELETE /s3/:bucket/* — DeleteObject / AbortMultipartUpload
   // ---------------------------------------------------------------------------
 
-  @Delete(':bucket/*')
+  @Delete(':bucket/*key')
   async handleDelete(
     @Param('bucket') bucket: string,
     @Param() params: Record<string, string>,
@@ -433,7 +433,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = (req as any).s3UserId as string;
-    const key = params['0'] as string;
+    const key = params['key'] as string;
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);

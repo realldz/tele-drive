@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-context';
+import { useI18n } from '@/components/i18n-context';
 import Sidebar from '@/components/sidebar';
 import {
   Key,
@@ -36,6 +37,7 @@ interface NewCredential extends S3Credential {
 export default function S3KeysPage() {
   const router = useRouter();
   const { token } = useAuth();
+  const { t } = useI18n();
 
   const [credentials, setCredentials] = useState<S3Credential[]>([]);
   const [loading, setLoading] = useState(true);
@@ -64,7 +66,7 @@ export default function S3KeysPage() {
       const data = await fetchS3Credentials();
       setCredentials(data);
     } catch {
-      toast.error('Failed to load S3 credentials');
+      toast.error(t('s3.loadError'));
     } finally {
       setLoading(false);
     }
@@ -80,9 +82,9 @@ export default function S3KeysPage() {
       setLabelInput('');
       setShowCreateForm(false);
       await loadCredentials();
-      toast.success('Access key created — save the secret now!');
+      toast.success(t('s3.createSuccess'));
     } catch (err: any) {
-      toast.error(err?.response?.data?.message || 'Failed to create credential');
+      toast.error(err?.response?.data?.message || t('s3.createError'));
     } finally {
       setCreating(false);
     }
@@ -92,9 +94,9 @@ export default function S3KeysPage() {
     try {
       await deleteS3Credential(id);
       setCredentials((prev) => prev.filter((c) => c.id !== id));
-      toast.success('Access key revoked');
+      toast.success(t('s3.revokeSuccess'));
     } catch {
-      toast.error('Failed to revoke key');
+      toast.error(t('s3.revokeError'));
     } finally {
       setDeletingId(null);
     }
@@ -135,7 +137,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
         <header className="h-16 border-b border-gray-100 flex items-center justify-between px-4 lg:px-6 bg-white w-full flex-shrink-0 z-10">
           <div className="flex items-center gap-2">
             <KeyRound size={22} className="text-blue-600" />
-            <h2 className="text-xl font-bold text-gray-800">S3 Access Keys</h2>
+            <h2 className="text-xl font-bold text-gray-800">{t('s3.title')}</h2>
           </div>
           {!showCreateForm && (
             <button
@@ -143,7 +145,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors text-sm font-medium"
             >
               <Plus size={16} />
-              <span className="hidden sm:inline">Create Access Key</span>
+              <span className="hidden sm:inline">{t('s3.createKey')}</span>
             </button>
           )}
         </header>
@@ -156,11 +158,10 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
               <Terminal size={20} className="text-blue-600 shrink-0 mt-0.5" />
               <div className="text-sm text-blue-800">
-                <p className="font-medium mb-1">Use Tele-Drive as an S3-compatible storage backend</p>
+                <p className="font-medium mb-1">{t('s3.infoBanner')}</p>
                 <p className="text-blue-700">
-                  Create an access key below, then configure <code className="bg-blue-100 px-1 rounded">aws-cli</code>,{' '}
-                  <code className="bg-blue-100 px-1 rounded">s3cmd</code>, or any AWS SDK to use{' '}
-                  <code className="bg-blue-100 px-1 rounded font-mono">{endpointUrl}</code> as the endpoint URL.
+                  {t('s3.infoDesc')}{' '}
+                  <code className="bg-blue-100 px-1 rounded font-mono">{endpointUrl}</code>
                 </p>
               </div>
             </div>
@@ -171,14 +172,14 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                 <div className="flex items-center gap-2 text-amber-800">
                   <AlertTriangle size={18} className="shrink-0" />
                   <p className="font-semibold text-sm">
-                    {newCred.note} Copy these credentials now — the secret will not be shown again.
+                    {newCred.note} {t('s3.newCredWarning')}
                   </p>
                 </div>
 
                 {/* Access Key ID */}
                 <div>
                   <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1 block">
-                    Access Key ID
+                    {t('s3.accessKeyId')}
                   </label>
                   <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-2">
                     <code className="flex-1 text-sm font-mono text-gray-900 break-all">
@@ -187,7 +188,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                     <button
                       onClick={() => copyText(newCred.accessKeyId, 'key')}
                       className="shrink-0 text-gray-400 hover:text-gray-700 transition-colors"
-                      title="Copy"
+                      title={t('s3.copy')}
                     >
                       {copied === 'key' ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
                     </button>
@@ -197,7 +198,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                 {/* Secret Access Key */}
                 <div>
                   <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1 block">
-                    Secret Access Key
+                    {t('s3.secretAccessKey')}
                   </label>
                   <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-2">
                     <code className="flex-1 text-sm font-mono text-gray-900 break-all">
@@ -213,7 +214,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                     <button
                       onClick={() => copyText(newCred.secretAccessKey, 'secret')}
                       className="shrink-0 text-gray-400 hover:text-gray-700 transition-colors"
-                      title="Copy"
+                      title={t('s3.copy')}
                     >
                       {copied === 'secret' ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
                     </button>
@@ -224,7 +225,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                 <div>
                   <div className="flex items-center justify-between mb-1">
                     <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                      aws-cli configuration
+                      {t('s3.awsConfig')}
                     </label>
                     <button
                       onClick={() =>
@@ -233,7 +234,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                       className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
                     >
                       {copied === 'config' ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
-                      {copied === 'config' ? 'Copied!' : 'Copy'}
+                      {copied === 'config' ? t('s3.copied') : t('s3.copy')}
                     </button>
                   </div>
                   <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap">
@@ -245,7 +246,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                   onClick={() => setNewCred(null)}
                   className="w-full text-sm text-amber-700 hover:text-amber-900 font-medium py-1 transition-colors"
                 >
-                  I have saved these credentials — dismiss
+                  {t('s3.dismissCred')}
                 </button>
               </div>
             )}
@@ -253,9 +254,9 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
             {/* Create new key form (inline) */}
             {showCreateForm && (
               <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
-                <h3 className="font-medium text-gray-900 text-sm">New Access Key</h3>
+                <h3 className="font-medium text-gray-900 text-sm">{t('s3.newAccessKey')}</h3>
                 <div>
-                  <label className="text-xs text-gray-500 mb-1 block">Label (optional)</label>
+                  <label className="text-xs text-gray-500 mb-1 block">{t('s3.labelOptional')}</label>
                   <input
                     type="text"
                     value={labelInput}
@@ -274,13 +275,13 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                     className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm font-medium"
                   >
                     {creating ? <Loader2 size={14} className="animate-spin" /> : <Key size={14} />}
-                    {creating ? 'Creating…' : 'Create'}
+                    {creating ? t('s3.creating') : t('s3.create')}
                   </button>
                   <button
                     onClick={() => { setShowCreateForm(false); setLabelInput(''); }}
                     className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
                   >
-                    Cancel
+                    {t('s3.cancel')}
                   </button>
                 </div>
               </div>
@@ -290,19 +291,19 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100">
                 <h2 className="font-medium text-gray-900 text-sm">
-                  Active Keys {!loading && `(${credentials.length})`}
+                  {t('s3.activeKeys')} {!loading && `(${credentials.length})`}
                 </h2>
               </div>
 
               {loading ? (
                 <div className="flex items-center justify-center py-10 text-gray-400">
                   <Loader2 size={20} className="animate-spin mr-2" />
-                  Loading…
+                  {t('s3.loading')}
                 </div>
               ) : credentials.length === 0 ? (
                 <div className="text-center py-10 text-gray-400 text-sm">
                   <Key size={32} className="mx-auto mb-2 opacity-30" />
-                  No access keys yet. Create one to get started.
+                  {t('s3.noKeys')}
                 </div>
               ) : (
                 <ul className="divide-y divide-gray-100">
@@ -314,38 +315,38 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                             {cred.label}
                           </span>
                           <span className="shrink-0 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
-                            Active
+                            {t('s3.active')}
                           </span>
                         </div>
                         <div className="text-xs text-gray-500 font-mono mt-0.5">
                           {cred.accessKeyId}
                         </div>
                         <div className="text-xs text-gray-400 mt-0.5">
-                          Created {new Date(cred.createdAt).toLocaleDateString()}
+                          {t('s3.created')} {new Date(cred.createdAt).toLocaleDateString()}
                         </div>
                       </div>
 
                       {deletingId === cred.id ? (
                         <div className="flex items-center gap-2">
-                          <span className="text-xs text-gray-500">Revoke?</span>
+                          <span className="text-xs text-gray-500">{t('s3.revoke')}</span>
                           <button
                             onClick={() => handleDelete(cred.id)}
                             className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
                           >
-                            Yes
+                            {t('s3.revokeYes')}
                           </button>
                           <button
                             onClick={() => setDeletingId(null)}
                             className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded transition-colors"
                           >
-                            No
+                            {t('s3.revokeNo')}
                           </button>
                         </div>
                       ) : (
                         <button
                           onClick={() => setDeletingId(cred.id)}
                           className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Revoke key"
+                          title={t('s3.revokeKey')}
                         >
                           <Trash2 size={16} />
                         </button>
@@ -360,12 +361,12 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
             <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
               <h2 className="font-medium text-gray-900 flex items-center gap-2">
                 <Terminal size={16} className="text-gray-500" />
-                Usage Guide
+                {t('s3.usageGuide')}
               </h2>
 
               <div className="space-y-3 text-sm text-gray-700">
                 <div>
-                  <p className="font-medium text-gray-800 mb-1">1. Configure aws-cli profile</p>
+                  <p className="font-medium text-gray-800 mb-1">{t('s3.step1')}</p>
                   <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
 {`aws configure --profile tele-drive
 # Enter your Access Key ID and Secret Access Key
@@ -375,7 +376,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                 </div>
 
                 <div>
-                  <p className="font-medium text-gray-800 mb-1">2. List buckets (root folders)</p>
+                  <p className="font-medium text-gray-800 mb-1">{t('s3.step2')}</p>
                   <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
 {`aws --profile tele-drive \\
     --endpoint-url ${endpointUrl} \\
@@ -384,7 +385,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                 </div>
 
                 <div>
-                  <p className="font-medium text-gray-800 mb-1">3. Upload a file</p>
+                  <p className="font-medium text-gray-800 mb-1">{t('s3.step3')}</p>
                   <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
 {`aws --profile tele-drive \\
     --endpoint-url ${endpointUrl} \\
@@ -393,7 +394,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                 </div>
 
                 <div>
-                  <p className="font-medium text-gray-800 mb-1">4. Download a file</p>
+                  <p className="font-medium text-gray-800 mb-1">{t('s3.step4')}</p>
                   <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
 {`aws --profile tele-drive \\
     --endpoint-url ${endpointUrl} \\
@@ -402,7 +403,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                 </div>
 
                 <div>
-                  <p className="font-medium text-gray-800 mb-1">5. Upload large file (multipart)</p>
+                  <p className="font-medium text-gray-800 mb-1">{t('s3.step5')}</p>
                   <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
 {`# aws-cli handles multipart automatically for files > 8MB
 aws --profile tele-drive \\
@@ -413,7 +414,7 @@ aws --profile tele-drive \\
                 </div>
 
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-800">
-                  <strong>Note:</strong> Telegram limits individual file size to 2 GB. Tele-Drive handles
+                  <strong>{t('s3.note')}</strong> Telegram limits individual file size to 2 GB. Tele-Drive handles
                   large files via automatic chunking. The S3 endpoint is at{' '}
                   <code className="bg-yellow-100 px-1 rounded font-mono">{endpointUrl}</code>.
                   Presigned URLs are supported (max 7 days expiry). Versioning is not supported.

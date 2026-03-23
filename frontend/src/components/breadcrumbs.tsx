@@ -1,4 +1,7 @@
+'use client';
+
 import { Home, ChevronRight } from 'lucide-react';
+import { useI18n } from '@/components/i18n-context';
 
 interface BreadcrumbItem {
   id: string;
@@ -15,6 +18,7 @@ interface BreadcrumbsProps {
 }
 
 export default function Breadcrumbs({ items, onNavigate, onDragOver, onDragLeave, onDrop, dragOverFolderId }: BreadcrumbsProps) {
+  const { t } = useI18n();
   return (
     <div className="px-6 py-4 flex flex-wrap items-center gap-2 text-sm text-gray-600 font-medium border-b border-gray-50">
       <button
@@ -26,7 +30,7 @@ export default function Breadcrumbs({ items, onNavigate, onDragOver, onDragLeave
           dragOverFolderId === null ? 'bg-blue-50 text-blue-700 ring-2 ring-blue-200' : 'hover:bg-gray-50'
         }`}
       >
-        <Home size={16} /> Drive Của Tôi
+        <Home size={16} /> {t('breadcrumbs.myDrive')}
       </button>
 
       {items.map((bc) => (

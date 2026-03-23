@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Copy, Check, Globe, Lock, Share2 } from 'lucide-react';
 import { shareItem, unshareItem } from '@/lib/api';
+import { useI18n } from '@/components/i18n-context';
 
 interface ShareDialogProps {
   isOpen: boolean;
@@ -10,6 +11,7 @@ interface ShareDialogProps {
 }
 
 export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDialogProps) {
+  const { t } = useI18n();
   const [isSharing, setIsSharing] = useState(false); // Replaced isGenerating
   const [copied, setCopied] = useState(false);
 
@@ -36,7 +38,7 @@ export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDi
       await shareItem(itemType, item.id);
       window.location.reload();
     } catch (error) {
-      alert('Lỗi tạo liên kết chia sẻ');
+      alert(t('share.createError'));
     } finally {
       setIsSharing(false);
     }
@@ -48,7 +50,7 @@ export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDi
       await unshareItem(itemType, item.id);
       window.location.reload();
     } catch (error) {
-      alert('Lỗi thu hồi liên kết chia sẻ');
+      alert(t('share.revokeError'));
     } finally {
       setIsSharing(false);
     }
@@ -66,7 +68,7 @@ export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDi
         <div className="flex justify-between items-center p-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-800 flex items-center gap-2">
             <Globe size={20} className="text-blue-500" />
-            Chia sẻ {itemType === 'folder' ? 'thư mục' : 'tập tin'}
+            {t(itemType === 'folder' ? 'share.titleFolder' : 'share.titleFile')}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={20} />
@@ -83,8 +85,8 @@ export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDi
                 {item.filename || item.name}
               </h3>
               <p className="text-sm text-gray-500">
-                Trạng thái: <span className={isShared ? 'text-green-600 font-medium' : 'text-gray-500 font-medium'}>
-                  {isShared ? 'Đang chia sẻ công khai' : 'Riêng tư'}
+                {t('share.status')}: <span className={isShared ? 'text-green-600 font-medium' : 'text-gray-500 font-medium'}>
+                  {isShared ? t('share.public') : t('share.private')}
                 </span>
               </p>
             </div>
@@ -93,7 +95,7 @@ export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDi
           {isShared ? (
             <div className="space-y-4">
               <div className="bg-green-50 text-green-700 p-3 rounded-lg border border-green-200">
-                {itemType === 'folder' ? 'Thư mục' : 'Tập tin'} đang được chia sẻ công khai. Bất kì ai có liên kết này đều có thể xem và tải xuống.
+                {t(itemType === 'folder' ? 'share.publicInfoFolder' : 'share.publicInfoFile')}
               </div>
               <div className="flex items-center gap-2">
                 <input
@@ -105,7 +107,7 @@ export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDi
                 <button
                   onClick={handleCopy}
                   className="flex items-center justify-center gap-1 bg-blue-600 hover:bg-blue-700 text-white p-2.5 rounded-lg transition-colors"
-                  title="Sao chép"
+                  title={t('share.copy')}
                 >
                   {copied ? <Check size={20} /> : <Copy size={20} />}
                 </button>
@@ -116,7 +118,7 @@ export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDi
                   disabled={isSharing}
                   className="text-red-600 hover:text-red-700 font-medium flex items-center gap-1"
                 >
-                  <Lock size={16} /> {isSharing ? 'Đang hủy...' : 'Ngừng chia sẻ'}
+                  <Lock size={16} /> {isSharing ? t('share.stopping') : t('share.stopSharing')}
                 </button>
               </div>
             </div>
@@ -125,16 +127,16 @@ export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDi
               <div className="bg-gray-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4">
                 <Lock size={32} className="text-gray-400" />
               </div>
-              <h3 className="font-semibold text-gray-800 mb-2">{itemType === 'folder' ? 'Thư mục' : 'Tập tin'} đang riêng tư</h3>
+              <h3 className="font-semibold text-gray-800 mb-2">{t(itemType === 'folder' ? 'share.privateFolder' : 'share.privateFile')}</h3>
               <p className="text-gray-500 mb-6 px-4">
-                Tạo một liên kết công khai để chia sẻ {itemType === 'folder' ? 'thư mục' : 'tập tin'} này với người khác một cách an toàn.
+                {t(itemType === 'folder' ? 'share.privateDescFolder' : 'share.privateDescFile')}
               </p>
               <button
                 onClick={handleShare}
                 disabled={isSharing}
                 className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-medium py-2.5 rounded-lg transition-colors flex items-center justify-center gap-2"
               >
-                {isSharing ? 'Đang tạo...' : 'Tạo liên kết chia sẻ'}
+                {isSharing ? t('share.creating') : t('share.createLink')}
               </button>
             </div>
           )}

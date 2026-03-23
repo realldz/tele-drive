@@ -4,11 +4,14 @@ import { useState } from 'react';
 import { useAuth } from '@/components/auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import { useI18n } from '@/components/i18n-context';
+import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import { UserPlus, Loader2 } from 'lucide-react';
 
 export default function RegisterPage() {
   const { register } = useAuth();
   const router = useRouter();
+  const { t } = useI18n();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -20,12 +23,12 @@ export default function RegisterPage() {
     if (!username.trim() || !password.trim()) return;
 
     if (password !== confirmPassword) {
-      setError('Mật khẩu xác nhận không khớp');
+      setError(t('register.passwordMismatch'));
       return;
     }
 
     if (password.length < 4) {
-      setError('Mật khẩu phải có ít nhất 4 ký tự');
+      setError(t('register.passwordTooShort'));
       return;
     }
 
@@ -36,7 +39,7 @@ export default function RegisterPage() {
       await register(username, password);
       router.push('/');
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Đăng ký thất bại');
+      setError(err?.response?.data?.message || t('register.failed'));
     } finally {
       setLoading(false);
     }
@@ -44,15 +47,16 @@ export default function RegisterPage() {
 
   return (
     <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+      <GuestLanguageSwitcher />
       <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-slate-900">Tele-Drive</h1>
-          <p className="text-gray-500 mt-2">Tạo tài khoản mới</p>
+          <p className="text-gray-500 mt-2">{t('register.title')}</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Tên đăng nhập</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('register.username')}</label>
             <input
               type="text"
               value={username}
@@ -65,7 +69,7 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Mật khẩu</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('register.password')}</label>
             <input
               type="password"
               value={password}
@@ -77,7 +81,7 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Xác nhận mật khẩu</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('register.confirmPassword')}</label>
             <input
               type="password"
               value={confirmPassword}
@@ -104,14 +108,14 @@ export default function RegisterPage() {
             ) : (
               <UserPlus size={18} />
             )}
-            {loading ? 'Đang đăng ký...' : 'Đăng ký'}
+            {loading ? t('register.submitting') : t('register.submit')}
           </button>
         </form>
 
         <p className="text-center text-sm text-gray-500 mt-6">
-          Đã có tài khoản?{' '}
+          {t('register.hasAccount')}{' '}
           <Link href="/login" className="text-blue-600 hover:underline font-medium">
-            Đăng nhập
+            {t('register.login')}
           </Link>
         </p>
       </div>
