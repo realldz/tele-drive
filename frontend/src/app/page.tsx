@@ -8,7 +8,8 @@ import { useI18n } from '@/components/i18n-context';
 import Sidebar from '@/components/sidebar';
 import Breadcrumbs from '@/components/breadcrumbs';
 import ContextMenu from '@/components/context-menu';
-import UploadZone from '@/components/upload-zone';
+import UploadTrigger from '@/components/upload-trigger';
+import { useUpload } from '@/components/upload-context';
 import RenameDialog from '@/components/rename-dialog';
 import ShareDialog from '@/components/share-dialog';
 import MoveDialog from '@/components/move-dialog';
@@ -23,6 +24,7 @@ export default function Dashboard() {
   const { user, token, isLoading, logout } = useAuth();
   const router = useRouter();
   const { t } = useI18n();
+  const { setCurrentFolderId: setUploadFolderId, setOnUploadSuccess } = useUpload();
 
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [folders, setFolders] = useState<any[]>([]);
@@ -103,6 +105,17 @@ export default function Dashboard() {
   useEffect(() => {
     fetchContent();
   }, [fetchContent]);
+
+  // Sync currentFolderId with upload context (for GlobalDropZone)
+  useEffect(() => {
+    setUploadFolderId(currentFolderId);
+  }, [currentFolderId, setUploadFolderId]);
+
+  // Sync onUploadSuccess callback with upload context
+  useEffect(() => {
+    setOnUploadSuccess(() => fetchContent);
+    return () => setOnUploadSuccess(undefined);
+  }, [fetchContent, setOnUploadSuccess]);
 
   // Polling fetchContent if there are files currently uploading on the server
   useEffect(() => {
@@ -622,7 +635,7 @@ export default function Dashboard() {
             {/* Upload Zone */}
             <div className="mt-8 pt-6 border-t border-gray-100">
               <h3 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider">{t('dashboard.uploadTitle')}</h3>
-              <UploadZone folderId={currentFolderId} onUploadSuccess={() => { fetchContent(); }} />
+              <UploadTrigger folderId={currentFolderId} />
             </div>
 
           </div>
