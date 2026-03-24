@@ -187,14 +187,20 @@ export class FileService {
       throw new BadRequestException(`Invalid chunk index: ${chunkIndex}. Expected 0-${fileRecord.totalChunks - 1}`);
     }
 
-    // Idempotent: nếu chunk đã upload rồi, bỏ qua
+    // Idempotent: nếu chunk đã upload THÀNH CÔNG rồi, bỏ qua
     const existing = await this.prisma.fileChunk.findUnique({
       where: { fileId_chunkIndex: { fileId, chunkIndex } },
     });
     if (existing) {
-      req.resume(); // Drain request body
-      this.logger.debug(`Chunk ${chunkIndex}/${fileRecord.totalChunks} already uploaded for file ${fileId}, skipping`);
-      return existing;
+      if (existing.telegramFileId && existing.telegramFileId !== '') {
+        // Chunk already uploaded successfully — skip
+        req.resume();
+        this.logger.debug(`Chunk ${chunkIndex}/${fileRecord.totalChunks} already uploaded for file ${fileId}, skipping`);
+        return existing;
+      }
+      // Pending record from a failed attempt — delete it and retry
+      await this.prisma.fileChunk.delete({ where: { id: existing.id } });
+      this.logger.debug(`Deleted stale pending chunk ${chunkIndex} for file ${fileId}, retrying`);
     }
 
     // Use record id as chunk filename to avoid leaking the real filename on Telegram
@@ -242,23 +248,58 @@ export class FileService {
 
           this.logger.log(`Starting chunk upload to Telegram: ${chunkIndex + 1}/${fileRecord.totalChunks} for file "${fileRecord.filename}" (${fileRecord.id}), ${rawBytes} bytes`);
 
-          // uploadFile() has built-in retry with exponential backoff
-          this.telegram.uploadFile(buffer, chunkFilename)
-            .then(async ({ fileId: telegramFileId, messageId: telegramMessageId }) => {
-              const chunk = await this.prisma.fileChunk.create({
-                data: {
-                  fileId,
-                  chunkIndex,
-                  size: rawBytes,
-                  telegramFileId,
-                  telegramMessageId,
-                  ...(chunkIv && { encryptionIv: chunkIv.toString('hex') }),
-                },
-              });
-              this.logger.debug(`Chunk uploaded: ${chunkIndex + 1}/${fileRecord.totalChunks} for file ${fileId} (${rawBytes} bytes)`);
-              resolve(chunk);
+          // Create pending DB record BEFORE uploading to Telegram
+          this.prisma.fileChunk.create({
+            data: {
+              fileId,
+              chunkIndex,
+              size: rawBytes,
+              telegramFileId: '', // placeholder — will be updated after upload
+              telegramMessageId: null,
+              ...(chunkIv && { encryptionIv: chunkIv.toString('hex') }),
+            },
+          })
+            .then((pendingChunk) => {
+              return this.telegram.uploadFile(buffer, chunkFilename)
+                .then(async ({ fileId: telegramFileId, messageId: telegramMessageId }) => {
+                  try {
+                    // Update with real Telegram IDs
+                    const updated = await this.prisma.fileChunk.update({
+                      where: { id: pendingChunk.id },
+                      data: { telegramFileId, telegramMessageId },
+                    });
+
+                    // Check if file was aborted while we were uploading
+                    const currentFile = await this.prisma.fileRecord.findUnique({
+                      where: { id: fileId },
+                      select: { status: true },
+                    });
+                    if (!currentFile || currentFile.status === 'aborted') {
+                      this.logger.warn(`Chunk ${chunkIndex} for file ${fileId} completed but file was aborted — deleting Telegram message ${telegramMessageId}`);
+                      this.telegram.deleteMessage(telegramMessageId).catch(() => {});
+                      reject(new Error('Upload aborted'));
+                      return;
+                    }
+
+                    this.logger.debug(`Chunk uploaded: ${chunkIndex + 1}/${fileRecord.totalChunks} for file ${fileId} (${rawBytes} bytes)`);
+                    resolve(updated);
+                  } catch (updateErr: any) {
+                    // Race A: Record was cascade-deleted by abort — clean up the orphaned Telegram message
+                    if (updateErr?.code === 'P2025') {
+                      this.logger.warn(`Chunk ${chunkIndex} for file ${fileId} was aborted during upload — deleting orphaned Telegram message ${telegramMessageId}`);
+                      this.telegram.deleteMessage(telegramMessageId).catch(() => {});
+                      reject(new Error('Upload aborted'));
+                      return;
+                    }
+                    reject(updateErr);
+                  }
+                });
             })
             .catch((err) => {
+              // Clean up pending record if upload fails
+              this.prisma.fileChunk.deleteMany({
+                where: { fileId, chunkIndex },
+              }).catch(() => {});
               this.logger.error(`Chunk upload failed: ${chunkIndex}/${fileRecord.totalChunks} for file ${fileId}: ${err.message}`);
               reject(err);
             });
@@ -296,6 +337,7 @@ export class FileService {
       data: { status: 'aborted' },
     });
 
+    // First pass: delete Telegram messages from initial snapshot
     const deletePromises = fileRecord.chunks.map(async (chunk) => {
       if (chunk.telegramMessageId) {
         await this.telegram.deleteMessage(chunk.telegramMessageId);
@@ -303,10 +345,23 @@ export class FileService {
     });
     await Promise.allSettled(deletePromises);
 
+    // Re-query chunks to catch any in-flight uploads that completed during abort
+    const latestChunks = await this.prisma.fileChunk.findMany({
+      where: { fileId },
+    });
+    const alreadyDeleted = new Set(
+      fileRecord.chunks.filter(c => c.telegramMessageId).map(c => c.telegramMessageId),
+    );
+    for (const chunk of latestChunks) {
+      if (chunk.telegramMessageId && !alreadyDeleted.has(chunk.telegramMessageId)) {
+        await this.telegram.deleteMessage(chunk.telegramMessageId);
+      }
+    }
+
     await this.prisma.fileRecord.delete({ where: { id: fileId } });
 
-    this.logger.warn(`Upload aborted: "${fileRecord.filename}" (fileId: ${fileId}, cleaned up ${fileRecord.chunks.length} chunks)`);
-    return { success: true, deletedChunks: fileRecord.chunks.length };
+    this.logger.warn(`Upload aborted: "${fileRecord.filename}" (fileId: ${fileId}, cleaned up ${latestChunks.length} chunks)`);
+    return { success: true, deletedChunks: latestChunks.length };
   }
 
   /**
@@ -416,17 +471,21 @@ export class FileService {
       };
     }
 
-    const chunks = fileRecord.chunks.map((chunk: any) => ({
-      telegramFileId: chunk.telegramFileId,
-      iv: chunk.encryptionIv ? Buffer.from(chunk.encryptionIv, 'hex') : null,
-      size: Number(chunk.size),
-    }));
+    // Pre-resolve ALL chunk URLs in parallel
+    const chunksWithUrls = await Promise.all(
+      fileRecord.chunks.map(async (chunk: any) => ({
+        telegramFileId: chunk.telegramFileId,
+        url: await this.telegram.getFileLink(chunk.telegramFileId),
+        iv: chunk.encryptionIv ? Buffer.from(chunk.encryptionIv, 'hex') : null,
+        size: Number(chunk.size),
+      })),
+    );
 
     return {
       filename: fileRecord.filename,
       size: fileRecord.size,
       isChunked: true,
-      chunks,
+      chunks: chunksWithUrls,
       isEncrypted: fileRecord.isEncrypted,
       dek,
       mimeType: fileRecord.mimeType,
@@ -458,8 +517,7 @@ export class FileService {
     } else {
       try {
         for (const chunk of downloadInfo.chunks) {
-          const chunkUrl = await this.telegram.getFileLink(chunk.telegramFileId);
-          const fetchRes = await fetchWithRetry(chunkUrl);
+          const fetchRes = await fetchWithRetry(chunk.url);
           if (!fetchRes.ok || !fetchRes.body) {
             throw new Error('Failed to fetch chunk from Telegram');
           }
@@ -562,8 +620,7 @@ export class FileService {
 
       try {
         for (const chunkReq of chunksToFetch) {
-          const chunkUrl = await this.telegram.getFileLink(chunkReq.telegramFileId);
-          const fetchRes = await fetchWithRetry(chunkUrl, {
+          const fetchRes = await fetchWithRetry(chunkReq.url, {
             headers: { Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}` }
           });
           if (!fetchRes.ok || !fetchRes.body) throw new Error('Fetch chunk error');

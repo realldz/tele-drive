@@ -16,7 +16,7 @@ import toast from 'react-hot-toast';
 import {
   formatSize, fetchFolderContent, fetchBreadcrumbs,
   createFolder, deleteFolder, restoreFolder, deleteFile, restoreFile,
-  abortUpload, headDownload, getDownloadUrl, renameItem, moveItem,
+  abortUpload, getDownloadUrl, renameItem, moveItem,
 } from '@/lib/api';
 
 export default function Dashboard() {
@@ -207,13 +207,10 @@ export default function Dashboard() {
   /**
    * Download file — dùng link trực tiếp với token query param để trình duyệt
    * hiện hộp thoại download ngay, không cần buffer toàn bộ file vào RAM.
-   * Kiểm tra lỗi quota bằng HEAD request trước khi mở link.
    */
   const handleDownload = async (fileId: string, filename: string) => {
     setDownloadingFiles((prev) => new Set(prev).add(fileId));
     try {
-      await headDownload(fileId);
-
       const downloadUrl = getDownloadUrl(fileId, token!);
       const link = document.createElement('a');
       link.href = downloadUrl;
@@ -221,18 +218,14 @@ export default function Dashboard() {
       document.body.appendChild(link);
       link.click();
       link.remove();
-    } catch (error: any) {
-      if (error?.response?.status === 429) {
-        alert(t('dashboard.bandwidthExceeded'));
-      } else {
-        alert(error?.response?.data?.message || t('dashboard.downloadError'));
-      }
     } finally {
-      setDownloadingFiles((prev) => {
-        const next = new Set(prev);
-        next.delete(fileId);
-        return next;
-      });
+      setTimeout(() => {
+        setDownloadingFiles((prev) => {
+          const next = new Set(prev);
+          next.delete(fileId);
+          return next;
+        });
+      }, 2000);
     }
   };
 

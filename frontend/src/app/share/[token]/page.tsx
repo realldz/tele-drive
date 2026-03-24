@@ -7,7 +7,7 @@ import { Download, FileText, AlertCircle } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 
-const API_URL = 'http://localhost:3001';
+import { API_URL } from '@/lib/api';
 
 export default function SharePage() {
   const params = useParams();

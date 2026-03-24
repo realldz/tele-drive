@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API_URL = 'http://localhost:3001';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 /**
  * Pre-configured axios instance.
@@ -88,10 +88,6 @@ export async function permanentDeleteFile(id: string) {
 
 export async function abortUpload(fileId: string) {
   return api.post(`${API_URL}/files/upload/${fileId}/abort`);
-}
-
-export async function headDownload(fileId: string) {
-  return api.head(`${API_URL}/files/${fileId}/download`);
 }
 
 export function getDownloadUrl(fileId: string, token: string) {

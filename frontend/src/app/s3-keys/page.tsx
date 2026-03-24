@@ -108,7 +108,7 @@ export default function S3KeysPage() {
     setTimeout(() => setCopied(null), 2000);
   }
 
-  const endpointUrl = 'http://localhost:3001/s3';
+  const endpointUrl = `${API_URL}/s3`;
 
   function awsConfigSnippet(accessKeyId: string, secretKey: string) {
     return `aws configure --profile tele-drive

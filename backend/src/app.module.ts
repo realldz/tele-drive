@@ -15,6 +15,7 @@ import { CryptoModule } from './crypto/crypto.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { ScheduleModule } from '@nestjs/schedule';
 import { TrashCleanupService } from './common/trash-cleanup.service';
+import { StaleUploadCleanupService } from './common/stale-upload-cleanup.service';
 import { S3Module } from './s3/s3.module';
 
 @Module({
@@ -46,6 +47,7 @@ import { S3Module } from './s3/s3.module';
       useClass: JwtAuthGuard,
     },
     TrashCleanupService,
+    StaleUploadCleanupService,
   ],
 })
 export class AppModule {}

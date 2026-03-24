@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:3001';
+import { API_URL } from '@/lib/api';
 
 interface User {
   id: string;

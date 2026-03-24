@@ -7,7 +7,7 @@ import { useI18n } from '@/components/i18n-context';
 import axios from 'axios';
 import { FileIcon, Download, ArrowLeft, Loader2, FileText, Film, Image as ImageIcon, Music } from 'lucide-react';
 
-const API_URL = 'http://localhost:3001';
+import { API_URL } from '@/lib/api';
 
 interface FileInfo {
   id: string;
