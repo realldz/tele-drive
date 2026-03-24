@@ -31,6 +31,13 @@ function getRetryAfterMs(err: any): number | null {
   if (retryAfterSec && retryAfterSec > 0) {
     return retryAfterSec * 1000;
   }
+  // Fallback: parse "retry after N" from description (Telegram 400-based rate limits)
+  const desc: string = err.response?.description ?? err.description ?? err.message ?? '';
+  const match = desc.match(/retry after (\d+)/i);
+  if (match) {
+    const secs = parseInt(match[1], 10);
+    if (secs > 0) return secs * 1000;
+  }
   return null;
 }
 
@@ -43,9 +50,13 @@ function isRetryable(err: any): boolean {
   const status: number | undefined =
     err.response?.statusCode ?? err.response?.error_code ?? err.on?.response?.statusCode;
   if (status && RETRYABLE_HTTP.has(status)) return true;
+  // Telegram sometimes returns rate limits as error_code 400 with "too Many Requests" in description
+  const desc: string = err.response?.description ?? err.description ?? '';
+  if (desc.toLowerCase().includes('too many requests')) return true;
   // Message-based heuristic for fetch / undici errors
   const msg: string = String(err.message ?? '');
   if (msg.includes('ECONNRESET') || msg.includes('fetch failed') || msg.includes('terminated')) return true;
+  if (msg.toLowerCase().includes('too many requests')) return true;
   return false;
 }
 
@@ -59,11 +70,44 @@ export class TelegramService {
   /** Base delay in ms for exponential backoff (used when no Retry-After is provided) */
   private readonly BASE_DELAY_MS = 1000;
 
+  /** In-memory cache: telegramFileId → { url, expiry } */
+  private readonly fileLinkCache = new Map<string, { url: string; expiry: number }>();
+  /** 50 minutes — Telegram file links are valid ~1 hour */
+  private readonly CACHE_TTL_MS = 50 * 60 * 1000;
+
+  /** Concurrency limiter for getFileLink API calls */
+  private readonly SEMAPHORE_LIMIT = 3;
+  private semaphoreActive = 0;
+  private readonly semaphoreQueue: (() => void)[] = [];
+
+  /** Singleflight dedup: prevent duplicate in-flight requests for same fileId */
+  private readonly pendingRequests = new Map<string, Promise<string>>();
+
   constructor(
     @InjectBot() private readonly bot: Telegraf,
     private readonly configService: ConfigService,
   ) {
     this.chatId = this.configService.get<string>('TELEGRAM_CHAT_ID') || '';
+  }
+
+  private async acquireSemaphore(): Promise<void> {
+    if (this.semaphoreActive < this.SEMAPHORE_LIMIT) {
+      this.semaphoreActive++;
+      return;
+    }
+    return new Promise<void>((resolve) => {
+      this.semaphoreQueue.push(() => {
+        this.semaphoreActive++;
+        resolve();
+      });
+    });
+  }
+
+  private releaseSemaphore(): void {
+    this.semaphoreActive--;
+    if (this.semaphoreQueue.length > 0) {
+      this.semaphoreQueue.shift()!();
+    }
   }
 
   /**
@@ -140,12 +184,69 @@ export class TelegramService {
     throw new Error('Telegram Bot API did not return a valid document');
   }
 
-  async getFileLink(fileId: string): Promise<string> {
-    const link = await this.withRetry('getFileLink', () =>
-      this.bot.telegram.getFileLink(fileId),
-    );
-    this.logger.debug(`Retrieved file link for fileId: ${fileId}`);
-    return link.toString();
+  async getFileLink(fileId: string, context?: string): Promise<string> {
+    const label = context ? `[${context}]` : '';
+
+    // 1. Check cache
+    const cached = this.fileLinkCache.get(fileId);
+    if (cached && cached.expiry > Date.now()) {
+      this.logger.debug(`File link cache HIT ${label} for fileId: ${fileId}`);
+      return cached.url;
+    }
+
+    // 2. Singleflight dedup — reuse in-flight request for same fileId
+    const pending = this.pendingRequests.get(fileId);
+    if (pending) {
+      this.logger.debug(`File link singleflight JOIN ${label} for fileId: ${fileId}`);
+      return pending;
+    }
+
+    // 3. Resolve with semaphore
+    const promise = this.resolveFileLinkWithSemaphore(fileId, context);
+    this.pendingRequests.set(fileId, promise);
+    try {
+      return await promise;
+    } finally {
+      this.pendingRequests.delete(fileId);
+    }
+  }
+
+  private async resolveFileLinkWithSemaphore(fileId: string, context?: string): Promise<string> {
+    const label = context ? `getFileLink(${context})` : 'getFileLink';
+    const logLabel = context ? ` [${context}]` : '';
+
+    await this.acquireSemaphore();
+    try {
+      // Double-check cache after acquiring semaphore (another request may have resolved it)
+      const cached = this.fileLinkCache.get(fileId);
+      if (cached && cached.expiry > Date.now()) {
+        this.logger.debug(`File link cache HIT${logLabel} for fileId: ${fileId} (after semaphore)`);
+        return cached.url;
+      }
+
+      this.logger.debug(`File link cache MISS${logLabel} for fileId: ${fileId} (semaphore: ${this.semaphoreActive}/${this.SEMAPHORE_LIMIT})`);
+
+      const link = await this.withRetry(label, () =>
+        this.bot.telegram.getFileLink(fileId),
+      );
+      let url = link.toString();
+
+      // Telegraf converts Local Bot API absolute paths to file:// URLs,
+      // but we need HTTP URLs to fetch from the API server remotely.
+      if (url.startsWith('file:')) {
+        const apiRoot = this.configService.get<string>('TELEGRAM_API_ROOT') || 'https://api.telegram.org';
+        const filePath = new URL(url).pathname;
+        url = `${apiRoot}/file/bot${this.bot.telegram.token}${filePath}`;
+        this.logger.debug(`Converted file:// URL to HTTP${logLabel}: ${url}`);
+      }
+
+      // Cache the result
+      this.fileLinkCache.set(fileId, { url, expiry: Date.now() + this.CACHE_TTL_MS });
+
+      return url;
+    } finally {
+      this.releaseSemaphore();
+    }
   }
 
   async deleteMessage(messageId: number): Promise<void> {

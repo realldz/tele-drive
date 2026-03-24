@@ -7,6 +7,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   DEFAULT_GUEST_BANDWIDTH: '1000000000',         // 1 GB/day
   DEFAULT_FILE_DOWNLOAD_LIMIT: '0',              // 0 = không giới hạn
   DEFAULT_DAILY_BANDWIDTH_LIMIT: '0',            // 0 = không giới hạn
+  ENABLE_MULTI_THREAD_DOWNLOAD: 'true',          // Cho phép download managers (IDM) dùng multi-thread
 };
 
 @Injectable()

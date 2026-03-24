@@ -26,6 +26,11 @@ import { S3Module } from './s3/s3.module';
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
         token: configService.get<string>('TELEGRAM_BOT_TOKEN') || '',
+        options: {
+          telegram: {
+            apiRoot: configService.get<string>('TELEGRAM_API_ROOT') || 'https://api.telegram.org',
+          },
+        },
       }),
       inject: [ConfigService],
     }),

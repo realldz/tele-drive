@@ -97,9 +97,10 @@ export class FolderController {
   async downloadSharedFile(
     @Param('token') token: string,
     @Param('fileId') fileId: string,
+    @Req() req: any,
     @Res() res: Response
   ) {
     const downloadInfo = await this.folderService.getSharedFileDownloadInfo(token, fileId);
-    return this.fileService.processDownload(downloadInfo, res);
+    return this.fileService.processDownload(downloadInfo, res, req.headers.range);
   }
 }

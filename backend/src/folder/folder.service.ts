@@ -289,7 +289,7 @@ export class FolderService {
 
     if (!isChild) throw new BadRequestException('File is not part of this shared link');
 
-    return this.fileService.resolveDownloadUrls(fileRecord);
+    return this.fileService.getDownloadMetadata(fileRecord);
   }
 
   /**

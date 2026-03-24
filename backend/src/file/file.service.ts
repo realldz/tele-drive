@@ -25,11 +25,30 @@ class ByteCounter extends Transform {
 export class FileService {
   private readonly logger = new Logger(FileService.name);
 
+  /** Cached multi-thread download setting */
+  private multiThreadEnabled: boolean | null = null;
+  private multiThreadEnabledAt = 0;
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegram: TelegramService,
     private readonly cryptoService: CryptoService,
   ) {}
+
+  /**
+   * Kiểm tra setting ENABLE_MULTI_THREAD_DOWNLOAD (cache 30 giây)
+   */
+  async isMultiThreadEnabled(): Promise<boolean> {
+    if (this.multiThreadEnabled !== null && Date.now() - this.multiThreadEnabledAt < 30_000) {
+      return this.multiThreadEnabled;
+    }
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'ENABLE_MULTI_THREAD_DOWNLOAD' },
+    });
+    this.multiThreadEnabled = setting?.value !== 'false';
+    this.multiThreadEnabledAt = Date.now();
+    return this.multiThreadEnabled;
+  }
 
   /**
    * Kiểm tra quota trước khi upload.
@@ -432,7 +451,7 @@ export class FileService {
     if (!fileRecord) throw new NotFoundException('File not found');
     if (fileRecord.status !== 'complete') throw new BadRequestException('File upload not completed yet');
 
-    return this.resolveDownloadUrls(fileRecord);
+    return this.getDownloadMetadata(fileRecord);
   }
 
   /**
@@ -446,24 +465,23 @@ export class FileService {
     if (!fileRecord || fileRecord.deletedAt) throw new NotFoundException('Shared file not found');
     if (fileRecord.status !== 'complete') throw new BadRequestException('File upload not completed yet');
 
-    return this.resolveDownloadUrls(fileRecord);
+    return this.getDownloadMetadata(fileRecord);
   }
 
   /**
-   * Helper phân giải FileRecord thành URLs download
+   * Helper trích xuất metadata download từ FileRecord (không resolve URL — URL được resolve lazily khi stream)
    */
-  async resolveDownloadUrls(fileRecord: any) {
+  getDownloadMetadata(fileRecord: any) {
     let dek: Buffer | null = null;
     if (fileRecord.isEncrypted && fileRecord.encryptedKey) {
       dek = this.cryptoService.decryptKey(fileRecord.encryptedKey);
     }
 
     if (!fileRecord.isChunked && fileRecord.telegramFileId) {
-      const url = await this.telegram.getFileLink(fileRecord.telegramFileId);
       return {
         filename: fileRecord.filename,
         size: fileRecord.size,
-        urls: [url],
+        telegramFileId: fileRecord.telegramFileId,
         isEncrypted: fileRecord.isEncrypted,
         dek,
         iv: fileRecord.encryptionIv ? Buffer.from(fileRecord.encryptionIv, 'hex') : null,
@@ -471,76 +489,166 @@ export class FileService {
       };
     }
 
-    // Pre-resolve ALL chunk URLs in parallel
-    const chunksWithUrls = await Promise.all(
-      fileRecord.chunks.map(async (chunk: any) => ({
-        telegramFileId: chunk.telegramFileId,
-        url: await this.telegram.getFileLink(chunk.telegramFileId),
-        iv: chunk.encryptionIv ? Buffer.from(chunk.encryptionIv, 'hex') : null,
-        size: Number(chunk.size),
-      })),
-    );
+    const chunks = fileRecord.chunks.map((chunk: any) => ({
+      telegramFileId: chunk.telegramFileId,
+      iv: chunk.encryptionIv ? Buffer.from(chunk.encryptionIv, 'hex') : null,
+      size: Number(chunk.size),
+    }));
 
     return {
       filename: fileRecord.filename,
       size: fileRecord.size,
       isChunked: true,
-      chunks: chunksWithUrls,
+      chunks,
       isEncrypted: fileRecord.isEncrypted,
       dek,
       mimeType: fileRecord.mimeType,
     };
   }
 
+  /** Number of chunks to prefetch URLs ahead of the current streaming position */
+  private readonly PREFETCH_AHEAD = 2;
+
+  /**
+   * Helper: pipe Telegram fetch stream → optional decrypt → res, with proper error handling.
+   * Prevents unhandled 'error' events on Readable.fromWeb() from crashing the process.
+   */
+  private pipeStreamToResponse(
+    fetchBody: ReadableStream,
+    res: Response,
+    options: {
+      decrypt?: { dek: Buffer; iv: Buffer; offset?: number };
+      endResponse?: boolean;
+    } = {},
+  ): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const rawStream = Readable.fromWeb(fetchBody as any);
+
+      // CRITICAL: always attach error handler on the raw stream
+      rawStream.on('error', (err) => {
+        if (!res.destroyed) res.end();
+        reject(err);
+      });
+
+      let output: Readable | Transform = rawStream;
+
+      if (options.decrypt) {
+        const decryptStream = options.decrypt.offset !== undefined
+          ? this.cryptoService.createOffsetDecryptStream(options.decrypt.dek, options.decrypt.iv, options.decrypt.offset)
+          : this.cryptoService.createDecryptStream(options.decrypt.dek, options.decrypt.iv);
+        decryptStream.on('error', (err) => {
+          rawStream.destroy();
+          if (!res.destroyed) res.end();
+          reject(err);
+        });
+        output = rawStream.pipe(decryptStream);
+      }
+
+      output.on('end', resolve);
+      // For non-encrypted, this duplicates rawStream's handler — safe because reject() is idempotent for promises
+      output.on('error', reject);
+
+      // Detect client disconnect → cleanup Telegram fetch stream
+      res.on('close', () => {
+        if (!res.writableFinished) {
+          rawStream.destroy();
+        }
+      });
+
+      output.pipe(res, { end: options.endResponse ?? false });
+    });
+  }
+
+  private isClientDisconnect(err: any): boolean {
+    return err?.code === 'ECONNRESET' || err?.message === 'terminated' || err?.code === 'ERR_STREAM_PREMATURE_CLOSE';
+  }
+
   /**
    * Helper process download file (dùng Streams)
+   * Resolve URLs lazily: stream chunk[i] trong khi prefetch URL cho chunk[i+1..i+PREFETCH_AHEAD]
    */
-  async processDownload(downloadInfo: any, res: Response) {
+  async processDownload(downloadInfo: any, res: Response, rangeHeader?: string) {
+    // Multi-thread download: nếu có Range header và tính năng được bật → delegate sang processRangeDownload
+    if (rangeHeader && await this.isMultiThreadEnabled()) {
+      return this.processRangeDownload(downloadInfo, rangeHeader, res);
+    }
+
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadInfo.filename)}"`);
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Length', downloadInfo.size.toString());
 
+    // Thêm Accept-Ranges nếu multi-thread download được bật
+    if (await this.isMultiThreadEnabled()) {
+      res.setHeader('Accept-Ranges', 'bytes');
+    }
+
     if (!downloadInfo.isChunked) {
-      const fetchRes = await fetchWithRetry(downloadInfo.urls[0]);
+      const url = await this.telegram.getFileLink(downloadInfo.telegramFileId);
+      const fetchRes = await fetchWithRetry(url);
       if (!fetchRes.ok || !fetchRes.body) {
-        this.logger.error(`Failed to fetch file from Telegram: "${downloadInfo.filename}"`);
+        this.logger.error(`Failed to fetch file from Telegram: "${downloadInfo.filename}" (status: ${fetchRes.status}, url: ${url})`);
         res.status(500).send('Trích xuất file từ Telegram thất bại');
         return;
       }
-      
-      let stream: Readable | Transform = Readable.fromWeb(fetchRes.body as any);
-      if (downloadInfo.isEncrypted && downloadInfo.dek && downloadInfo.iv) {
-        const decipher = this.cryptoService.createDecryptStream(downloadInfo.dek, downloadInfo.iv);
-        stream = stream.pipe(decipher);
+
+      try {
+        await this.pipeStreamToResponse(fetchRes.body, res, {
+          decrypt: (downloadInfo.isEncrypted && downloadInfo.dek && downloadInfo.iv)
+            ? { dek: downloadInfo.dek, iv: downloadInfo.iv }
+            : undefined,
+          endResponse: true,
+        });
+      } catch (err: any) {
+        if (this.isClientDisconnect(err)) {
+          this.logger.debug(`Client disconnected during download: "${downloadInfo.filename}"`);
+        } else {
+          this.logger.error(`Download failed: "${downloadInfo.filename}"`, err.message);
+          if (!res.headersSent) res.status(500).end();
+          else if (!res.destroyed) res.end();
+        }
       }
-      stream.pipe(res);
     } else {
       try {
-        for (const chunk of downloadInfo.chunks) {
-          const fetchRes = await fetchWithRetry(chunk.url);
-          if (!fetchRes.ok || !fetchRes.body) {
-            throw new Error('Failed to fetch chunk from Telegram');
+        const chunks = downloadInfo.chunks;
+        const totalChunks = chunks.length;
+
+        for (let i = 0; i < totalChunks; i++) {
+          // Prefetch URLs cho các chunk tiếp theo (fire-and-forget, chúng sẽ được cache)
+          for (let p = i + 1; p < Math.min(i + 1 + this.PREFETCH_AHEAD, totalChunks); p++) {
+            this.telegram.getFileLink(
+              chunks[p].telegramFileId,
+              `prefetch chunk ${p + 1}/${totalChunks} of "${downloadInfo.filename}"`,
+            );
           }
 
-          await new Promise<void>((resolve, reject) => {
-            let stream: Readable | Transform = Readable.fromWeb(fetchRes.body as any);
-            if (downloadInfo.isEncrypted && downloadInfo.dek && chunk.iv) {
-              const decipher = this.cryptoService.createDecryptStream(downloadInfo.dek, chunk.iv);
-              stream = stream.pipe(decipher);
-            }
+          // Resolve URL cho chunk hiện tại (instant nếu đã prefetch/cache)
+          const url = await this.telegram.getFileLink(
+            chunks[i].telegramFileId,
+            `chunk ${i + 1}/${totalChunks} of "${downloadInfo.filename}"`,
+          );
 
-            stream.on('end', resolve);
-            stream.on('error', reject);
-            stream.pipe(res, { end: false });
+          const fetchRes = await fetchWithRetry(url);
+          if (!fetchRes.ok || !fetchRes.body) {
+            throw new Error(`Failed to fetch chunk ${i + 1}/${totalChunks} from Telegram`);
+          }
+
+          await this.pipeStreamToResponse(fetchRes.body!, res, {
+            decrypt: (downloadInfo.isEncrypted && downloadInfo.dek && chunks[i].iv)
+              ? { dek: downloadInfo.dek, iv: chunks[i].iv }
+              : undefined,
           });
         }
         res.end();
-      } catch (error) {
-        this.logger.error(`Chunked download failed: "${downloadInfo.filename}"`, error instanceof Error ? error.stack : String(error));
-        if (!res.headersSent) {
-          res.status(500).send('Lỗi khi ghép file từ Telegram');
+      } catch (error: any) {
+        if (this.isClientDisconnect(error)) {
+          this.logger.debug(`Client disconnected during chunked download: "${downloadInfo.filename}"`);
         } else {
-          res.end();
+          this.logger.error(`Chunked download failed: "${downloadInfo.filename}"`, error instanceof Error ? error.stack : String(error));
+          if (!res.headersSent) {
+            res.status(500).send('Lỗi khi ghép file từ Telegram');
+          } else if (!res.destroyed) {
+            res.end();
+          }
         }
       }
     }
@@ -548,6 +656,7 @@ export class FileService {
 
   /**
    * Helper process streaming media (dùng Range Requests)
+   * Resolve chunk URLs lazily — chỉ resolve cho các chunks overlap với Range
    */
   async processStream(downloadInfo: any, rangeHeader: string | undefined, res: Response) {
     const fileSize = Number(downloadInfo.size);
@@ -568,7 +677,7 @@ export class FileService {
       res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
       return res.end();
     }
-    
+
     end = Math.min(end, fileSize - 1);
     const contentLength = end - start + 1;
 
@@ -580,66 +689,200 @@ export class FileService {
     res.setHeader('Content-Disposition', 'inline');
 
     if (!downloadInfo.isChunked) {
-      const fetchRes = await fetchWithRetry(downloadInfo.urls[0], {
+      const url = await this.telegram.getFileLink(downloadInfo.telegramFileId);
+      const fetchRes = await fetchWithRetry(url, {
         headers: { Range: `bytes=${start}-${end}` }
       });
       if (!fetchRes.ok || !fetchRes.body) {
         this.logger.error(`Failed to fetch stream from Telegram: "${downloadInfo.filename}"`);
         return res.status(500).end();
       }
-      
-      let stream: Readable | Transform = Readable.fromWeb(fetchRes.body as any);
-      if (downloadInfo.isEncrypted && downloadInfo.dek && downloadInfo.iv) {
-        stream = stream.pipe(this.cryptoService.createOffsetDecryptStream(downloadInfo.dek, downloadInfo.iv, start));
+
+      try {
+        await this.pipeStreamToResponse(fetchRes.body, res, {
+          decrypt: (downloadInfo.isEncrypted && downloadInfo.dek && downloadInfo.iv)
+            ? { dek: downloadInfo.dek, iv: downloadInfo.iv, offset: start }
+            : undefined,
+          endResponse: true,
+        });
+      } catch (err: any) {
+        if (this.isClientDisconnect(err)) {
+          this.logger.debug(`Client disconnected during stream: "${downloadInfo.filename}"`);
+        } else {
+          this.logger.error(`Stream failed: "${downloadInfo.filename}"`, err.message);
+          if (!res.headersSent) res.status(500).end();
+          else if (!res.destroyed) res.end();
+        }
       }
-      stream.pipe(res);
     } else {
       let currentOffset = 0;
-      const chunksToFetch = [];
-      
+      const chunksToFetch: { telegramFileId: string; iv: Buffer | null; size: number; fetchStart: number; fetchEnd: number; byteOffsetInChunk: number }[] = [];
+
       for (const chunk of downloadInfo.chunks) {
-        // chunk doesn't explicitly store its own total size individually in some places but wait, chunk.size is present!
-        // wait, we didn't add chunk.size to downloadInfo.chunks in resolveDownloadUrls!
-        // Let's rely on chunk.size. We MUST add chunk.size to resolveDownloadUrls!
         const chunkStart = currentOffset;
         const chunkEnd = currentOffset + chunk.size - 1;
-        
+
         if (start <= chunkEnd && end >= chunkStart) {
           const fetchStart = Math.max(start, chunkStart) - chunkStart;
           const fetchEnd = Math.min(end, chunkEnd) - chunkStart;
-          
+
           chunksToFetch.push({
-            ...chunk,
+            telegramFileId: chunk.telegramFileId,
+            iv: chunk.iv,
+            size: chunk.size,
             fetchStart,
             fetchEnd,
-            byteOffsetInChunk: fetchStart
+            byteOffsetInChunk: fetchStart,
           });
         }
         currentOffset += chunk.size;
       }
 
       try {
-        for (const chunkReq of chunksToFetch) {
-          const fetchRes = await fetchWithRetry(chunkReq.url, {
+        for (let i = 0; i < chunksToFetch.length; i++) {
+          const chunkReq = chunksToFetch[i];
+
+          // Prefetch URLs cho các chunk tiếp theo
+          for (let p = i + 1; p < Math.min(i + 1 + this.PREFETCH_AHEAD, chunksToFetch.length); p++) {
+            this.telegram.getFileLink(chunksToFetch[p].telegramFileId);
+          }
+
+          const url = await this.telegram.getFileLink(chunkReq.telegramFileId);
+          const fetchRes = await fetchWithRetry(url, {
             headers: { Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}` }
           });
           if (!fetchRes.ok || !fetchRes.body) throw new Error('Fetch chunk error');
 
-          await new Promise<void>((resolve, reject) => {
-            let stream: Readable | Transform = Readable.fromWeb(fetchRes.body as any);
-            if (downloadInfo.isEncrypted && downloadInfo.dek && chunkReq.iv) {
-              stream = stream.pipe(this.cryptoService.createOffsetDecryptStream(downloadInfo.dek, chunkReq.iv, chunkReq.byteOffsetInChunk));
-            }
-            stream.on('end', resolve);
-            stream.on('error', reject);
-            stream.pipe(res, { end: false });
+          await this.pipeStreamToResponse(fetchRes.body, res, {
+            decrypt: (downloadInfo.isEncrypted && downloadInfo.dek && chunkReq.iv)
+              ? { dek: downloadInfo.dek, iv: chunkReq.iv, offset: chunkReq.byteOffsetInChunk }
+              : undefined,
           });
         }
         res.end();
-      } catch (err) {
-        this.logger.error('Stream error', err);
+      } catch (err: any) {
+        if (this.isClientDisconnect(err)) {
+          this.logger.debug(`Client disconnected during stream: "${downloadInfo.filename}"`);
+        } else {
+          this.logger.error('Stream error', err);
+        }
         if (!res.headersSent) res.status(500).end();
-        else res.end();
+        else if (!res.destroyed) res.end();
+      }
+    }
+  }
+
+  /**
+   * Download với Range header (cho multi-thread download managers như IDM)
+   * Giống processStream nhưng giữ Content-Disposition: attachment
+   */
+  private async processRangeDownload(downloadInfo: any, rangeHeader: string, res: Response) {
+    const fileSize = Number(downloadInfo.size);
+    let start = 0;
+    let end = fileSize - 1;
+
+    const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
+    if (match) {
+      start = parseInt(match[1], 10);
+      if (match[2]) {
+        end = parseInt(match[2], 10);
+      }
+    }
+
+    if (start >= fileSize) {
+      res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
+      return res.end();
+    }
+
+    end = Math.min(end, fileSize - 1);
+    const contentLength = end - start + 1;
+
+    res.status(206);
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+    res.setHeader('Accept-Ranges', 'bytes');
+    res.setHeader('Content-Length', contentLength.toString());
+    res.setHeader('Content-Type', downloadInfo.mimeType || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadInfo.filename)}"`);
+
+    if (!downloadInfo.isChunked) {
+      const url = await this.telegram.getFileLink(downloadInfo.telegramFileId);
+      const fetchRes = await fetchWithRetry(url, {
+        headers: { Range: `bytes=${start}-${end}` },
+      });
+      if (!fetchRes.ok || !fetchRes.body) {
+        this.logger.error(`Failed to fetch range from Telegram: "${downloadInfo.filename}"`);
+        return res.status(500).end();
+      }
+
+      try {
+        await this.pipeStreamToResponse(fetchRes.body, res, {
+          decrypt: (downloadInfo.isEncrypted && downloadInfo.dek && downloadInfo.iv)
+            ? { dek: downloadInfo.dek, iv: downloadInfo.iv, offset: start }
+            : undefined,
+          endResponse: true,
+        });
+      } catch (err: any) {
+        if (this.isClientDisconnect(err)) {
+          this.logger.debug(`Client disconnected during range download: "${downloadInfo.filename}"`);
+        } else {
+          this.logger.error(`Range download failed: "${downloadInfo.filename}"`, err.message);
+          if (!res.headersSent) res.status(500).end();
+          else if (!res.destroyed) res.end();
+        }
+      }
+    } else {
+      let currentOffset = 0;
+      const chunksToFetch: { telegramFileId: string; iv: Buffer | null; size: number; fetchStart: number; fetchEnd: number; byteOffsetInChunk: number }[] = [];
+
+      for (const chunk of downloadInfo.chunks) {
+        const chunkStart = currentOffset;
+        const chunkEnd = currentOffset + chunk.size - 1;
+
+        if (start <= chunkEnd && end >= chunkStart) {
+          const fetchStart = Math.max(start, chunkStart) - chunkStart;
+          const fetchEnd = Math.min(end, chunkEnd) - chunkStart;
+
+          chunksToFetch.push({
+            telegramFileId: chunk.telegramFileId,
+            iv: chunk.iv,
+            size: chunk.size,
+            fetchStart,
+            fetchEnd,
+            byteOffsetInChunk: fetchStart,
+          });
+        }
+        currentOffset += chunk.size;
+      }
+
+      try {
+        for (let i = 0; i < chunksToFetch.length; i++) {
+          const chunkReq = chunksToFetch[i];
+
+          for (let p = i + 1; p < Math.min(i + 1 + this.PREFETCH_AHEAD, chunksToFetch.length); p++) {
+            this.telegram.getFileLink(chunksToFetch[p].telegramFileId);
+          }
+
+          const url = await this.telegram.getFileLink(chunkReq.telegramFileId);
+          const fetchRes = await fetchWithRetry(url, {
+            headers: { Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}` },
+          });
+          if (!fetchRes.ok || !fetchRes.body) throw new Error('Fetch chunk error');
+
+          await this.pipeStreamToResponse(fetchRes.body, res, {
+            decrypt: downloadInfo.isEncrypted && downloadInfo.dek && chunkReq.iv
+              ? { dek: downloadInfo.dek, iv: chunkReq.iv, offset: chunkReq.byteOffsetInChunk }
+              : undefined,
+          });
+        }
+        res.end();
+      } catch (err: any) {
+        if (this.isClientDisconnect(err)) {
+          this.logger.debug(`Client disconnected during range download: "${downloadInfo.filename}"`);
+        } else {
+          this.logger.error(`Range download error: "${downloadInfo.filename}"`, err.message);
+        }
+        if (!res.headersSent) res.status(500).end();
+        else if (!res.destroyed) res.end();
       }
     }
   }

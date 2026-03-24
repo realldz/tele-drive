@@ -216,7 +216,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = (req as any).s3UserId as string;
-    const key = params['key'] as string;
+    const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
@@ -266,7 +266,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = (req as any).s3UserId as string;
-    const key = params['key'] as string;
+    const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
@@ -340,7 +340,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = (req as any).s3UserId as string;
-    const key = params['key'] as string;
+    const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
@@ -363,7 +363,7 @@ export class S3Controller {
     this.logger.log(`S3 GetObject: s3://${bucket}/${key} (userId: ${userId})`);
     try {
       const file = await this.s3Service.findObject(userId, bucket, key);
-      const downloadInfo = await this.fileService.resolveDownloadUrls(file);
+      const downloadInfo = this.fileService.getDownloadMetadata(file);
 
       const etag = (file as any).etag || `"${file.id}"`;
       res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
@@ -395,7 +395,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = (req as any).s3UserId as string;
-    const key = params['key'] as string;
+    const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
 
     this.logger.log(`S3 HeadObject: s3://${bucket}/${key} (userId: ${userId})`);
     this.setRequestId(res);
@@ -433,7 +433,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = (req as any).s3UserId as string;
-    const key = params['key'] as string;
+    const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);

@@ -22,6 +22,7 @@ export class FileController {
   /**
    * GET /files/config — Frontend gọi để biết maxChunkSize
    */
+  @Public()
   @Get('config')
   getConfig() {
     return { maxChunkSize: MAX_CHUNK_SIZE };
@@ -114,7 +115,7 @@ export class FileController {
   @UseInterceptors(BandwidthInterceptor)
   async download(@Param('id') id: string, @Req() req: any, @Res() res: Response) {
     const downloadInfo = await this.fileService.getDownloadInfo(id, req.user.userId);
-    return this.fileService.processDownload(downloadInfo, res);
+    return this.fileService.processDownload(downloadInfo, res, req.headers.range);
   }
 
   /**
@@ -189,7 +190,7 @@ export class FileController {
   @Get('share/:token/download')
   async downloadSharedFile(@Param('token') token: string, @Req() req: any, @Res() res: Response) {
     const downloadInfo = await this.fileService.getDownloadInfoByToken(token);
-    return this.fileService.processDownload(downloadInfo, res);
+    return this.fileService.processDownload(downloadInfo, res, req.headers.range);
   }
 
   /**
