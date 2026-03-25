@@ -9,10 +9,11 @@ services:
     volumes:
       - telegram-data:/var/lib/telegram-bot-api
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8081 || exit 1"]
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8081"]
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 15s
     restart: unless-stopped
 
   # ─── Nginx (reverse proxy + Telegram file server) ──────────────────
