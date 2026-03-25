@@ -8,6 +8,9 @@ import axios from 'axios';
 import { FileIcon, Download, ArrowLeft, Loader2, FileText, Film, Image as ImageIcon, Music } from 'lucide-react';
 
 import { API_URL } from '@/lib/api';
+import dynamic from 'next/dynamic';
+
+const PreviewRenderer = dynamic(() => import('@/components/preview-renderer'), { ssr: false });
 
 interface FileInfo {
   id: string;
@@ -77,88 +80,6 @@ export default function FilePreviewPage() {
   const streamUrl = `${API_URL}/files/${fileId}/stream?token=${token}`;
   const downloadUrl = `${API_URL}/files/${fileId}/download?token=${token}`;
 
-  const renderPreview = () => {
-    const { mimeType } = fileInfo;
-
-    if (mimeType.startsWith('image/')) {
-      return (
-        <div className="flex h-full items-center justify-center p-4">
-          <img
-            src={streamUrl}
-            alt={fileInfo.filename}
-            className="max-h-full max-w-full rounded-lg object-contain shadow-lg"
-          />
-        </div>
-      );
-    }
-
-    if (mimeType.startsWith('video/')) {
-      return (
-        <div className="flex h-full items-center justify-center p-4 bg-black">
-          <video
-            controls
-            autoPlay
-            src={streamUrl}
-            className="max-h-full max-w-full rounded-lg outline-none"
-          >
-            Your browser does not support the video tag.
-          </video>
-        </div>
-      );
-    }
-
-    if (mimeType.startsWith('audio/')) {
-      return (
-        <div className="flex h-full flex-col items-center justify-center p-4 bg-gray-100 dark:bg-gray-800">
-          <Music className="mb-8 h-32 w-32 text-gray-400" />
-          <audio controls src={streamUrl} className="w-full max-w-xl outline-none">
-            Your browser does not support the audio tag.
-          </audio>
-        </div>
-      );
-    }
-
-    if (mimeType === 'application/pdf') {
-      return (
-        <iframe
-          src={streamUrl}
-          className="h-full w-full border-0"
-          title={fileInfo.filename}
-        />
-      );
-    }
-
-    if (mimeType.startsWith('text/')) {
-      // For text we can either fetch or use iframe. Iframe is simpler for raw preview.
-      return (
-        <div className="h-full w-full bg-white p-4 overflow-hidden">
-          <iframe
-            src={streamUrl}
-            className="h-full w-full border border-gray-200 rounded"
-            title={fileInfo.filename}
-          />
-        </div>
-      );
-    }
-
-    // Fallback for unsupported types
-    return (
-      <div className="flex h-full flex-col items-center justify-center bg-gray-50">
-        <FileIcon className="mb-4 h-24 w-24 text-gray-400" />
-        <h3 className="mb-2 text-xl font-medium text-gray-800">{t('preview.notAvailable')}</h3>
-        <p className="mb-6 text-gray-500">{t('preview.cannotPreview', { mimeType })}</p>
-        <a
-          href={downloadUrl}
-          download={fileInfo.filename}
-          className="flex items-center gap-2 rounded bg-blue-500 px-6 py-3 font-semibold text-white shadow hover:bg-blue-600 transition-colors"
-        >
-          <Download className="h-5 w-5" />
-          {t('preview.downloadFile')}
-        </a>
-      </div>
-    );
-  };
-
   const getFileIcon = (mimeType: string) => {
     if (mimeType.startsWith('image/')) return <ImageIcon className="h-5 w-5 text-gray-500" />;
     if (mimeType.startsWith('video/')) return <Film className="h-5 w-5 text-gray-500" />;
@@ -179,7 +100,7 @@ export default function FilePreviewPage() {
           >
             <ArrowLeft className="h-5 w-5" />
           </button>
-          
+
           <div className="flex items-center gap-3 min-w-0">
             {getFileIcon(fileInfo.mimeType)}
             <h1 className="truncate font-semibold text-gray-800 dark:text-gray-100">
@@ -205,7 +126,12 @@ export default function FilePreviewPage() {
 
       {/* Main Preview Area */}
       <main className="flex-1 relative overflow-hidden bg-gray-100 dark:bg-gray-900">
-        {renderPreview()}
+        <PreviewRenderer
+          streamUrl={streamUrl}
+          downloadUrl={downloadUrl}
+          fileInfo={fileInfo}
+          t={t}
+        />
       </main>
     </div>
   );

@@ -38,7 +38,7 @@ async function bootstrap() {
 
   // Cho phép gọi API từ Next.js
   app.enableCors({
-    origin: '*',
+    origin: true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
