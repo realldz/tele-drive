@@ -7,6 +7,7 @@ import Busboy from 'busboy';
 import * as crypto from 'crypto';
 import type { Response } from 'express';
 import { CryptoService } from '../crypto/crypto.service';
+import { MAX_CHUNK_SIZE } from '../config/upload.config';
 
 /**
  * Transform stream đếm bytes đi qua — dùng để biết kích thước chunk
@@ -29,6 +30,13 @@ export class FileService {
   private multiThreadEnabled: boolean | null = null;
   private multiThreadEnabledAt = 0;
 
+  /** Cached max concurrent chunks setting */
+  private _maxConcurrentChunks: number | null = null;
+  private _maxConcurrentChunksAt = 0;
+
+  /** Track active chunk uploads per user for concurrency enforcement */
+  private readonly activeUploads = new Map<string, number>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegram: TelegramService,
@@ -48,6 +56,21 @@ export class FileService {
     this.multiThreadEnabled = setting?.value !== 'false';
     this.multiThreadEnabledAt = Date.now();
     return this.multiThreadEnabled;
+  }
+
+  /**
+   * Kiểm tra setting MAX_CONCURRENT_CHUNKS (cache 30 giây)
+   */
+  async getMaxConcurrentChunks(): Promise<number> {
+    if (this._maxConcurrentChunks !== null && Date.now() - this._maxConcurrentChunksAt < 30_000) {
+      return this._maxConcurrentChunks;
+    }
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'MAX_CONCURRENT_CHUNKS' },
+    });
+    this._maxConcurrentChunks = setting ? parseInt(setting.value, 10) || 3 : 3;
+    this._maxConcurrentChunksAt = Date.now();
+    return this._maxConcurrentChunks;
   }
 
   /**
@@ -117,7 +140,7 @@ export class FileService {
       const cipher = this.cryptoService.createEncryptStream(dek, iv);
       const encryptedBuffer = Buffer.concat([cipher.update(file.buffer), cipher.final()]);
       // Use record.id as the Telegram filename to avoid leaking the real filename
-      const { fileId: telegramFileId, messageId: telegramMessageId } = await this.telegram.uploadFile(encryptedBuffer, record.id);
+      const { fileId: telegramFileId, messageId: telegramMessageId, botIndex } = await this.telegram.uploadFile(encryptedBuffer, record.id);
 
       // 3) Thành công -> Update trạng thái và cộng dung lượng
       const updated = await this.prisma.$transaction(async (tx) => {
@@ -126,6 +149,7 @@ export class FileService {
           data: {
             telegramFileId,
             telegramMessageId,
+            botIndex,
             status: 'complete',
           },
         });
@@ -197,6 +221,49 @@ export class FileService {
    *                (tất cả diễn ra đồng thời, không buffer toàn bộ chunk)
    */
   async uploadChunkStream(fileId: string, chunkIndex: number, userId: string, req: any): Promise<any> {
+    // Kiểm tra concurrent chunk upload limit
+    const maxConcurrent = await this.getMaxConcurrentChunks();
+    const active = this.activeUploads.get(userId) || 0;
+    if (active >= maxConcurrent) {
+      const waitMs = this.telegram.getWaitTimeMs();
+      const retryAfter = Math.max(3, Math.ceil(waitMs / 1000));
+      throw new HttpException(
+        {
+          message: `Too many concurrent uploads. Maximum ${maxConcurrent} chunks at a time.`,
+          retryAfter,
+        },
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
+    }
+    this.activeUploads.set(userId, active + 1);
+
+    // AbortController để huỷ acquireUploadSlot khi client disconnect
+    const abortController = new AbortController();
+    let settled = false;
+
+    // Lắng nghe socket close (TCP connection thực sự đóng) thay vì req close
+    // (req 'close' fires khi body đã nhận xong, quá sớm)
+    const socket = req.socket;
+    const onSocketClose = () => {
+      if (!settled) {
+        this.logger.debug(`Client disconnected during chunk upload (file: ${fileId}, chunk: ${chunkIndex})`);
+        abortController.abort();
+      }
+    };
+    socket?.on('close', onSocketClose);
+
+    try {
+      return await this._uploadChunkStreamInternal(fileId, chunkIndex, userId, req, abortController.signal);
+    } finally {
+      settled = true;
+      socket?.removeListener('close', onSocketClose);
+      const current = this.activeUploads.get(userId) || 1;
+      if (current <= 1) this.activeUploads.delete(userId);
+      else this.activeUploads.set(userId, current - 1);
+    }
+  }
+
+  private async _uploadChunkStreamInternal(fileId: string, chunkIndex: number, userId: string, req: any, signal?: AbortSignal): Promise<any> {
     const fileRecord = await this.prisma.fileRecord.findFirst({
       where: { id: fileId, userId, deletedAt: null },
     });
@@ -258,12 +325,24 @@ export class FileService {
         dataStream.on('data', (buf: Buffer) => {
           chunks.push(buf);
           rawBytes += buf.length;
+          if (rawBytes > MAX_CHUNK_SIZE) {
+            stream.destroy();
+            reject(new BadRequestException(
+              `Chunk size exceeds maximum allowed size (${MAX_CHUNK_SIZE} bytes)`,
+            ));
+          }
         });
 
         dataStream.on('error', (err: Error) => reject(err));
 
         dataStream.on('end', () => {
           const buffer = Buffer.concat(chunks);
+
+          // Check abort trước khi upload lên Telegram
+          if (signal?.aborted) {
+            reject(new Error('Upload cancelled'));
+            return;
+          }
 
           this.logger.log(`Starting chunk upload to Telegram: ${chunkIndex + 1}/${fileRecord.totalChunks} for file "${fileRecord.filename}" (${fileRecord.id}), ${rawBytes} bytes`);
 
@@ -279,13 +358,13 @@ export class FileService {
             },
           })
             .then((pendingChunk) => {
-              return this.telegram.uploadFile(buffer, chunkFilename)
-                .then(async ({ fileId: telegramFileId, messageId: telegramMessageId }) => {
+              return this.telegram.uploadFile(buffer, chunkFilename, signal)
+                .then(async ({ fileId: telegramFileId, messageId: telegramMessageId, botIndex }) => {
                   try {
                     // Update with real Telegram IDs
                     const updated = await this.prisma.fileChunk.update({
                       where: { id: pendingChunk.id },
-                      data: { telegramFileId, telegramMessageId },
+                      data: { telegramFileId, telegramMessageId, botIndex },
                     });
 
                     // Check if file was aborted while we were uploading
@@ -482,6 +561,8 @@ export class FileService {
         filename: fileRecord.filename,
         size: fileRecord.size,
         telegramFileId: fileRecord.telegramFileId,
+        botIndex: fileRecord.botIndex ?? 0,
+        telegramMessageId: fileRecord.telegramMessageId,
         isEncrypted: fileRecord.isEncrypted,
         dek,
         iv: fileRecord.encryptionIv ? Buffer.from(fileRecord.encryptionIv, 'hex') : null,
@@ -490,7 +571,10 @@ export class FileService {
     }
 
     const chunks = fileRecord.chunks.map((chunk: any) => ({
+      id: chunk.id,
       telegramFileId: chunk.telegramFileId,
+      botIndex: chunk.botIndex ?? 0,
+      telegramMessageId: chunk.telegramMessageId,
       iv: chunk.encryptionIv ? Buffer.from(chunk.encryptionIv, 'hex') : null,
       size: Number(chunk.size),
     }));
@@ -508,6 +592,83 @@ export class FileService {
 
   /** Number of chunks to prefetch URLs ahead of the current streaming position */
   private readonly PREFETCH_AHEAD = 2;
+
+  /**
+   * Resolve file link with auto-recovery: if the bot that uploaded the file is no longer
+   * available, forward the original message via main bot to get a new file_id.
+   */
+  private async resolveFileLink(
+    telegramFileId: string,
+    botIndex: number,
+    telegramMessageId: number | null,
+    chunkDbId: string | null,
+    context?: string,
+  ): Promise<string> {
+    if (botIndex < this.telegram.botCount) {
+      return this.telegram.getFileLink(telegramFileId, botIndex, context);
+    }
+    // Bot unavailable → recover via forwardMessage
+    if (!telegramMessageId) {
+      throw new Error(`Bot ${botIndex} unavailable and no messageId for recovery`);
+    }
+    this.logger.warn(`Bot ${botIndex} unavailable, recovering via forward (messageId: ${telegramMessageId})`);
+    const { fileId: newFileId, botIndex: newBotIndex } = await this.telegram.recoverFileId(telegramMessageId);
+    // Cập nhật DB (fire-and-forget, không block download)
+    if (chunkDbId) {
+      this.prisma.fileChunk.update({
+        where: { id: chunkDbId },
+        data: { telegramFileId: newFileId, botIndex: newBotIndex },
+      }).catch(e => this.logger.warn(`Failed to update recovered chunk: ${e.message}`));
+    }
+    return this.telegram.getFileLink(newFileId, newBotIndex, context);
+  }
+
+  /**
+   * Admin: re-index all chunks/files whose bot is no longer available.
+   */
+  async reindexUnavailableBots(): Promise<{ recovered: number; failed: number }> {
+    const botCount = this.telegram.botCount;
+    const staleChunks = await this.prisma.fileChunk.findMany({
+      where: { botIndex: { gte: botCount } },
+    });
+    const staleFiles = await this.prisma.fileRecord.findMany({
+      where: { botIndex: { gte: botCount }, isChunked: false, telegramMessageId: { not: null } },
+    });
+
+    let recovered = 0;
+    let failed = 0;
+
+    for (const chunk of staleChunks) {
+      try {
+        if (!chunk.telegramMessageId) { failed++; continue; }
+        const { fileId, botIndex } = await this.telegram.recoverFileId(chunk.telegramMessageId);
+        await this.prisma.fileChunk.update({
+          where: { id: chunk.id },
+          data: { telegramFileId: fileId, botIndex },
+        });
+        recovered++;
+      } catch {
+        failed++;
+      }
+    }
+
+    for (const file of staleFiles) {
+      try {
+        if (!file.telegramMessageId) { failed++; continue; }
+        const { fileId, botIndex } = await this.telegram.recoverFileId(file.telegramMessageId);
+        await this.prisma.fileRecord.update({
+          where: { id: file.id },
+          data: { telegramFileId: fileId, botIndex },
+        });
+        recovered++;
+      } catch {
+        failed++;
+      }
+    }
+
+    this.logger.log(`Reindex complete: ${recovered} recovered, ${failed} failed`);
+    return { recovered, failed };
+  }
 
   /**
    * Helper: pipe Telegram fetch stream → optional decrypt → res, with proper error handling.
@@ -549,13 +710,19 @@ export class FileService {
       output.on('error', reject);
 
       // Detect client disconnect → cleanup Telegram fetch stream
-      res.on('close', () => {
+      const onResClose = () => {
         if (!res.writableFinished) {
           rawStream.destroy();
         }
-      });
+      };
+      res.on('close', onResClose);
 
       output.pipe(res, { end: options.endResponse ?? false });
+
+      // Cleanup: remove close listener when pipe finishes to avoid accumulation on chunked downloads
+      const cleanup = () => res.removeListener('close', onResClose);
+      output.on('end', cleanup);
+      output.on('error', cleanup);
     });
   }
 
@@ -583,7 +750,10 @@ export class FileService {
     }
 
     if (!downloadInfo.isChunked) {
-      const url = await this.telegram.getFileLink(downloadInfo.telegramFileId);
+      const url = await this.resolveFileLink(
+        downloadInfo.telegramFileId, downloadInfo.botIndex ?? 0,
+        downloadInfo.telegramMessageId, null,
+      );
       const fetchRes = await fetchWithRetry(url);
       if (!fetchRes.ok || !fetchRes.body) {
         this.logger.error(`Failed to fetch file from Telegram: "${downloadInfo.filename}" (status: ${fetchRes.status}, url: ${url})`);
@@ -615,15 +785,17 @@ export class FileService {
         for (let i = 0; i < totalChunks; i++) {
           // Prefetch URLs cho các chunk tiếp theo (fire-and-forget, chúng sẽ được cache)
           for (let p = i + 1; p < Math.min(i + 1 + this.PREFETCH_AHEAD, totalChunks); p++) {
-            this.telegram.getFileLink(
-              chunks[p].telegramFileId,
+            this.resolveFileLink(
+              chunks[p].telegramFileId, chunks[p].botIndex ?? 0,
+              chunks[p].telegramMessageId, chunks[p].id,
               `prefetch chunk ${p + 1}/${totalChunks} of "${downloadInfo.filename}"`,
             );
           }
 
           // Resolve URL cho chunk hiện tại (instant nếu đã prefetch/cache)
-          const url = await this.telegram.getFileLink(
-            chunks[i].telegramFileId,
+          const url = await this.resolveFileLink(
+            chunks[i].telegramFileId, chunks[i].botIndex ?? 0,
+            chunks[i].telegramMessageId, chunks[i].id,
             `chunk ${i + 1}/${totalChunks} of "${downloadInfo.filename}"`,
           );
 
@@ -681,15 +853,22 @@ export class FileService {
     end = Math.min(end, fileSize - 1);
     const contentLength = end - start + 1;
 
-    res.status(206);
-    res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+    if (rangeHeader) {
+      res.status(206);
+      res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
+    } else {
+      res.status(200);
+    }
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Content-Length', contentLength.toString());
     res.setHeader('Content-Type', downloadInfo.mimeType || 'application/octet-stream');
     res.setHeader('Content-Disposition', 'inline');
 
     if (!downloadInfo.isChunked) {
-      const url = await this.telegram.getFileLink(downloadInfo.telegramFileId);
+      const url = await this.resolveFileLink(
+        downloadInfo.telegramFileId, downloadInfo.botIndex ?? 0,
+        downloadInfo.telegramMessageId, null,
+      );
       const fetchRes = await fetchWithRetry(url, {
         headers: { Range: `bytes=${start}-${end}` }
       });
@@ -716,7 +895,7 @@ export class FileService {
       }
     } else {
       let currentOffset = 0;
-      const chunksToFetch: { telegramFileId: string; iv: Buffer | null; size: number; fetchStart: number; fetchEnd: number; byteOffsetInChunk: number }[] = [];
+      const chunksToFetch: { telegramFileId: string; botIndex: number; telegramMessageId: number | null; id: string | null; iv: Buffer | null; size: number; fetchStart: number; fetchEnd: number; byteOffsetInChunk: number }[] = [];
 
       for (const chunk of downloadInfo.chunks) {
         const chunkStart = currentOffset;
@@ -728,6 +907,9 @@ export class FileService {
 
           chunksToFetch.push({
             telegramFileId: chunk.telegramFileId,
+            botIndex: chunk.botIndex ?? 0,
+            telegramMessageId: chunk.telegramMessageId,
+            id: chunk.id,
             iv: chunk.iv,
             size: chunk.size,
             fetchStart,
@@ -744,10 +926,16 @@ export class FileService {
 
           // Prefetch URLs cho các chunk tiếp theo
           for (let p = i + 1; p < Math.min(i + 1 + this.PREFETCH_AHEAD, chunksToFetch.length); p++) {
-            this.telegram.getFileLink(chunksToFetch[p].telegramFileId);
+            this.resolveFileLink(
+              chunksToFetch[p].telegramFileId, chunksToFetch[p].botIndex ?? 0,
+              chunksToFetch[p].telegramMessageId, chunksToFetch[p].id,
+            );
           }
 
-          const url = await this.telegram.getFileLink(chunkReq.telegramFileId);
+          const url = await this.resolveFileLink(
+            chunkReq.telegramFileId, chunkReq.botIndex ?? 0,
+            chunkReq.telegramMessageId, chunkReq.id,
+          );
           const fetchRes = await fetchWithRetry(url, {
             headers: { Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}` }
           });
@@ -805,7 +993,10 @@ export class FileService {
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadInfo.filename)}"`);
 
     if (!downloadInfo.isChunked) {
-      const url = await this.telegram.getFileLink(downloadInfo.telegramFileId);
+      const url = await this.resolveFileLink(
+        downloadInfo.telegramFileId, downloadInfo.botIndex ?? 0,
+        downloadInfo.telegramMessageId, null,
+      );
       const fetchRes = await fetchWithRetry(url, {
         headers: { Range: `bytes=${start}-${end}` },
       });
@@ -832,7 +1023,7 @@ export class FileService {
       }
     } else {
       let currentOffset = 0;
-      const chunksToFetch: { telegramFileId: string; iv: Buffer | null; size: number; fetchStart: number; fetchEnd: number; byteOffsetInChunk: number }[] = [];
+      const chunksToFetch: { telegramFileId: string; botIndex: number; telegramMessageId: number | null; id: string | null; iv: Buffer | null; size: number; fetchStart: number; fetchEnd: number; byteOffsetInChunk: number }[] = [];
 
       for (const chunk of downloadInfo.chunks) {
         const chunkStart = currentOffset;
@@ -844,6 +1035,9 @@ export class FileService {
 
           chunksToFetch.push({
             telegramFileId: chunk.telegramFileId,
+            botIndex: chunk.botIndex ?? 0,
+            telegramMessageId: chunk.telegramMessageId,
+            id: chunk.id,
             iv: chunk.iv,
             size: chunk.size,
             fetchStart,
@@ -859,10 +1053,16 @@ export class FileService {
           const chunkReq = chunksToFetch[i];
 
           for (let p = i + 1; p < Math.min(i + 1 + this.PREFETCH_AHEAD, chunksToFetch.length); p++) {
-            this.telegram.getFileLink(chunksToFetch[p].telegramFileId);
+            this.resolveFileLink(
+              chunksToFetch[p].telegramFileId, chunksToFetch[p].botIndex ?? 0,
+              chunksToFetch[p].telegramMessageId, chunksToFetch[p].id,
+            );
           }
 
-          const url = await this.telegram.getFileLink(chunkReq.telegramFileId);
+          const url = await this.resolveFileLink(
+            chunkReq.telegramFileId, chunkReq.botIndex ?? 0,
+            chunkReq.telegramMessageId, chunkReq.id,
+          );
           const fetchRes = await fetchWithRetry(url, {
             headers: { Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}` },
           });

@@ -3,8 +3,9 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import axios from 'axios';
 import { API_URL, fetchUploadConfig, abortUpload, createFolder } from '@/lib/api';
+import { useAuth } from '@/components/auth-context';
 
-const CONCURRENCY = 3;
+const CONCURRENCY = 3; // default, overridden by server config
 
 export interface QueueItem {
   id: string;
@@ -43,8 +44,10 @@ function uid(): string {
 }
 
 export function UploadProvider({ children }: { children: ReactNode }) {
+  const { refreshQuota } = useAuth();
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [maxChunkSize, setMaxChunkSize] = useState(19 * 1024 * 1024);
+  const [concurrency, setConcurrency] = useState(CONCURRENCY);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>();
 
   const abortControllersRef = useRef<Map<string, AbortController[]>>(new Map());
@@ -56,7 +59,10 @@ export function UploadProvider({ children }: { children: ReactNode }) {
   // Fetch upload config once
   useEffect(() => {
     fetchUploadConfig()
-      .then(data => setMaxChunkSize(data.maxChunkSize))
+      .then(data => {
+        setMaxChunkSize(data.maxChunkSize);
+        if (data.maxConcurrentChunks) setConcurrency(data.maxConcurrentChunks);
+      })
       .catch(() => { });
   }, []);
 
@@ -149,18 +155,37 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       const abortController = new AbortController();
       controllers.push(abortController);
 
-      await axios.post(
-        `${API_URL}/files/upload/${serverFileId}/chunk/${chunkIndex}`,
-        chunkFormData,
-        {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          signal: abortController.signal,
-          onUploadProgress: (progressEvent) => {
-            chunkProgress[chunkIndex] = progressEvent.loaded || 0;
+      const MAX_429_RETRIES = 5;
+      for (let attempt = 0; ; attempt++) {
+        try {
+          await axios.post(
+            `${API_URL}/files/upload/${serverFileId}/chunk/${chunkIndex}`,
+            chunkFormData,
+            {
+              headers: { 'Content-Type': 'multipart/form-data' },
+              signal: abortController.signal,
+              onUploadProgress: (progressEvent) => {
+                chunkProgress[chunkIndex] = progressEvent.loaded || 0;
+                updateProgress();
+              },
+            },
+          );
+          break; // success
+        } catch (err: any) {
+          if (
+            err?.response?.status === 429 &&
+            attempt < MAX_429_RETRIES &&
+            !abortController.signal.aborted
+          ) {
+            const retryAfter = err?.response?.data?.retryAfter || 5;
+            chunkProgress[chunkIndex] = 0;
             updateProgress();
-          },
-        },
-      );
+            await new Promise(r => setTimeout(r, retryAfter * 1000));
+            continue;
+          }
+          throw err;
+        }
+      }
 
       chunkProgress[chunkIndex] = chunkSizes[chunkIndex];
       completedCount++;
@@ -191,7 +216,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    const workers = Array(Math.min(CONCURRENCY, totalChunks))
+    const workers = Array(Math.min(concurrency, totalChunks))
       .fill(null)
       .map(() => worker());
     await Promise.allSettled(workers);
@@ -207,7 +232,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     }
 
     await axios.post(`${API_URL}/files/upload/${serverFileId}/complete`);
-  }, [maxChunkSize, updateItem]);
+  }, [maxChunkSize, concurrency, updateItem]);
 
   // Process queue — pick next pending item and upload
   const processQueue = useCallback(async () => {
@@ -232,6 +257,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
           if (currentItem && currentItem.status !== 'cancelled') {
             updateItem(nextItem.id, { status: 'complete', progress: 100 });
             onUploadSuccessRef.current?.();
+            refreshQuota();
           }
         } catch (error: any) {
           if (axios.isCancel(error) || error?.message === 'Upload cancelled') {

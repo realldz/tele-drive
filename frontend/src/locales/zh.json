@@ -94,6 +94,9 @@
   "upload.complete": "完成",
   "upload.errorItem": "失败",
   "upload.cancelledItem": "已取消",
+  "upload.uploadButton": "上传",
+  "upload.uploadFile": "上传文件",
+  "upload.uploadFolder": "上传文件夹",
 
   "rename.titleFile": "重命名文件",
   "rename.titleFolder": "重命名文件夹",

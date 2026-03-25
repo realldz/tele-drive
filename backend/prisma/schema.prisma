@@ -68,6 +68,7 @@ model FileRecord {
   mimeType          String
   telegramFileId    String?     // Null nếu file được chia chunks
   telegramMessageId Int?
+  botIndex          Int         @default(0) // Bot nào upload file này (multi-bot support)
   isChunked         Boolean     @default(false)
   totalChunks       Int         @default(1)
   status            String      @default("complete") // "uploading" | "complete"
@@ -125,6 +126,7 @@ model FileChunk {
   size              Int
   telegramFileId    String
   telegramMessageId Int?
+  botIndex          Int        @default(0) // Bot nào upload chunk này (multi-bot support)
   encryptionIv      String?    // IV riêng cho từng chunk
   etag              String?    // MD5 của plaintext part data (dùng cho S3 multipart ETag)
   createdAt         DateTime   @default(now())

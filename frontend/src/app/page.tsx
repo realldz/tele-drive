@@ -1,14 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
-import { Folder, FileText, Download, Trash2, FolderPlus, MoreVertical, Loader2, Search, LayoutGrid, List } from 'lucide-react';
+import { useState, useEffect, useCallback, useRef } from 'react';
+import { Folder, FileText, Download, Trash2, FolderPlus, MoreVertical, Loader2, Search, LayoutGrid, List, Upload, File, FolderOpen } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/i18n-context';
 import Sidebar from '@/components/sidebar';
 import Breadcrumbs from '@/components/breadcrumbs';
 import ContextMenu from '@/components/context-menu';
-import UploadTrigger from '@/components/upload-trigger';
+import FilePreviewModal from '@/components/file-preview-modal';
 import { useUpload } from '@/components/upload-context';
 import RenameDialog from '@/components/rename-dialog';
 import ShareDialog from '@/components/share-dialog';
@@ -24,7 +24,7 @@ export default function Dashboard() {
   const { user, token, isLoading, logout } = useAuth();
   const router = useRouter();
   const { t } = useI18n();
-  const { setCurrentFolderId: setUploadFolderId, setOnUploadSuccess } = useUpload();
+  const { setCurrentFolderId: setUploadFolderId, setOnUploadSuccess, addFiles, addFolder } = useUpload();
 
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [folders, setFolders] = useState<any[]>([]);
@@ -34,6 +34,15 @@ export default function Dashboard() {
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
   const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set());
+
+  // Modal preview
+  const [previewFileId, setPreviewFileId] = useState<string | null>(null);
+
+  // Upload dropdown
+  const [showUploadMenu, setShowUploadMenu] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
+  const uploadMenuRef = useRef<HTMLDivElement>(null);
 
   // UI Polish States
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
@@ -50,6 +59,31 @@ export default function Dashboard() {
 
   const filteredFolders = folders.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
   const filteredFiles = files.filter(f => f.filename.toLowerCase().includes(searchQuery.toLowerCase()));
+
+  // Progressive loading
+  const PAGE_SIZE = 50;
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+
+  const visibleFolders = filteredFolders.slice(0, visibleCount);
+  const visibleFiles = filteredFiles.slice(0, Math.max(0, visibleCount - filteredFolders.length));
+  const totalItems = filteredFolders.length + filteredFiles.length;
+  const hasMore = visibleCount < totalItems;
+
+  // Reset visible count when folder or search changes
+  useEffect(() => setVisibleCount(PAGE_SIZE), [currentFolderId, searchQuery]);
+
+  // IntersectionObserver for auto-loading more items
+  useEffect(() => {
+    if (!hasMore || !loadMoreRef.current) return;
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        setVisibleCount(prev => prev + PAGE_SIZE);
+      }
+    });
+    observer.observe(loadMoreRef.current);
+    return () => observer.disconnect();
+  }, [hasMore, visibleCount]);
 
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean;
@@ -72,6 +106,18 @@ export default function Dashboard() {
     document.addEventListener('click', handleClickOutside);
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
+
+  // Close upload dropdown on click outside
+  useEffect(() => {
+    if (!showUploadMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (uploadMenuRef.current && !uploadMenuRef.current.contains(e.target as Node)) {
+        setShowUploadMenu(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showUploadMenu]);
 
   // Redirect nếu chưa đăng nhập
   useEffect(() => {
@@ -328,6 +374,45 @@ export default function Dashboard() {
             >
               <FolderPlus size={16} /> <span className="hidden sm:inline">{t('dashboard.newFolder')}</span>
             </button>
+            <div className="relative" ref={uploadMenuRef}>
+              <button
+                onClick={() => setShowUploadMenu(!showUploadMenu)}
+                className="flex items-center gap-2 bg-gray-100 hover:bg-gray-200 px-4 py-2 rounded-lg font-medium transition-colors text-gray-700 text-sm border border-gray-200"
+              >
+                <Upload size={16} /> <span className="hidden sm:inline">{t('upload.uploadButton')}</span>
+              </button>
+              {showUploadMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-20 py-1">
+                  <button
+                    onClick={() => { fileInputRef.current?.click(); setShowUploadMenu(false); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <File size={16} className="text-gray-400" /> {t('upload.uploadFile')}
+                  </button>
+                  <button
+                    onClick={() => { folderInputRef.current?.click(); setShowUploadMenu(false); }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-gray-50 transition-colors"
+                  >
+                    <FolderOpen size={16} className="text-gray-400" /> {t('upload.uploadFolder')}
+                  </button>
+                </div>
+              )}
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              onChange={(e) => { if (e.target.files?.length) { addFiles(e.target.files, currentFolderId); e.target.value = ''; } }}
+              hidden
+            />
+            <input
+              ref={folderInputRef}
+              type="file"
+              /* @ts-ignore */
+              webkitdirectory=""
+              onChange={(e) => { if (e.target.files?.length) { addFolder(e.target.files, currentFolderId); e.target.value = ''; } }}
+              hidden
+            />
             <div className="hidden sm:flex bg-gray-50 p-1 rounded-lg border border-gray-200">
               <button 
                 onClick={() => setViewMode('grid')}
@@ -401,7 +486,7 @@ export default function Dashboard() {
                     
                     {viewMode === 'grid' ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                        {filteredFolders.map(folder => (
+                        {visibleFolders.map(folder => (
                           <div 
                             key={folder.id} 
                             onClick={() => setCurrentFolderId(folder.id)}
@@ -444,7 +529,7 @@ export default function Dashboard() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
-                            {filteredFolders.map(folder => (
+                            {visibleFolders.map(folder => (
                               <tr 
                                 key={folder.id} 
                                 onClick={() => setCurrentFolderId(folder.id)}
@@ -488,12 +573,12 @@ export default function Dashboard() {
                     
                     {viewMode === 'grid' ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
-                        {filteredFiles.map(file => (
+                        {visibleFiles.map(file => (
                           <div 
                             key={file.id} 
                             draggable={true}
                             onDragStart={(e) => handleDragStart(e, file, 'file')}
-                            onClick={() => file.status === 'complete' && router.push(`/preview/${file.id}`)}
+                            onClick={() => file.status === 'complete' && setPreviewFileId(file.id)}
                             className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 transition-all group flex flex-col justify-between cursor-pointer"
                           >
                             <div className="flex items-start mb-4">
@@ -563,12 +648,12 @@ export default function Dashboard() {
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-gray-100">
-                            {filteredFiles.map(file => (
+                            {visibleFiles.map(file => (
                               <tr 
                                 key={file.id} 
                                 draggable={true}
                                 onDragStart={(e) => handleDragStart(e, file, 'file')}
-                                onClick={() => file.status === 'complete' && router.push(`/preview/${file.id}`)}
+                                onClick={() => file.status === 'complete' && setPreviewFileId(file.id)}
                                 className="hover:bg-gray-50 cursor-pointer transition-colors group"
                               >
                                 <td className="p-4">
@@ -632,11 +717,12 @@ export default function Dashboard() {
               </>
             )}
 
-            {/* Upload Zone */}
-            <div className="mt-8 pt-6 border-t border-gray-100">
-              <h3 className="text-xs font-bold text-gray-400 mb-4 uppercase tracking-wider">{t('dashboard.uploadTitle')}</h3>
-              <UploadTrigger folderId={currentFolderId} />
-            </div>
+            {/* Load more sentinel */}
+            {hasMore && (
+              <div ref={loadMoreRef} className="py-4 text-center text-gray-400 text-sm">
+                {t('dashboard.loading')}
+              </div>
+            )}
 
           </div>
         </div>
@@ -698,6 +784,12 @@ export default function Dashboard() {
         onClose={() => setActiveDialog('none')}
         item={dialogItem}
         itemType={dialogItemType}
+      />
+
+      {/* File Preview Modal */}
+      <FilePreviewModal
+        fileId={previewFileId}
+        onClose={() => setPreviewFileId(null)}
       />
 
     </div>

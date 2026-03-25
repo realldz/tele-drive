@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectBot } from 'nestjs-telegraf';
-import { Telegraf } from 'telegraf';
+import { Telegraf, Telegram } from 'telegraf';
 import { Readable } from 'stream';
 
 /** Transient error codes that should trigger a retry */
@@ -83,12 +83,121 @@ export class TelegramService {
   /** Singleflight dedup: prevent duplicate in-flight requests for same fileId */
   private readonly pendingRequests = new Map<string, Promise<string>>();
 
+  /** Multi-bot: array of Telegram API clients (index 0 = main bot) */
+  private readonly bots: Telegram[];
+
+  /** Per-bot sliding window rate limiter for sendDocument calls */
+  private readonly sendTimestamps: number[][];
+  private readonly SEND_RATE_LIMIT: number;
+  private readonly SEND_RATE_WINDOW_MS = 60_000;
+
   constructor(
     @InjectBot() private readonly bot: Telegraf,
     private readonly configService: ConfigService,
   ) {
     this.chatId = this.configService.get<string>('TELEGRAM_CHAT_ID') || '';
+
+    // Initialize multi-bot array
+    const apiRoot = this.configService.get<string>('TELEGRAM_API_ROOT') || 'https://api.telegram.org';
+    const extraTokens = (this.configService.get<string>('TELEGRAM_UPLOAD_BOT_TOKENS') || '')
+      .split(',').map(t => t.trim()).filter(Boolean);
+
+    this.bots = [
+      this.bot.telegram,  // index 0: main bot (from Telegraf)
+      ...extraTokens.map(t => new Telegram(t, { apiRoot })),
+    ];
+
+    this.SEND_RATE_LIMIT = parseInt(
+      this.configService.get<string>('TELEGRAM_SEND_RATE_LIMIT') || '18', 10,
+    );
+    this.sendTimestamps = this.bots.map(() => []);
+
+    this.logger.log(`Initialized ${this.bots.length} bot(s), rate limit: ${this.SEND_RATE_LIMIT}/min per bot`);
   }
+
+  /** Number of configured bots */
+  get botCount(): number { return this.bots.length; }
+
+  // ─── Rate Limiter ──────────────────────────────────────────────────
+
+  /** Count available slots for a specific bot within the sliding window */
+  private getAvailableSlots(botIndex: number): number {
+    const now = Date.now();
+    const ts = this.sendTimestamps[botIndex];
+    while (ts.length > 0 && ts[0] <= now - this.SEND_RATE_WINDOW_MS) {
+      ts.shift();
+    }
+    return this.SEND_RATE_LIMIT - ts.length;
+  }
+
+  /**
+   * Trả về thời gian chờ (ms) cho đến khi có slot upload tiếp theo.
+   * 0 nếu có slot sẵn.
+   */
+  getWaitTimeMs(): number {
+    for (let i = 0; i < this.bots.length; i++) {
+      if (this.getAvailableSlots(i) > 0) return 0;
+    }
+    if (this.bots.length === 0) return 0;
+    const now = Date.now();
+    return Math.max(0, Math.min(
+      ...this.bots.map((_, i) => {
+        const ts = this.sendTimestamps[i];
+        if (ts.length === 0) return 0;
+        return ts[0] + this.SEND_RATE_WINDOW_MS - now;
+      }),
+    ));
+  }
+
+  /**
+   * Acquire an upload slot: pick the bot with the most available slots.
+   * Waits if all bots are at their rate limit.
+   * Accepts optional AbortSignal to cancel the wait (e.g., on client disconnect).
+   */
+  async acquireUploadSlot(signal?: AbortSignal): Promise<{ botClient: Telegram; botIndex: number }> {
+    while (true) {
+      if (signal?.aborted) throw new Error('Upload cancelled');
+
+      let bestIdx = 0;
+      let bestAvail = 0;
+      for (let i = 0; i < this.bots.length; i++) {
+        const avail = this.getAvailableSlots(i);
+        if (avail > bestAvail) {
+          bestAvail = avail;
+          bestIdx = i;
+        }
+      }
+      if (bestAvail > 0) {
+        this.sendTimestamps[bestIdx].push(Date.now());
+        this.logger.debug(`Upload slot acquired: bot ${bestIdx} (${bestAvail - 1} slots remaining)`);
+        return { botClient: this.bots[bestIdx], botIndex: bestIdx };
+      }
+      // All bots full — wait for the earliest slot to expire
+      const now = Date.now();
+      const minWait = Math.min(
+        ...this.bots.map((_, i) =>
+          this.sendTimestamps[i][0] + this.SEND_RATE_WINDOW_MS - now + 100,
+        ),
+      );
+      this.logger.debug(`Rate limiter: all ${this.bots.length} bot(s) full, waiting ${minWait}ms`);
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(resolve, minWait);
+        if (signal) {
+          if (signal.aborted) {
+            clearTimeout(timer);
+            reject(new Error('Upload cancelled'));
+            return;
+          }
+          signal.addEventListener('abort', () => {
+            clearTimeout(timer);
+            reject(new Error('Upload cancelled'));
+          }, { once: true });
+        }
+      });
+    }
+  }
+
+  // ─── Semaphore for getFileLink ─────────────────────────────────────
 
   private async acquireSemaphore(): Promise<void> {
     if (this.semaphoreActive < this.SEMAPHORE_LIMIT) {
@@ -109,6 +218,8 @@ export class TelegramService {
       this.semaphoreQueue.shift()!();
     }
   }
+
+  // ─── Retry ─────────────────────────────────────────────────────────
 
   /**
    * Generic retry wrapper.
@@ -142,49 +253,60 @@ export class TelegramService {
     throw lastError;
   }
 
+  // ─── Upload ────────────────────────────────────────────────────────
+
   /**
-   * Upload file từ Buffer (dùng cho file nhỏ, giữ backward compatible)
+   * Upload file từ Buffer — rate-limited, auto-selects best bot.
+   * Accepts optional AbortSignal to cancel the rate-limit wait.
    */
-  async uploadFile(buffer: Buffer, filename: string): Promise<{ fileId: string; messageId: number }> {
+  async uploadFile(buffer: Buffer, filename: string, signal?: AbortSignal): Promise<{ fileId: string; messageId: number; botIndex: number }> {
+    const { botClient, botIndex } = await this.acquireUploadSlot(signal);
+
     const response = await this.withRetry('uploadFile', () =>
-      this.bot.telegram.sendDocument(this.chatId, {
+      botClient.sendDocument(this.chatId, {
         source: buffer,
         filename: filename,
       }),
     );
 
     if ('document' in response) {
-      this.logger.log(`Uploaded file to Telegram: "${filename}" (fileId: ${response.document.file_id}, size: ${buffer.length})`);
+      this.logger.log(`Uploaded file to Telegram: "${filename}" (fileId: ${response.document.file_id}, size: ${buffer.length}, bot: ${botIndex})`);
       return {
         fileId: response.document.file_id,
         messageId: response.message_id,
+        botIndex,
       };
     }
     throw new Error('Telegram Bot API did not return a valid document');
   }
 
   /**
-   * Upload file từ Stream — bytes chảy trực tiếp vào Telegram mà không buffer toàn bộ.
+   * Upload file từ Stream — rate-limited, auto-selects best bot.
    * NOTE: Streams are not retryable (consumed on first attempt). Caller must handle retry
    * by creating a new stream if needed.
    */
-  async uploadStream(stream: Readable, filename: string): Promise<{ fileId: string; messageId: number }> {
-    const response = await this.bot.telegram.sendDocument(this.chatId, {
+  async uploadStream(stream: Readable, filename: string, signal?: AbortSignal): Promise<{ fileId: string; messageId: number; botIndex: number }> {
+    const { botClient, botIndex } = await this.acquireUploadSlot(signal);
+
+    const response = await botClient.sendDocument(this.chatId, {
       source: stream,
       filename: filename,
     });
 
     if ('document' in response) {
-      this.logger.debug(`Stream uploaded to Telegram: "${filename}" (fileId: ${response.document.file_id})`);
+      this.logger.debug(`Stream uploaded to Telegram: "${filename}" (fileId: ${response.document.file_id}, bot: ${botIndex})`);
       return {
         fileId: response.document.file_id,
         messageId: response.message_id,
+        botIndex,
       };
     }
     throw new Error('Telegram Bot API did not return a valid document');
   }
 
-  async getFileLink(fileId: string, context?: string): Promise<string> {
+  // ─── getFileLink ───────────────────────────────────────────────────
+
+  async getFileLink(fileId: string, botIndex: number = 0, context?: string): Promise<string> {
     const label = context ? `[${context}]` : '';
 
     // 1. Check cache
@@ -202,7 +324,7 @@ export class TelegramService {
     }
 
     // 3. Resolve with semaphore
-    const promise = this.resolveFileLinkWithSemaphore(fileId, context);
+    const promise = this.resolveFileLinkWithSemaphore(fileId, botIndex, context);
     this.pendingRequests.set(fileId, promise);
     try {
       return await promise;
@@ -211,9 +333,10 @@ export class TelegramService {
     }
   }
 
-  private async resolveFileLinkWithSemaphore(fileId: string, context?: string): Promise<string> {
+  private async resolveFileLinkWithSemaphore(fileId: string, botIndex: number, context?: string): Promise<string> {
     const label = context ? `getFileLink(${context})` : 'getFileLink';
     const logLabel = context ? ` [${context}]` : '';
+    const botClient = this.bots[botIndex] ?? this.bots[0];
 
     await this.acquireSemaphore();
     try {
@@ -224,10 +347,10 @@ export class TelegramService {
         return cached.url;
       }
 
-      this.logger.debug(`File link cache MISS${logLabel} for fileId: ${fileId} (semaphore: ${this.semaphoreActive}/${this.SEMAPHORE_LIMIT})`);
+      this.logger.debug(`File link cache MISS${logLabel} for fileId: ${fileId} (semaphore: ${this.semaphoreActive}/${this.SEMAPHORE_LIMIT}, bot: ${botIndex})`);
 
       const link = await this.withRetry(label, () =>
-        this.bot.telegram.getFileLink(fileId),
+        botClient.getFileLink(fileId),
       );
       let url = link.toString();
 
@@ -236,7 +359,11 @@ export class TelegramService {
       if (url.startsWith('file:')) {
         const apiRoot = this.configService.get<string>('TELEGRAM_API_ROOT') || 'https://api.telegram.org';
         const filePath = new URL(url).pathname;
-        url = `${apiRoot}/file/bot${this.bot.telegram.token}${filePath}`;
+        // Use the correct bot's token for the URL
+        const botToken = botIndex === 0
+          ? this.bot.telegram.token
+          : (this.configService.get<string>('TELEGRAM_UPLOAD_BOT_TOKENS') || '').split(',').map(t => t.trim()).filter(Boolean)[botIndex - 1];
+        url = `${apiRoot}/file/bot${botToken}${filePath}`;
         this.logger.debug(`Converted file:// URL to HTTP${logLabel}: ${url}`);
       }
 
@@ -248,6 +375,28 @@ export class TelegramService {
       this.releaseSemaphore();
     }
   }
+
+  // ─── Recovery ──────────────────────────────────────────────────────
+
+  /**
+   * Forward message gốc qua main bot để lấy file_id mới.
+   * Dùng khi bot đã upload chunk không còn available.
+   */
+  async recoverFileId(telegramMessageId: number): Promise<{ fileId: string; botIndex: number }> {
+    const recoveryBotIndex = 0; // Luôn recover về main bot
+    const forwarded = await this.withRetry('recoverFileId', () =>
+      this.bots[recoveryBotIndex].forwardMessage(this.chatId, this.chatId, telegramMessageId),
+    );
+    if (!forwarded || !('document' in forwarded)) {
+      throw new Error(`Cannot recover: forwarded message ${telegramMessageId} has no document`);
+    }
+    // Xóa message forward (cleanup)
+    this.bots[recoveryBotIndex].deleteMessage(this.chatId, forwarded.message_id).catch(() => {});
+    this.logger.log(`Recovered file_id for message ${telegramMessageId}: ${forwarded.document.file_id} → bot ${recoveryBotIndex}`);
+    return { fileId: forwarded.document.file_id, botIndex: recoveryBotIndex };
+  }
+
+  // ─── Delete ────────────────────────────────────────────────────────
 
   async deleteMessage(messageId: number): Promise<void> {
     try {

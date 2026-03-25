@@ -94,6 +94,9 @@
   "upload.complete": "Complete",
   "upload.errorItem": "Failed",
   "upload.cancelledItem": "Cancelled",
+  "upload.uploadButton": "Upload",
+  "upload.uploadFile": "Upload File",
+  "upload.uploadFolder": "Upload Folder",
 
   "rename.titleFile": "Rename file",
   "rename.titleFolder": "Rename folder",

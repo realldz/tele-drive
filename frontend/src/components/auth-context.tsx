@@ -3,7 +3,7 @@
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import axios from 'axios';
 
-import { API_URL } from '@/lib/api';
+import { API_URL, fetchCurrentUser } from '@/lib/api';
 
 interface User {
   id: string;
@@ -11,13 +11,20 @@ interface User {
   role: string;
 }
 
+interface QuotaInfo {
+  usedSpace: number;
+  quota: number;
+}
+
 interface AuthContextType {
   user: User | null;
   token: string | null;
   isLoading: boolean;
+  quotaInfo: QuotaInfo | null;
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
   logout: () => void;
+  refreshQuota: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -33,7 +40,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [quotaInfo, setQuotaInfo] = useState<QuotaInfo | null>(null);
   const interceptorId = useRef<number | null>(null);
+
+  // Fetch quota từ server — gọi 1 lần khi có token, sau đó gọi lại qua refreshQuota
+  const refreshQuota = useCallback(async () => {
+    const currentToken = localStorage.getItem('token');
+    if (!currentToken) return;
+    try {
+      const data = await fetchCurrentUser();
+      setQuotaInfo({
+        usedSpace: Number(data.usedSpace),
+        quota: Number(data.quota),
+      });
+    } catch {
+      // non-critical
+    }
+  }, []);
 
   // Khởi tạo: đọc token từ localStorage VÀ set axios header ngay lập tức
   useEffect(() => {
@@ -47,6 +70,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setIsLoading(false);
   }, []);
+
+  // Fetch quota 1 lần khi đã có token
+  useEffect(() => {
+    if (token) {
+      refreshQuota();
+    }
+  }, [token, refreshQuota]);
 
   // Axios request interceptor: mọi request tự lấy token mới nhất từ localStorage.
   // Đây là safety net — nếu axios.defaults bị miss do timing, interceptor sẽ bắt lại.
@@ -91,13 +121,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     setToken(null);
     setUser(null);
+    setQuotaInfo(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     delete axios.defaults.headers.common['Authorization'];
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, token, isLoading, quotaInfo, login, register, logout, refreshQuota }}>
       {children}
     </AuthContext.Provider>
   );

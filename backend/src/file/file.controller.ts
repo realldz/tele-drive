@@ -1,4 +1,4 @@
-import { Controller, Logger, Get, Post, Patch, Delete, Param, Req, Res, UseInterceptors, ParseIntPipe, Body, Head, HttpCode, HttpStatus, UploadedFile } from '@nestjs/common';
+import { Controller, Logger, Get, Post, Patch, Delete, Param, Req, Res, UseInterceptors, ParseIntPipe, Body, Head, HttpCode, HttpStatus, HttpException, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { FileService } from './file.service';
@@ -20,12 +20,15 @@ export class FileController {
   constructor(private readonly fileService: FileService) {}
 
   /**
-   * GET /files/config — Frontend gọi để biết maxChunkSize
+   * GET /files/config — Frontend gọi để biết maxChunkSize + maxConcurrentChunks
    */
   @Public()
   @Get('config')
-  getConfig() {
-    return { maxChunkSize: MAX_CHUNK_SIZE };
+  async getConfig() {
+    return {
+      maxChunkSize: MAX_CHUNK_SIZE,
+      maxConcurrentChunks: await this.fileService.getMaxConcurrentChunks(),
+    };
   }
 
   /**
@@ -234,5 +237,16 @@ export class FileController {
   @Delete(':id/permanent')
   permanentDelete(@Param('id') id: string, @Req() req: any) {
     return this.fileService.permanentDelete(id, req.user.userId);
+  }
+
+  /**
+   * POST /files/admin/reindex-bots — Re-index chunks/files từ bot không còn available
+   */
+  @Post('admin/reindex-bots')
+  async reindexBots(@Req() req: any) {
+    if (req.user.role !== 'ADMIN') {
+      throw new HttpException('Admin only', HttpStatus.FORBIDDEN);
+    }
+    return this.fileService.reindexUnavailableBots();
   }
 }

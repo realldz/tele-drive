@@ -94,6 +94,9 @@
   "upload.complete": "完了",
   "upload.errorItem": "失敗",
   "upload.cancelledItem": "キャンセル済み",
+  "upload.uploadButton": "アップロード",
+  "upload.uploadFile": "ファイルをアップロード",
+  "upload.uploadFolder": "フォルダをアップロード",
 
   "rename.titleFile": "ファイル名を変更",
   "rename.titleFolder": "フォルダ名を変更",

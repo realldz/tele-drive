@@ -94,6 +94,9 @@
   "upload.complete": "Hoàn tất",
   "upload.errorItem": "Thất bại",
   "upload.cancelledItem": "Đã huỷ",
+  "upload.uploadButton": "Tải lên",
+  "upload.uploadFile": "Tải lên tệp",
+  "upload.uploadFolder": "Tải lên thư mục",
 
   "rename.titleFile": "Đổi tên tập tin",
   "rename.titleFolder": "Đổi tên thư mục",

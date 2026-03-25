@@ -1,50 +1,27 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Home, Trash2, KeyRound, ShieldAlert, LogOut, User, HardDrive, Menu, X, KeySquare } from 'lucide-react';
 import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/i18n-context';
 import LanguageSwitcher from '@/components/language-switcher';
-import { formatSize, fetchCurrentUser, changePassword } from '@/lib/api';
+import { formatSize, changePassword } from '@/lib/api';
 import toast from 'react-hot-toast';
-
-interface QuotaInfo {
-  usedSpace: number;
-  quota: number;
-}
 
 interface SidebarProps {
   children?: React.ReactNode;
 }
 
 export default function Sidebar({ children }: SidebarProps) {
-  const { user, token, logout } = useAuth();
+  const { user, logout, quotaInfo } = useAuth();
   const { t } = useI18n();
   const router = useRouter();
   const pathname = usePathname();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
-  const [quotaInfo, setQuotaInfo] = useState<QuotaInfo | null>(null);
   const [showChangePassword, setShowChangePassword] = useState(false);
   const [pwForm, setPwForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [pwLoading, setPwLoading] = useState(false);
-
-  const fetchQuota = useCallback(async () => {
-    if (!token) return;
-    try {
-      const data = await fetchCurrentUser();
-      setQuotaInfo({
-        usedSpace: Number(data.usedSpace),
-        quota: Number(data.quota),
-      });
-    } catch {
-      // non-critical
-    }
-  }, [token]);
-
-  useEffect(() => {
-    fetchQuota();
-  }, [fetchQuota]);
 
   const handleLogout = () => {
     logout();
