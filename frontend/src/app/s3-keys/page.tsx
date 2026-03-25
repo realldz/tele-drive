@@ -19,7 +19,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { API_URL, fetchS3Credentials, createS3Credential, deleteS3Credential } from '@/lib/api';
+import { API_URL, getAbsoluteApiUrl, fetchS3Credentials, createS3Credential, deleteS3Credential } from '@/lib/api';
 
 interface S3Credential {
   id: string;
@@ -108,7 +108,7 @@ export default function S3KeysPage() {
     setTimeout(() => setCopied(null), 2000);
   }
 
-  const endpointUrl = `${API_URL}/s3`;
+  const endpointUrl = `${getAbsoluteApiUrl()}/s3`;
 
   function awsConfigSnippet(accessKeyId: string, secretKey: string) {
     return `aws configure --profile tele-drive

@@ -2,6 +2,13 @@ import axios from 'axios';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
+/** Resolve API_URL to a full URL (for display/copy purposes, e.g. S3 endpoint) */
+export function getAbsoluteApiUrl(): string {
+  if (typeof window === 'undefined') return API_URL;
+  if (/^https?:\/\//.test(API_URL)) return API_URL;
+  return `${window.location.origin}${API_URL}`;
+}
+
 /**
  * Pre-configured axios instance.
  * Auth headers are handled globally by the axios interceptor in auth-context.tsx,
