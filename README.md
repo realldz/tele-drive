@@ -122,6 +122,8 @@ Configure routing in [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) d
 | Start all | `docker compose up -d` |
 | Stop all | `docker compose down` |
 | Rebuild + restart one service | `docker compose up -d --build backend` |
+| Force rebuild (no cache) | `docker compose build --no-cache frontend` |
+| Force rebuild + restart all | `docker compose up -d --build --force-recreate` |
 | Restart (no rebuild) | `docker compose restart frontend` |
 | View logs | `docker compose logs -f backend` |
 | Rebuild all | `docker compose build` |
@@ -157,6 +159,7 @@ Configure routing in [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) d
 | `TELEGRAM_API_HASH` | Yes | From [my.telegram.org](https://my.telegram.org) |
 | `CLOUDFLARE_TUNNEL_TOKEN` | No | For `--profile tunnel` |
 | `NGINX_PORT` | No | Nginx exposed port (default: 80) |
+| `NEXT_PUBLIC_API_URL` | No | Frontend API URL, baked at build time (default: `/api`) |
 
 ## S3-Compatible API
 
