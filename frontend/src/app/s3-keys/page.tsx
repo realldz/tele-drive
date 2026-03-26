@@ -408,10 +408,9 @@ aws --profile tele-drive \\
                 </div>
 
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-800">
-                  <strong>{t('s3.note')}</strong> Telegram limits individual file size to 2 GB. Tele-Drive handles
-                  large files via automatic chunking. The S3 endpoint is at{' '}
+                  <strong>{t('s3.note')}</strong> {t('s3.noteContent')}{' '}
                   <code className="bg-yellow-100 px-1 rounded font-mono">{endpointUrl}</code>.
-                  Presigned URLs are supported (max 7 days expiry). Versioning is not supported.
+                  {t('s3.notePresigned')}
                 </div>
               </div>
             </div>

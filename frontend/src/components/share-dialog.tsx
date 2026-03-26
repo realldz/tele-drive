@@ -2,43 +2,50 @@ import React, { useState, useEffect } from 'react';
 import { X, Copy, Check, Globe, Lock, Share2 } from 'lucide-react';
 import { shareItem, unshareItem } from '@/lib/api';
 import { useI18n } from '@/components/i18n-context';
+import toast from 'react-hot-toast';
 
 interface ShareDialogProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess: () => void;
   item: any;
   itemType: 'file' | 'folder';
 }
 
-export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDialogProps) {
+export default function ShareDialog({ isOpen, onClose, onSuccess, item, itemType }: ShareDialogProps) {
   const { t } = useI18n();
-  const [isSharing, setIsSharing] = useState(false); // Replaced isGenerating
+  const [isSharing, setIsSharing] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Derived state from item prop
-  const isShared = item?.visibility === 'PUBLIC_LINK' || item?.shareToken;
-  const shareToken = item?.shareToken;
+  // Local state đồng bộ với item prop, cập nhật khi share/unshare thành công
+  const [isShared, setIsShared] = useState(false);
+  const [shareToken, setShareToken] = useState<string | null>(null);
 
-  // Public URL logic
-  const typeSegment = itemType === 'folder' ? 'share/folder' : 'share';
-  const shareUrl = shareToken ? `${window.location.origin}/${typeSegment}/${shareToken}` : ''; // Updated base URL
-
+  // Sync local state khi item prop thay đổi (mở dialog mới, hoặc parent re-fetch)
   useEffect(() => {
-    // Reset copied state when dialog opens or item changes
     if (isOpen && item) {
+      setIsShared(item.visibility === 'PUBLIC_LINK' || !!item.shareToken);
+      setShareToken(item.shareToken || null);
       setCopied(false);
     }
   }, [isOpen, item]);
 
   if (!isOpen || !item) return null;
 
+  const typeSegment = itemType === 'folder' ? 'share/folder' : 'share';
+  const shareUrl = shareToken ? `${window.location.origin}/${typeSegment}/${shareToken}` : '';
+
   const handleShare = async () => {
     setIsSharing(true);
     try {
-      await shareItem(itemType, item.id);
-      window.location.reload();
+      const res = await shareItem(itemType, item.id);
+      const updated = res.data;
+      setIsShared(true);
+      setShareToken(updated.shareToken);
+      onSuccess();
+      toast.success(t('share.createSuccess'));
     } catch (error) {
-      alert(t('share.createError'));
+      toast.error(t('share.createError'));
     } finally {
       setIsSharing(false);
     }
@@ -48,9 +55,12 @@ export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDi
     setIsSharing(true);
     try {
       await unshareItem(itemType, item.id);
-      window.location.reload();
+      setIsShared(false);
+      setShareToken(null);
+      onSuccess();
+      toast.success(t('share.revokeSuccess'));
     } catch (error) {
-      alert(t('share.revokeError'));
+      toast.error(t('share.revokeError'));
     } finally {
       setIsSharing(false);
     }
@@ -74,7 +84,7 @@ export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDi
             <X size={20} />
           </button>
         </div>
-        
+
         <div className="p-6 text-sm">
           <div className="mb-6 flex gap-4">
             <div className={`p-4 rounded-xl flex items-center justify-center ${itemType === 'folder' ? 'bg-blue-50 text-blue-500' : 'bg-gray-100 text-gray-500'}`}>
@@ -91,7 +101,7 @@ export default function ShareDialog({ isOpen, onClose, item, itemType }: ShareDi
               </p>
             </div>
           </div>
-          
+
           {isShared ? (
             <div className="space-y-4">
               <div className="bg-green-50 text-green-700 p-3 rounded-lg border border-green-200">
