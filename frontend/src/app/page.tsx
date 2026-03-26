@@ -340,7 +340,7 @@ export default function Dashboard() {
       <main className="flex-1 flex flex-col min-w-0 bg-white relative">
 
         {/* Topbar */}
-        <header className="h-16 border-b border-gray-100 flex items-center justify-between px-4 lg:px-6 bg-white w-full flex-shrink-0 z-10 transition-shadow">
+        <header className="h-16 border-b border-gray-100 flex items-center justify-between pl-14 pr-4 md:px-4 lg:px-6 bg-white w-full flex-shrink-0 z-10 transition-shadow">
           <div className="flex items-center gap-4 flex-1">
             <div className="relative max-w-xl w-full">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />

@@ -153,7 +153,7 @@ export default function Sidebar({ children }: SidebarProps) {
 
       {/* Mobile menu button — rendered outside sidebar for pages to position */}
       <button
-        className="fixed top-4 left-4 p-2 text-gray-600 hover:bg-gray-100 rounded-lg md:hidden z-10"
+        className="fixed top-4 left-4 p-2 text-gray-600 hover:bg-gray-100 rounded-lg md:hidden z-20"
         onClick={() => setIsMobileOpen(true)}
         style={{ display: isMobileOpen ? 'none' : undefined }}
       >
