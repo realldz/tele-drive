@@ -38,14 +38,14 @@ export default function RootLayout({
     >
       <body className="min-h-full flex flex-col">
         <I18nProvider>
-        <AuthProvider>
-        <UploadProvider>
-          <GlobalDropZone />
-          {children}
-          <UploadPanel />
-          <Toaster position="bottom-left" />
-        </UploadProvider>
-        </AuthProvider>
+          <AuthProvider>
+            <UploadProvider>
+              <GlobalDropZone />
+              {children}
+              <UploadPanel />
+              <Toaster />
+            </UploadProvider>
+          </AuthProvider>
         </I18nProvider>
       </body>
     </html>

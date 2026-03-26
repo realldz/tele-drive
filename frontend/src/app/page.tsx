@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { Folder, FileText, Download, Trash2, FolderPlus, MoreVertical, Loader2, Search, LayoutGrid, List, Upload, File, FolderOpen } from 'lucide-react';
+import { Folder, FileText, Download, Trash2, FolderPlus, MoreVertical, Loader2, Search, LayoutGrid, List, Upload, File, FolderOpen, Globe } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useI18n } from '@/components/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
@@ -193,7 +193,7 @@ export default function Dashboard() {
                 try {
                   await restoreFolder(id);
                   fetchContent();
-                } catch(err) {
+                } catch (err) {
                   alert(t('dashboard.undoError'));
                 }
               }}
@@ -225,7 +225,7 @@ export default function Dashboard() {
                 try {
                   await restoreFile(id);
                   fetchContent();
-                } catch(err) {
+                } catch (err) {
                   alert(t('dashboard.undoError'));
                 }
               }}
@@ -400,14 +400,14 @@ export default function Dashboard() {
               hidden
             />
             <div className="hidden sm:flex bg-gray-50 p-1 rounded-lg border border-gray-200">
-              <button 
+              <button
                 onClick={() => setViewMode('grid')}
                 className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
                 title={t('dashboard.gridView')}
               >
                 <LayoutGrid size={18} />
               </button>
-              <button 
+              <button
                 onClick={() => setViewMode('list')}
                 className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-white shadow-sm text-blue-600' : 'text-gray-400 hover:text-gray-600'}`}
                 title={t('dashboard.listView')}
@@ -420,7 +420,7 @@ export default function Dashboard() {
 
         {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto">
-          
+
           {/* Breadcrumbs */}
           <Breadcrumbs
             items={breadcrumbs}
@@ -432,13 +432,13 @@ export default function Dashboard() {
           />
 
           <div className="p-6">
-            
+
             {/* Create Folder Box */}
             {showNewFolder && (
               <div className="flex gap-2 p-4 mb-6 bg-blue-50/50 border border-blue-100 rounded-xl shadow-sm">
-                <input 
-                  type="text" 
-                  placeholder={t('dashboard.folderNamePlaceholder')} 
+                <input
+                  type="text"
+                  placeholder={t('dashboard.folderNamePlaceholder')}
                   className="border border-blue-200 p-2.5 rounded-lg flex-grow outline-none focus:ring-2 focus:ring-blue-500"
                   value={newFolderName}
                   onChange={(e) => setNewFolderName(e.target.value)}
@@ -469,30 +469,34 @@ export default function Dashboard() {
                 {filteredFolders.length > 0 && (
                   <div className="mb-8">
                     <h2 className="text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider">{t('dashboard.folders')}</h2>
-                    
+
                     {viewMode === 'grid' ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                         {visibleFolders.map(folder => (
-                          <div 
-                            key={folder.id} 
+                          <div
+                            key={folder.id}
                             onClick={() => setCurrentFolderId(folder.id)}
                             draggable={true}
                             onDragStart={(e) => handleDragStart(e, folder, 'folder')}
                             onDragOver={(e) => handleDragOver(e, folder.id)}
                             onDragLeave={handleDragLeave}
                             onDrop={(e) => handleDrop(e, folder.id)}
-                            className={`p-4 bg-white border rounded-xl shadow-sm cursor-pointer transition-all group relative flex items-center justify-between ${
-                              dragOverFolderId === folder.id 
-                                ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' 
-                                : 'border-gray-200 hover:shadow-md hover:border-blue-300'
-                            }`}
+                            className={`p-4 bg-white border rounded-xl shadow-sm cursor-pointer transition-all group relative flex items-center justify-between ${dragOverFolderId === folder.id
+                              ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                              : 'border-gray-200 hover:shadow-md hover:border-blue-300'
+                              }`}
                           >
                             <div className="flex items-center truncate pr-2">
-                              <Folder className="w-8 h-8 text-blue-500 mr-3 flex-shrink-0" fill="currentColor" opacity={0.8} />
+                              <div className="relative mr-3 flex-shrink-0">
+                                <Folder className="w-8 h-8 text-blue-500" fill="currentColor" opacity={0.8} />
+                                {folder.visibility !== 'PRIVATE' && (
+                                  <Globe className="absolute -bottom-1 -right-1 w-3.5 h-3.5 text-green-600 bg-white rounded-full p-px" />
+                                )}
+                              </div>
                               <span className="font-semibold text-gray-700 truncate">{folder.name}</span>
                             </div>
                             <div className="flex items-center opacity-0 group-hover:opacity-100 transition-opacity">
-                              <button 
+                              <button
                                 onClick={(e) => {
                                   e.stopPropagation(); e.preventDefault();
                                   setTimeout(() => setContextMenu({ isOpen: true, x: e.clientX, y: e.clientY, item: folder, type: 'folder' }), 0);
@@ -516,24 +520,28 @@ export default function Dashboard() {
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                             {visibleFolders.map(folder => (
-                              <tr 
-                                key={folder.id} 
+                              <tr
+                                key={folder.id}
                                 onClick={() => setCurrentFolderId(folder.id)}
                                 draggable={true}
                                 onDragStart={(e) => handleDragStart(e, folder, 'folder')}
                                 onDragOver={(e) => handleDragOver(e, folder.id)}
                                 onDragLeave={handleDragLeave}
                                 onDrop={(e) => handleDrop(e, folder.id)}
-                                className={`cursor-pointer transition-colors group ${
-                                  dragOverFolderId === folder.id ? 'bg-blue-50' : 'hover:bg-gray-50'
-                                }`}
+                                className={`cursor-pointer transition-colors group ${dragOverFolderId === folder.id ? 'bg-blue-50' : 'hover:bg-gray-50'
+                                  }`}
                               >
                                 <td className="p-4 flex items-center gap-3">
-                                  <Folder className="w-6 h-6 text-blue-500 flex-shrink-0" fill="currentColor" opacity={0.8} />
+                                  <div className="relative flex-shrink-0">
+                                    <Folder className="w-6 h-6 text-blue-500" fill="currentColor" opacity={0.8} />
+                                    {folder.visibility !== 'PRIVATE' && (
+                                      <Globe className="absolute -bottom-1 -right-1 w-3 h-3 text-green-600 bg-white rounded-full p-px" />
+                                    )}
+                                  </div>
                                   <span className="font-medium text-gray-800">{folder.name}</span>
                                 </td>
                                 <td className="p-4 text-right">
-                                  <button 
+                                  <button
                                     onClick={(e) => {
                                       e.stopPropagation(); e.preventDefault();
                                       setTimeout(() => setContextMenu({ isOpen: true, x: e.clientX, y: e.clientY, item: folder, type: 'folder' }), 0);
@@ -556,20 +564,23 @@ export default function Dashboard() {
                 {filteredFiles.length > 0 && (
                   <div>
                     <h2 className="text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider">{t('dashboard.files')}</h2>
-                    
+
                     {viewMode === 'grid' ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                         {visibleFiles.map(file => (
-                          <div 
-                            key={file.id} 
+                          <div
+                            key={file.id}
                             draggable={true}
                             onDragStart={(e) => handleDragStart(e, file, 'file')}
                             onClick={() => file.status === 'complete' && setPreviewFileId(file.id)}
                             className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 transition-all group flex flex-col justify-between cursor-pointer"
                           >
                             <div className="flex items-start mb-4">
-                              <div className="w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center mr-3 border border-gray-100 flex-shrink-0">
+                              <div className="relative w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center mr-3 border border-gray-100 flex-shrink-0">
                                 <FileText className="w-5 h-5 text-gray-500" />
+                                {file.visibility !== 'PRIVATE' && (
+                                  <Globe className="absolute -bottom-1 -right-1 w-3.5 h-3.5 text-green-600 bg-white rounded-full p-px" />
+                                )}
                               </div>
                               <div className="overflow-hidden flex-1">
                                 <span className="font-semibold text-gray-800 text-sm truncate block" title={file.filename}>
@@ -635,8 +646,8 @@ export default function Dashboard() {
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                             {visibleFiles.map(file => (
-                              <tr 
-                                key={file.id} 
+                              <tr
+                                key={file.id}
                                 draggable={true}
                                 onDragStart={(e) => handleDragStart(e, file, 'file')}
                                 onClick={() => file.status === 'complete' && setPreviewFileId(file.id)}
@@ -644,7 +655,12 @@ export default function Dashboard() {
                               >
                                 <td className="p-4">
                                   <div className="flex items-center gap-3">
-                                    <FileText className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                                    <div className="relative flex-shrink-0">
+                                      <FileText className="w-5 h-5 text-gray-400" />
+                                      {file.visibility !== 'PRIVATE' && (
+                                        <Globe className="absolute -bottom-1 -right-1 w-3 h-3 text-green-600 bg-white rounded-full p-px" />
+                                      )}
+                                    </div>
                                     <div>
                                       <span className="font-medium text-gray-800 block truncate max-w-[150px] sm:max-w-xs md:max-w-sm">{file.filename}</span>
                                       {file.status === 'uploading' && (
@@ -680,7 +696,7 @@ export default function Dashboard() {
                                       >
                                         <Download size={16} />
                                       </button>
-                                      <button 
+                                      <button
                                         onClick={(e) => {
                                           e.stopPropagation(); e.preventDefault();
                                           setTimeout(() => setContextMenu({ isOpen: true, x: e.clientX, y: e.clientY - 20, item: file, type: 'file' }), 0);
@@ -767,7 +783,8 @@ export default function Dashboard() {
 
       <ShareDialog
         isOpen={activeDialog === 'share'}
-        onClose={() => setActiveDialog('none')}
+        onClose={() => { setActiveDialog('none') }}
+        onSuccess={() => { fetchContent(); }}
         item={dialogItem}
         itemType={dialogItemType}
       />

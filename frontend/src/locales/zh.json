@@ -122,6 +122,8 @@
   "share.creating": "正在创建...",
   "share.createError": "创建分享链接失败",
   "share.revokeError": "撤销分享链接失败",
+  "share.createSuccess": "分享链接创建成功",
+  "share.revokeSuccess": "分享链接已撤销",
 
   "move.titleFile": "移动文件",
   "move.titleFolder": "移动文件夹",

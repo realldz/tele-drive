@@ -6,7 +6,6 @@
   "sidebar.logout": "Đăng xuất",
   "sidebar.used": "Đã dùng",
   "sidebar.language": "Ngôn ngữ",
-
   "login.title": "Đăng nhập vào tài khoản của bạn",
   "login.username": "Tên đăng nhập",
   "login.password": "Mật khẩu",
@@ -15,7 +14,6 @@
   "login.failed": "Đăng nhập thất bại",
   "login.noAccount": "Chưa có tài khoản?",
   "login.register": "Đăng ký",
-
   "register.title": "Tạo tài khoản mới",
   "register.username": "Tên đăng nhập",
   "register.password": "Mật khẩu",
@@ -27,7 +25,6 @@
   "register.passwordTooShort": "Mật khẩu phải có ít nhất 4 ký tự",
   "register.hasAccount": "Đã có tài khoản?",
   "register.login": "Đăng nhập",
-
   "dashboard.searchPlaceholder": "Tìm kiếm tệp và thư mục...",
   "dashboard.newFolder": "Thư mục mới",
   "dashboard.gridView": "Dạng lưới",
@@ -60,17 +57,13 @@
   "dashboard.renameError": "Lỗi đổi tên",
   "dashboard.deleteStuckError": "Lỗi xoá file đang kẹt",
   "dashboard.loading": "Loading...",
-
   "common.cancel": "Huỷ",
   "common.confirm": "Xác nhận",
-
   "breadcrumbs.myDrive": "Drive Của Tôi",
-
   "contextMenu.rename": "Đổi tên",
   "contextMenu.move": "Di chuyển",
   "contextMenu.share": "Chia sẻ",
   "contextMenu.delete": "Xoá",
-
   "upload.dragDrop": "Kéo thả file vào đây hoặc nhấn để chọn",
   "upload.supportInfo": "Hỗ trợ mọi định dạng. File tải lên sẽ được mã hoá và lưu trữ an toàn.",
   "upload.cancel": "Huỷ",
@@ -97,13 +90,11 @@
   "upload.uploadButton": "Tải lên",
   "upload.uploadFile": "Tải lên tệp",
   "upload.uploadFolder": "Tải lên thư mục",
-
   "rename.titleFile": "Đổi tên tập tin",
   "rename.titleFolder": "Đổi tên thư mục",
   "rename.cancel": "Huỷ",
   "rename.confirm": "Xác nhận",
   "rename.processing": "Đang xử lí...",
-
   "share.titleFile": "Chia sẻ tập tin",
   "share.titleFolder": "Chia sẻ thư mục",
   "share.status": "Trạng thái",
@@ -122,7 +113,8 @@
   "share.creating": "Đang tạo...",
   "share.createError": "Lỗi tạo liên kết chia sẻ",
   "share.revokeError": "Lỗi thu hồi liên kết chia sẻ",
-
+  "share.createSuccess": "Tạo liên kết chia sẻ thành công",
+  "share.revokeSuccess": "Thu hồi liên kết chia sẻ thành công",
   "move.titleFile": "Di chuyển Tập tin",
   "move.titleFolder": "Di chuyển Thư mục",
   "move.loading": "Đang tải...",
@@ -130,7 +122,6 @@
   "move.cancel": "Huỷ",
   "move.moving": "Đang chuyển...",
   "move.moveHere": "Chuyển đến đây",
-
   "trash.title": "Thùng rác",
   "trash.items": "{count} mục",
   "trash.infoBanner": "Các mục trong thùng rác sẽ bị xoá vĩnh viễn sau 7 ngày.",
@@ -142,7 +133,6 @@
   "trash.permanentDelete": "Xoá vĩnh viễn",
   "trash.confirmDeleteFile": "Xoá vĩnh viễn file này? Hành động này không thể hoàn tác.",
   "trash.confirmDeleteFolder": "Xoá vĩnh viễn thư mục này và toàn bộ nội dung? Hành động này không thể hoàn tác.",
-
   "admin.panel": "ADMIN PANEL",
   "admin.users": "Người dùng",
   "admin.systemSettings": "Cấu hình Hệ thống",
@@ -205,7 +195,6 @@
   "admin.resetPasswordButton": "Đặt lại mật khẩu",
   "admin.resetPasswordSuccess": "Đã đặt lại mật khẩu thành công",
   "admin.resetPasswordError": "Lỗi đặt lại mật khẩu",
-
   "password.change": "Đổi mật khẩu",
   "password.changeTitle": "Đổi mật khẩu",
   "password.currentPassword": "Mật khẩu hiện tại",
@@ -217,7 +206,6 @@
   "password.changeError": "Lỗi đổi mật khẩu",
   "password.mismatch": "Mật khẩu xác nhận không khớp",
   "password.tooShort": "Mật khẩu phải có ít nhất 4 ký tự",
-
   "s3.title": "S3 Access Keys",
   "s3.createKey": "Tạo Access Key",
   "s3.infoBanner": "Sử dụng Tele-Drive như một S3-compatible storage backend",
@@ -259,7 +247,6 @@
   "s3.createError": "Không thể tạo credential",
   "s3.revokeSuccess": "Access key đã thu hồi",
   "s3.revokeError": "Không thể thu hồi key",
-
   "preview.errorTitle": "Lỗi Tải Xem Trước",
   "preview.fileNotFound": "Không tìm thấy file",
   "preview.goBack": "Quay Lại",
@@ -267,7 +254,6 @@
   "preview.cannotPreview": "Loại file này ({mimeType}) không thể xem trước trong trình duyệt.",
   "preview.downloadFile": "Tải Xuống File",
   "preview.download": "Tải về",
-
   "sharePage.publicFile": "Tập tin được chia sẻ công khai",
   "sharePage.cannotAccess": "Không thể truy cập",
   "sharePage.loading": "Đang tải thông tin...",
@@ -280,7 +266,6 @@
   "sharePage.fileNotFound": "Tập tin không tồn tại hoặc đã ngừng chia sẻ",
   "sharePage.bandwidthExceeded": "Tập tin này đã vượt quá giới hạn băng thông hôm nay.",
   "sharePage.downloadError": "Lỗi tải tập tin",
-
   "shareFolder.sharedBy": "Thư mục chia sẻ bởi",
   "shareFolder.user": "Người dùng",
   "shareFolder.shareHome": "Trang chủ chia sẻ",
