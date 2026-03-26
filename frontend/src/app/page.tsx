@@ -3,8 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { Folder, FileText, Download, Trash2, FolderPlus, MoreVertical, Loader2, Search, LayoutGrid, List, Upload, File, FolderOpen } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/i18n-context';
+import { useRequireAuth } from '@/hooks/use-require-auth';
 import Sidebar from '@/components/sidebar';
 import Breadcrumbs from '@/components/breadcrumbs';
 import ContextMenu from '@/components/context-menu';
@@ -21,7 +21,7 @@ import {
 } from '@/lib/api';
 
 export default function Dashboard() {
-  const { user, token, isLoading, logout } = useAuth();
+  const { isReady, user, token, logout } = useRequireAuth();
   const router = useRouter();
   const { t } = useI18n();
   const { setCurrentFolderId: setUploadFolderId, setOnUploadSuccess, addFiles, addFolder } = useUpload();
@@ -119,13 +119,6 @@ export default function Dashboard() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showUploadMenu]);
 
-  // Redirect nếu chưa đăng nhập
-  useEffect(() => {
-    if (!isLoading && !token) {
-      router.push('/login');
-    }
-  }, [isLoading, token, router]);
-
   const fetchContent = useCallback(async () => {
     if (!token) return;
     try {
@@ -139,14 +132,10 @@ export default function Dashboard() {
       } else {
         setBreadcrumbs([]);
       }
-    } catch (error: any) {
-      if (error?.response?.status === 401) {
-        logout();
-        router.push('/login');
-        return;
-      }
+    } catch {
+      // 401 được xử lí tự động bởi axios response interceptor
     }
-  }, [currentFolderId, token, logout, router]);
+  }, [currentFolderId, token]);
 
   useEffect(() => {
     fetchContent();
@@ -333,17 +322,14 @@ export default function Dashboard() {
     setContextMenu(prev => ({ ...prev, isOpen: false }));
   };
 
-  // Loading state
-  if (isLoading) {
+  // Chờ auth xong
+  if (!isReady) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-gray-500">{t('dashboard.loading')}</div>
       </div>
     );
   }
-
-  // Chưa login (redirect sẽ xảy ra bởi useEffect)
-  if (!token) return null;
 
   return (
     <div className="h-screen bg-white flex overflow-hidden">

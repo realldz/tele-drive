@@ -41,7 +41,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [quotaInfo, setQuotaInfo] = useState<QuotaInfo | null>(null);
-  const interceptorId = useRef<number | null>(null);
+  const requestInterceptorId = useRef<number | null>(null);
+  const responseInterceptorId = useRef<number | null>(null);
 
   // Fetch quota từ server — gọi 1 lần khi có token, sau đó gọi lại qua refreshQuota
   const refreshQuota = useCallback(async () => {
@@ -81,7 +82,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Axios request interceptor: mọi request tự lấy token mới nhất từ localStorage.
   // Đây là safety net — nếu axios.defaults bị miss do timing, interceptor sẽ bắt lại.
   useEffect(() => {
-    interceptorId.current = axios.interceptors.request.use((config) => {
+    requestInterceptorId.current = axios.interceptors.request.use((config) => {
       const currentToken = localStorage.getItem('token');
       if (currentToken) {
         config.headers.Authorization = `Bearer ${currentToken}`;
@@ -92,8 +93,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => {
-      if (interceptorId.current !== null) {
-        axios.interceptors.request.eject(interceptorId.current);
+      if (requestInterceptorId.current !== null) {
+        axios.interceptors.request.eject(requestInterceptorId.current);
+      }
+    };
+  }, []);
+
+  // Axios response interceptor: tự động xử lí 401 — clear auth state + redirect login.
+  // Tập trung logic ở đây thay vì lặp try/catch 401 ở từng page.
+  useEffect(() => {
+    responseInterceptorId.current = axios.interceptors.response.use(
+      (response) => response,
+      (error) => {
+        if (error?.response?.status === 401) {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          delete axios.defaults.headers.common['Authorization'];
+          setToken(null);
+          setUser(null);
+          setQuotaInfo(null);
+          window.location.href = '/login';
+        }
+        return Promise.reject(error);
+      },
+    );
+
+    return () => {
+      if (responseInterceptorId.current !== null) {
+        axios.interceptors.response.eject(responseInterceptorId.current);
       }
     };
   }, []);

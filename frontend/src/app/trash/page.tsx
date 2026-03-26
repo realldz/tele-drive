@@ -2,9 +2,8 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { FileText, Folder, Trash2, RotateCcw, Clock } from 'lucide-react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/i18n-context';
+import { useRequireAuth } from '@/hooks/use-require-auth';
 import Sidebar from '@/components/sidebar';
 import {
   formatSize, fetchTrash as fetchTrashApi,
@@ -12,18 +11,11 @@ import {
 } from '@/lib/api';
 
 export default function TrashPage() {
-  const { token, isLoading, logout } = useAuth();
+  const { isReady, token } = useRequireAuth();
   const { t } = useI18n();
-  const router = useRouter();
 
   const [trashedFiles, setTrashedFiles] = useState<any[]>([]);
   const [trashedFolders, setTrashedFolders] = useState<any[]>([]);
-
-  useEffect(() => {
-    if (!isLoading && !token) {
-      router.push('/login');
-    }
-  }, [isLoading, token, router]);
 
   const fetchTrash = useCallback(async () => {
     if (!token) return;
@@ -31,13 +23,10 @@ export default function TrashPage() {
       const data = await fetchTrashApi();
       setTrashedFiles(data.files);
       setTrashedFolders(data.folders);
-    } catch (error: any) {
-      if (error?.response?.status === 401) {
-        logout();
-        router.push('/login');
-      }
+    } catch {
+      // 401 được xử lí tự động bởi axios response interceptor
     }
-  }, [token, logout, router]);
+  }, [token]);
 
   useEffect(() => {
     fetchTrash();
@@ -81,15 +70,13 @@ export default function TrashPage() {
     }
   };
 
-  if (isLoading) {
+  if (!isReady) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-gray-500">{t('dashboard.loading')}</div>
       </div>
     );
   }
-
-  if (!token) return null;
 
   const getDaysRemaining = (deletedAt: string) => {
     const deleted = new Date(deletedAt);
