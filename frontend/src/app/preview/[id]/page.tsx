@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/i18n-context';
+import { useRequireAuth } from '@/hooks/use-require-auth';
 import axios from 'axios';
 import { FileIcon, Download, ArrowLeft, Loader2, FileText, Film, Image as ImageIcon, Music } from 'lucide-react';
 
@@ -23,7 +23,7 @@ export default function FilePreviewPage() {
   const params = useParams();
   const fileId = params.id as string;
   const router = useRouter();
-  const { token, isLoading: authLoading } = useAuth();
+  const { isReady, token } = useRequireAuth();
   const { t } = useI18n();
 
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
@@ -31,11 +31,7 @@ export default function FilePreviewPage() {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    if (authLoading) return;
-    if (!token) {
-      router.push('/login');
-      return;
-    }
+    if (!isReady) return;
 
     const fetchFileInfo = async () => {
       try {
@@ -49,9 +45,9 @@ export default function FilePreviewPage() {
     };
 
     fetchFileInfo();
-  }, [fileId, token, authLoading, router]);
+  }, [fileId, isReady]);
 
-  if (isLoading || authLoading) {
+  if (isLoading || !isReady) {
     return (
       <div className="flex h-screen items-center justify-center bg-gray-50">
         <Loader2 className="h-8 w-8 animate-spin text-blue-500" />

@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useAuth } from '@/components/auth-context';
 import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
+import { useRequireAuth } from '@/hooks/use-require-auth';
 import { Users, Settings, Database, ArrowLeft, Trash2, Edit2, Loader2, HardDrive, ShieldAlert, Menu, X, LogOut, User, KeySquare } from 'lucide-react';
 import toast from 'react-hot-toast';
 import {
@@ -44,7 +44,7 @@ type Tab = 'USERS' | 'SETTINGS' | 'USER_FILES';
 
 export default function AdminDashboard() {
   const router = useRouter();
-  const { user, token, logout } = useAuth();
+  const { isReady, user, logout } = useRequireAuth({ requiredRole: 'ADMIN' });
   const { t, locale } = useI18n();
   const [activeTab, setActiveTab] = useState<Tab>('USERS');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
@@ -67,18 +67,10 @@ export default function AdminDashboard() {
   const [resetPwLoading, setResetPwLoading] = useState(false);
 
   useEffect(() => {
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-    if (user && user.role !== 'ADMIN') {
-      toast.error(t('admin.noAccess'));
-      router.push('/');
-      return;
-    }
+    if (!isReady) return;
     if (activeTab === 'USERS') fetchUsers();
     if (activeTab === 'SETTINGS') fetchSettings();
-  }, [token, user, activeTab]);
+  }, [isReady, activeTab]);
 
   const fetchUsers = async () => {
     try {
@@ -193,7 +185,7 @@ export default function AdminDashboard() {
     }
   };
 
-  if (!user || user.role !== 'ADMIN') return null;
+  if (!isReady) return null;
 
   const handleLogout = () => {
     logout();
@@ -398,7 +390,7 @@ export default function AdminDashboard() {
                         </button>
                         <button 
                           onClick={() => handleDeleteUser(u.id, u.username)}
-                          disabled={user.id === u.id}
+                          disabled={user?.id === u.id}
                           className="px-3 py-1.5 bg-red-50 text-red-600 hover:bg-red-100 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
                         >
                           {t('admin.delete')}

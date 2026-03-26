@@ -1,9 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/i18n-context';
+import { useRequireAuth } from '@/hooks/use-require-auth';
 import Sidebar from '@/components/sidebar';
 import {
   Key,
@@ -35,8 +34,7 @@ interface NewCredential extends S3Credential {
 }
 
 export default function S3KeysPage() {
-  const router = useRouter();
-  const { token } = useAuth();
+  const { isReady, token } = useRequireAuth();
   const { t } = useI18n();
 
   const [credentials, setCredentials] = useState<S3Credential[]>([]);
@@ -53,12 +51,8 @@ export default function S3KeysPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!token) {
-      router.push('/login');
-      return;
-    }
-    loadCredentials();
-  }, [token]);
+    if (isReady) loadCredentials();
+  }, [isReady]);
 
   async function loadCredentials() {
     try {
@@ -123,7 +117,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp ./file.txt s3://my-
 aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file.txt ./`;
   }
 
-  if (!token) return null;
+  if (!isReady) return null;
 
   return (
     <div className="h-screen bg-white flex overflow-hidden">
@@ -368,7 +362,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                 <div>
                   <p className="font-medium text-gray-800 mb-1">{t('s3.step1')}</p>
                   <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
-{`aws configure --profile tele-drive
+                    {`aws configure --profile tele-drive
 # Enter your Access Key ID and Secret Access Key
 # Region: us-east-1 (any value works)
 # Output: json`}
@@ -378,7 +372,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                 <div>
                   <p className="font-medium text-gray-800 mb-1">{t('s3.step2')}</p>
                   <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
-{`aws --profile tele-drive \\
+                    {`aws --profile tele-drive \\
     --endpoint-url ${endpointUrl} \\
     s3 ls`}
                   </pre>
@@ -387,7 +381,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                 <div>
                   <p className="font-medium text-gray-800 mb-1">{t('s3.step3')}</p>
                   <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
-{`aws --profile tele-drive \\
+                    {`aws --profile tele-drive \\
     --endpoint-url ${endpointUrl} \\
     s3 cp ./myfile.txt s3://my-bucket/myfile.txt`}
                   </pre>
@@ -396,7 +390,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                 <div>
                   <p className="font-medium text-gray-800 mb-1">{t('s3.step4')}</p>
                   <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
-{`aws --profile tele-drive \\
+                    {`aws --profile tele-drive \\
     --endpoint-url ${endpointUrl} \\
     s3 cp s3://my-bucket/myfile.txt ./downloaded.txt`}
                   </pre>
@@ -405,7 +399,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                 <div>
                   <p className="font-medium text-gray-800 mb-1">{t('s3.step5')}</p>
                   <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
-{`# aws-cli handles multipart automatically for files > 8MB
+                    {`# aws-cli handles multipart automatically for files > 8MB
 aws --profile tele-drive \\
     --endpoint-url ${endpointUrl} \\
     s3 cp ./largefile.iso s3://my-bucket/ \\
