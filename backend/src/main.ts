@@ -25,7 +25,7 @@ async function bootstrap() {
   // S3 routes stream the raw body themselves (PutObject, UploadPart, etc.)
   const expressApp = app.getHttpAdapter().getInstance();
   expressApp.use((req: any, res: any, next: any) => {
-    if (req.path && req.path.startsWith('/s3')) {
+    if (req.path && req.path.startsWith('/s3/')) {
       // Skip body parsing for S3 — controller reads raw stream
       return next();
     }
