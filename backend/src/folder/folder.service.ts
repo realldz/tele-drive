@@ -42,9 +42,23 @@ export class FolderService {
   async findAll(userId: string, parentId?: string) {
     return this.prisma.folder.findMany({
       where: { parentId: parentId || null, userId, deletedAt: null },
-      include: {
-        children: { where: { deletedAt: null } },
-        files: { where: { deletedAt: null } },
+      select: {
+        id: true,
+        name: true,
+        parentId: true,
+        userId: true,
+        visibility: true,
+        shareToken: true,
+        createdAt: true,
+        updatedAt: true,
+        children: {
+          where: { deletedAt: null },
+          select: { id: true, name: true },
+        },
+        files: {
+          where: { deletedAt: null },
+          select: { id: true, filename: true },
+        },
       },
     });
   }
@@ -234,20 +248,7 @@ export class FolderService {
     let currentFolderId = targetFolderId || rootSharedFolder.id;
 
     // Verify currentFolderId is a descendant of rootSharedFolder
-    let isChild = false;
-    let tempId: string | null = currentFolderId;
-    while (tempId) {
-      if (tempId === rootSharedFolder.id) {
-        isChild = true;
-        break;
-      }
-      const f: { parentId: string | null; deletedAt: Date | null } | null = await this.prisma.folder.findUnique({
-        where: { id: tempId },
-        select: { parentId: true, deletedAt: true },
-      });
-      if (!f || f.deletedAt) break;
-      tempId = f.parentId;
-    }
+    const isChild = await this.isDescendantOf(currentFolderId, rootSharedFolder.id);
 
     if (!isChild) throw new BadRequestException('Folder is not part of this shared link');
 
@@ -263,15 +264,15 @@ export class FolderService {
 
     // Build breadcrumbs relative to the shared root
     const breadcrumbs = [];
-    tempId = currentFolderId;
-    while (tempId && tempId !== rootSharedFolder.id) {
+    let bcId: string | null = currentFolderId;
+    while (bcId && bcId !== rootSharedFolder.id) {
        const f: { id: string; name: string; parentId: string | null } | null = await this.prisma.folder.findUnique({
-         where: { id: tempId },
+         where: { id: bcId },
          select: { id: true, name: true, parentId: true },
        });
        if (!f) break;
        breadcrumbs.unshift({ id: f.id, name: f.name });
-       tempId = f.parentId;
+       bcId = f.parentId;
     }
     // Always add the root folder as the first breadcrumb
     breadcrumbs.unshift({ id: rootSharedFolder.id, name: rootSharedFolder.name });
@@ -296,20 +297,8 @@ export class FolderService {
     if (fileRecord.status !== 'complete') throw new BadRequestException('File upload not completed yet');
 
     // Verify file is a descendant of rootSharedFolder
-    let isChild = false;
-    let tempId: string | null = fileRecord.folderId;
-    while (tempId) {
-      if (tempId === rootSharedFolder.id) {
-        isChild = true;
-        break;
-      }
-      const f: { parentId: string | null; deletedAt: Date | null } | null = await this.prisma.folder.findUnique({
-        where: { id: tempId },
-        select: { parentId: true, deletedAt: true },
-      });
-      if (!f || f.deletedAt) break;
-      tempId = f.parentId;
-    }
+    if (!fileRecord.folderId) throw new BadRequestException('File is not part of this shared link');
+    const isChild = await this.isDescendantOf(fileRecord.folderId, rootSharedFolder.id);
 
     if (!isChild) throw new BadRequestException('File is not part of this shared link');
 
@@ -317,48 +306,37 @@ export class FolderService {
   }
 
   /**
-   * Xoá thư mục — đệ quy xoá tất cả nội dung bên trong:
-   *   1. Tìm tất cả files trong thư mục (và thư mục con đệ quy)
-   *   2. Xoá từng file khỏi Telegram (bao gồm chunks)
-   *   3. Xoá thư mục khỏi database (cascade xoá children + files records)
+   * Xoá thư mục — đệ quy xoá tất cả nội dung bên trong.
    */
   async delete(id: string, userId: string) {
-    const folder = await this.prisma.folder.findFirst({
-      where: { id, userId, deletedAt: null },
-    });
-    if (!folder) throw new NotFoundException('Thư mục không tồn tại');
-
-    // Đệ quy thu thập tất cả file IDs trong thư mục và các thư mục con
-    const allFileIds = await this.collectAllFileIds(id);
-
-    // Xoá tất cả files khỏi Telegram (song song để nhanh)
-    const deletePromises = allFileIds.map(fileId =>
-      this.fileService.delete(fileId).catch(err =>
-        this.logger.warn(`Failed to delete file ${fileId} from Telegram during folder cleanup: ${err}`)
-      )
-    );
-    await Promise.allSettled(deletePromises);
-
-    // Xoá thư mục — cascade xoá children folders + file records còn sót
-    await this.prisma.folder.delete({ where: { id } });
-
-    this.logger.log(`Folder deleted: "${folder.name}" (id: ${id}, files cleaned: ${allFileIds.length})`);
-    return folder;
+    return this.hardDeleteFolder(id, userId, { deletedAt: null }, 'Thư mục không tồn tại', 'Folder deleted');
   }
 
   /**
    * Xoá vĩnh viễn folder từ thùng rác — đệ quy xoá tất cả nội dung bên trong.
    */
   async permanentDelete(id: string, userId: string) {
-    const folder = await this.prisma.folder.findFirst({
-      where: { id, userId, deletedAt: { not: null } },
-    });
-    if (!folder) throw new NotFoundException('Thư mục không tồn tại trong thùng rác');
+    return this.hardDeleteFolder(id, userId, { deletedAt: { not: null } }, 'Thư mục không tồn tại trong thùng rác', 'Folder permanently deleted from trash');
+  }
 
-    // Đệ quy thu thập tất cả file IDs trong thư mục và các thư mục con
+  /**
+   * Shared logic for delete + permanentDelete:
+   * collect files → delete from Telegram → cascade delete from DB.
+   */
+  private async hardDeleteFolder(
+    id: string,
+    userId: string,
+    whereExtra: { deletedAt: null } | { deletedAt: { not: null } },
+    notFoundMsg: string,
+    logPrefix: string,
+  ) {
+    const folder = await this.prisma.folder.findFirst({
+      where: { id, userId, ...whereExtra },
+    });
+    if (!folder) throw new NotFoundException(notFoundMsg);
+
     const allFileIds = await this.collectAllFileIds(id);
 
-    // Xoá tất cả files khỏi Telegram (song song để nhanh)
     const deletePromises = allFileIds.map(fileId =>
       this.fileService.delete(fileId).catch(err =>
         this.logger.warn(`Failed to delete file ${fileId} from Telegram during folder cleanup: ${err}`)
@@ -366,10 +344,9 @@ export class FolderService {
     );
     await Promise.allSettled(deletePromises);
 
-    // Xoá thư mục — cascade xoá children folders + file records còn sót
     await this.prisma.folder.delete({ where: { id } });
 
-    this.logger.log(`Folder permanently deleted from trash: "${folder.name}" (id: ${id}, files cleaned: ${allFileIds.length})`);
+    this.logger.log(`${logPrefix}: "${folder.name}" (id: ${id}, files cleaned: ${allFileIds.length})`);
     return folder;
   }
 
@@ -502,5 +479,24 @@ export class FolderService {
     }
 
     return fileIds;
+  }
+
+  /**
+   * Kiểm tra folderId có phải descendant (hoặc chính nó) của ancestorId.
+   * Đi ngược parent chain, bỏ qua folder đã soft-delete.
+   */
+  private async isDescendantOf(folderId: string, ancestorId: string): Promise<boolean> {
+    let currentId: string | null = folderId;
+    while (currentId) {
+      if (currentId === ancestorId) return true;
+      const folder: { parentId: string | null; deletedAt: Date | null } | null =
+        await this.prisma.folder.findUnique({
+          where: { id: currentId },
+          select: { parentId: true, deletedAt: true },
+        });
+      if (!folder || folder.deletedAt) return false;
+      currentId = folder.parentId;
+    }
+    return false;
   }
 }
