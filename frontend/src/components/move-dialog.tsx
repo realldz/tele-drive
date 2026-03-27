@@ -66,7 +66,7 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
   if (!isOpen || !itemToMove) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden flex flex-col h-[60vh]">
         <div className="flex justify-between items-center p-4 border-b border-gray-100">
           <h2 className="font-semibold text-gray-800">

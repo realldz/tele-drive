@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import axios from 'axios';
-import { X, Download, Loader2, FileIcon, FileText, Film, Image as ImageIcon, Music } from 'lucide-react';
+import { X, Download, Loader2, FileIcon } from 'lucide-react';
+import { getFileIcon } from '@/lib/file-icon';
 import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/i18n-context';
 import { API_URL } from '@/lib/api';
@@ -69,23 +70,15 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
   const streamUrl = `${API_URL}/files/${fileId}/stream?token=${token}`;
   const downloadUrl = `${API_URL}/files/${fileId}/download?token=${token}`;
 
-  const getFileIcon = (mimeType: string) => {
-    if (mimeType.startsWith('image/')) return <ImageIcon className="h-5 w-5 text-gray-500" />;
-    if (mimeType.startsWith('video/')) return <Film className="h-5 w-5 text-gray-500" />;
-    if (mimeType.startsWith('audio/')) return <Music className="h-5 w-5 text-gray-500" />;
-    if (mimeType.startsWith('text/')) return <FileText className="h-5 w-5 text-gray-500" />;
-    return <FileIcon className="h-5 w-5 text-gray-500" />;
-  };
-
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-black/70 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex flex-col bg-black/70"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       {/* Header */}
       <header className="flex h-14 items-center justify-between px-4 bg-white/95 border-b border-gray-200 flex-none z-10">
         <div className="flex items-center gap-3 min-w-0">
-          {fileInfo && getFileIcon(fileInfo.mimeType)}
+          {fileInfo && getFileIcon(fileInfo.mimeType, 'h-5 w-5 text-gray-500')}
           <h1 className="truncate font-semibold text-gray-800 text-sm">
             {fileInfo?.filename || '...'}
           </h1>

@@ -1,6 +1,6 @@
 'use client';
 
-import { Edit2, Move, Share2, Trash2 } from 'lucide-react';
+import { Edit2, Move, Share2, Trash2, Info } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 
 interface ContextMenuProps {
@@ -11,19 +11,28 @@ interface ContextMenuProps {
   onMove: () => void;
   onShare: () => void;
   onDelete: (e: React.MouseEvent) => void;
+  onDetails?: () => void;
 }
 
-export default function ContextMenu({ x, y, itemType, onRename, onMove, onShare, onDelete }: ContextMenuProps) {
+export default function ContextMenu({ x, y, itemType, onRename, onMove, onShare, onDelete, onDetails }: ContextMenuProps) {
   const { t } = useI18n();
   return (
     <div
       className="fixed bg-white border border-gray-200 rounded-xl shadow-[0_10px_40px_-10px_rgba(0,0,0,0.15)] w-48 py-2 z-50 text-sm"
       style={{
-        top: Math.min(y, window.innerHeight - 200),
+        top: Math.min(y, window.innerHeight - 250),
         left: Math.min(x, window.innerWidth - 200),
       }}
       onClick={(e) => e.stopPropagation()}
     >
+      {onDetails && (
+        <button
+          onClick={onDetails}
+          className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors"
+        >
+          <Info size={16} /> {t('contextMenu.details')}
+        </button>
+      )}
       <button
         onClick={onRename}
         className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors"
