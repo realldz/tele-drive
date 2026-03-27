@@ -3,6 +3,7 @@ import { FolderService } from './folder.service';
 import { FileService } from '../file/file.service';
 import { Public } from '../auth/public.decorator';
 import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
+import { CreateFolderDto } from './dto/create-folder.dto';
 import type { Response } from 'express';
 
 @Controller('folders')
@@ -13,7 +14,7 @@ export class FolderController {
   ) {}
 
   @Post()
-  create(@Body() body: { name: string; parentId?: string }, @Req() req: any) {
+  create(@Body() body: CreateFolderDto, @Req() req: any) {
     return this.folderService.create(body.name, req.user.userId, body.parentId || undefined);
   }
 
