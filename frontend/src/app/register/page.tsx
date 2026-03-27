@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useI18n } from '@/components/i18n-context';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import { UserPlus, Loader2 } from 'lucide-react';
+import { getApiErrorMessage } from '@/lib/api';
 
 export default function RegisterPage() {
   const { register } = useAuth();
@@ -38,8 +39,8 @@ export default function RegisterPage() {
     try {
       await register(username, password);
       router.push('/');
-    } catch (err: any) {
-      setError(err?.response?.data?.message || t('register.failed'));
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, t('register.failed')));
     } finally {
       setLoading(false);
     }

@@ -17,8 +17,9 @@ import toast from 'react-hot-toast';
 import {
   formatSize, fetchFolderContent, fetchBreadcrumbs,
   createFolder, deleteFolder, restoreFolder, deleteFile, restoreFile,
-  abortUpload, getDownloadUrl, renameItem, moveItem,
+  abortUpload, getDownloadUrl, renameItem, moveItem, getApiErrorMessage,
 } from '@/lib/api';
+import type { FileRecord, FolderRecord, BreadcrumbItem } from '@/lib/types';
 
 export default function Dashboard() {
   const { isReady, user, token, logout } = useRequireAuth();
@@ -27,9 +28,9 @@ export default function Dashboard() {
   const { setCurrentFolderId: setUploadFolderId, setOnUploadSuccess, addFiles, addFolder } = useUpload();
 
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
-  const [folders, setFolders] = useState<any[]>([]);
-  const [files, setFiles] = useState<any[]>([]);
-  const [breadcrumbs, setBreadcrumbs] = useState<any[]>([]);
+  const [folders, setFolders] = useState<FolderRecord[]>([]);
+  const [files, setFiles] = useState<FileRecord[]>([]);
+  const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [newFolderName, setNewFolderName] = useState('');
   const [showNewFolder, setShowNewFolder] = useState(false);
   const [isCreatingFolder, setIsCreatingFolder] = useState(false);
@@ -89,12 +90,12 @@ export default function Dashboard() {
     isOpen: boolean;
     x: number;
     y: number;
-    item: any;
+    item: FileRecord | FolderRecord | null;
     type: 'file' | 'folder';
   }>({ isOpen: false, x: 0, y: 0, item: null, type: 'file' });
 
   const [activeDialog, setActiveDialog] = useState<'rename' | 'move' | 'share' | 'none'>('none');
-  const [dialogItem, setDialogItem] = useState<any>(null);
+  const [dialogItem, setDialogItem] = useState<FileRecord | FolderRecord | null>(null);
   const [dialogItemType, setDialogItemType] = useState<'file' | 'folder'>('file');
 
   // Drag and Drop state
@@ -171,8 +172,8 @@ export default function Dashboard() {
       setNewFolderName('');
       setShowNewFolder(false);
       fetchContent();
-    } catch (error: any) {
-      alert(error?.response?.data?.message || t('dashboard.createFolderError'));
+    } catch (error: unknown) {
+      alert(getApiErrorMessage(error, t('dashboard.createFolderError')));
     } finally {
       setIsCreatingFolder(false);
     }
@@ -205,8 +206,8 @@ export default function Dashboard() {
         ),
         { duration: 5000 }
       );
-    } catch (error: any) {
-      alert(error?.response?.data?.message || t('dashboard.deleteStuckError'));
+    } catch (error: unknown) {
+      alert(getApiErrorMessage(error, t('dashboard.deleteStuckError')));
     }
   };
 
@@ -237,8 +238,8 @@ export default function Dashboard() {
         ),
         { duration: 5000 }
       );
-    } catch (error: any) {
-      alert(error?.response?.data?.message || t('dashboard.deleteStuckError'));
+    } catch (error: unknown) {
+      alert(getApiErrorMessage(error, t('dashboard.deleteStuckError')));
     }
   };
 
@@ -247,8 +248,8 @@ export default function Dashboard() {
     try {
       await abortUpload(id);
       fetchContent();
-    } catch (error: any) {
-      alert(error?.response?.data?.message || t('dashboard.deleteStuckError'));
+    } catch (error: unknown) {
+      alert(getApiErrorMessage(error, t('dashboard.deleteStuckError')));
     }
   };
 
@@ -277,7 +278,7 @@ export default function Dashboard() {
     }
   };
 
-  const handleDragStart = (e: React.DragEvent, item: any, type: 'file' | 'folder') => {
+  const handleDragStart = (e: React.DragEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
     setDraggedItem({ id: item.id, type });
     e.dataTransfer.effectAllowed = 'move';
   };
@@ -309,8 +310,8 @@ export default function Dashboard() {
     try {
       await moveItem(draggedItem.type, draggedItem.id, targetFolderId);
       fetchContent();
-    } catch (error: any) {
-      alert(error.response?.data?.message || t('dashboard.moveError'));
+    } catch (error: unknown) {
+      alert(getApiErrorMessage(error, t('dashboard.moveError')));
     }
     setDraggedItem(null);
   };
@@ -741,8 +742,8 @@ export default function Dashboard() {
           onShare={() => handleOpenDialog('share')}
           onDelete={(e) => {
             contextMenu.type === 'folder'
-              ? handleDeleteFolder(e, contextMenu.item.id)
-              : handleDeleteFile(e, contextMenu.item.id);
+              ? handleDeleteFolder(e, contextMenu.item!.id)
+              : handleDeleteFile(e, contextMenu.item!.id);
             setContextMenu(prev => ({ ...prev, isOpen: false }));
           }}
         />
@@ -752,11 +753,11 @@ export default function Dashboard() {
       <RenameDialog
         isOpen={activeDialog === 'rename'}
         onClose={() => setActiveDialog('none')}
-        initialName={dialogItem ? (dialogItem.name || dialogItem.filename) : ''}
+        initialName={dialogItem ? ('name' in dialogItem ? dialogItem.name : dialogItem.filename) : ''}
         itemType={dialogItemType}
         onConfirm={async (newName) => {
           try {
-            await renameItem(dialogItemType, dialogItem.id, newName);
+            await renameItem(dialogItemType, dialogItem!.id, newName);
             setActiveDialog('none');
             fetchContent();
           } catch (error) {
@@ -772,11 +773,11 @@ export default function Dashboard() {
         itemType={dialogItemType}
         onConfirm={async (destFolderId) => {
           try {
-            await moveItem(dialogItemType, dialogItem.id, destFolderId);
+            await moveItem(dialogItemType, dialogItem!.id, destFolderId);
             setActiveDialog('none');
             fetchContent();
-          } catch (error: any) {
-            alert(error.response?.data?.message || t('dashboard.moveError'));
+          } catch (error: unknown) {
+            alert(getApiErrorMessage(error, t('dashboard.moveError')));
           }
         }}
       />

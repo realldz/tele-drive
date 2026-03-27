@@ -20,7 +20,8 @@ import { CryptoService } from '../crypto/crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { Public } from '../auth/public.decorator';
 import { MAX_CHUNK_SIZE } from '../config/upload.config';
-import type { Request, Response } from 'express';
+import type { S3AuthenticatedRequest } from '../common/types/request';
+import type { Response } from 'express';
 import { Readable, Transform } from 'stream';
 import * as crypto from 'crypto';
 
@@ -84,8 +85,8 @@ export class S3Controller {
   // ---------------------------------------------------------------------------
 
   @Get()
-  async listBuckets(@Req() req: Request, @Res() res: Response) {
-    const userId = (req as any).s3UserId as string;
+  async listBuckets(@Req() req: S3AuthenticatedRequest, @Res() res: Response) {
+    const userId = req.s3UserId;
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { username: true },
@@ -110,10 +111,10 @@ export class S3Controller {
   @Put(':bucket')
   async createBucket(
     @Param('bucket') bucket: string,
-    @Req() req: Request,
+    @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = (req as any).s3UserId as string;
+    const userId = req.s3UserId;
     await this.s3Service.createBucket(userId, bucket);
     this.setRequestId(res);
     res.setHeader('Location', `/${bucket}`);
@@ -128,10 +129,10 @@ export class S3Controller {
   @Head(':bucket')
   async headBucket(
     @Param('bucket') bucket: string,
-    @Req() req: Request,
+    @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = (req as any).s3UserId as string;
+    const userId = req.s3UserId;
     const exists = await this.prisma.folder.findFirst({
       where: { userId, name: bucket, parentId: null, deletedAt: null },
       select: { id: true },
@@ -144,18 +145,20 @@ export class S3Controller {
   @Delete(':bucket')
   async deleteBucket(
     @Param('bucket') bucket: string,
-    @Req() req: Request,
+    @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = (req as any).s3UserId as string;
+    const userId = req.s3UserId;
     this.setRequestId(res);
     try {
       await this.s3Service.deleteBucket(userId, bucket);
       res.status(204).end();
-    } catch (err: any) {
-      const code = err.message || 'InternalError';
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      const status = (err as { status?: number }).status;
+      const code = message || 'InternalError';
       res
-        .status(err.status || 409)
+        .status(status || 409)
         .setHeader('Content-Type', 'application/xml')
         .send(this.s3Service.buildErrorXml(code, code));
     }
@@ -167,10 +170,10 @@ export class S3Controller {
   @Get(':bucket')
   async listObjects(
     @Param('bucket') bucket: string,
-    @Req() req: Request,
+    @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = (req as any).s3UserId as string;
+    const userId = req.s3UserId;
     const query = req.query as Record<string, string>;
     const prefix = query['prefix'] || '';
     const delimiter = query['delimiter'] || '';
@@ -199,7 +202,7 @@ export class S3Controller {
 
       res.setHeader('Content-Type', 'application/xml');
       res.status(200).send(xml);
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.sendS3Error(res, err);
     }
   }
@@ -212,10 +215,10 @@ export class S3Controller {
   async handlePut(
     @Param('bucket') bucket: string,
     @Param() params: Record<string, string>,
-    @Req() req: Request,
+    @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = (req as any).s3UserId as string;
+    const userId = req.s3UserId;
     const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
     const query = req.query as Record<string, string>;
 
@@ -243,8 +246,8 @@ export class S3Controller {
         );
         res.setHeader('ETag', etag);
         res.status(200).end();
-      } catch (err: any) {
-        this.logger.error(`S3 UploadPart error: ${err.message}`, err.stack);
+      } catch (err: unknown) {
+        this.logger.error(`S3 UploadPart error: ${err instanceof Error ? err.message : err}`, err instanceof Error ? err.stack : undefined);
         this.sendS3Error(res, err);
       }
       return;
@@ -262,10 +265,10 @@ export class S3Controller {
   async handlePost(
     @Param('bucket') bucket: string,
     @Param() params: Record<string, string>,
-    @Req() req: Request,
+    @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = (req as any).s3UserId as string;
+    const userId = req.s3UserId;
     const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
     const query = req.query as Record<string, string>;
 
@@ -285,8 +288,8 @@ export class S3Controller {
         const xml = this.s3Multipart.buildInitiateMultipartUploadXml(bucket, key, uploadId);
         res.setHeader('Content-Type', 'application/xml');
         res.status(200).send(xml);
-      } catch (err: any) {
-        this.logger.error(`S3 CreateMultipartUpload error: ${err.message}`, err.stack);
+      } catch (err: unknown) {
+        this.logger.error(`S3 CreateMultipartUpload error: ${err instanceof Error ? err.message : err}`, err instanceof Error ? err.stack : undefined);
         this.sendS3Error(res, err);
       }
       return;
@@ -315,8 +318,8 @@ export class S3Controller {
         res.setHeader('Content-Type', 'application/xml');
         res.setHeader('ETag', etag);
         res.status(200).send(xml);
-      } catch (err: any) {
-        this.logger.error(`S3 CompleteMultipartUpload error: ${err.message}`, err.stack);
+      } catch (err: unknown) {
+        this.logger.error(`S3 CompleteMultipartUpload error: ${err instanceof Error ? err.message : err}`, err instanceof Error ? err.stack : undefined);
         this.sendS3Error(res, err);
       }
       return;
@@ -336,10 +339,10 @@ export class S3Controller {
   async handleGet(
     @Param('bucket') bucket: string,
     @Param() params: Record<string, string>,
-    @Req() req: Request,
+    @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = (req as any).s3UserId as string;
+    const userId = req.s3UserId;
     const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
     const query = req.query as Record<string, string>;
 
@@ -353,7 +356,7 @@ export class S3Controller {
         const xml = this.s3Multipart.buildListPartsXml(bucket, key, uploadId, parts);
         res.setHeader('Content-Type', 'application/xml');
         res.status(200).send(xml);
-      } catch (err: any) {
+      } catch (err: unknown) {
         this.sendS3Error(res, err);
       }
       return;
@@ -365,7 +368,7 @@ export class S3Controller {
       const file = await this.s3Service.findObject(userId, bucket, key);
       const downloadInfo = this.fileService.getDownloadMetadata(file);
 
-      const etag = (file as any).etag || `"${file.id}"`;
+      const etag = file.etag || `"${file.id}"`;
       res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
       res.setHeader('Content-Length', file.size.toString());
       res.setHeader('ETag', etag);
@@ -377,8 +380,8 @@ export class S3Controller {
         return this.fileService.processStream(downloadInfo, rangeHeader, res);
       }
       return this.fileService.processDownload(downloadInfo, res);
-    } catch (err: any) {
-      this.logger.error(`S3 GetObject error: ${err.message}`);
+    } catch (err: unknown) {
+      this.logger.error(`S3 GetObject error: ${err instanceof Error ? err.message : err}`);
       this.sendS3Error(res, err);
     }
   }
@@ -391,10 +394,10 @@ export class S3Controller {
   async headObject(
     @Param('bucket') bucket: string,
     @Param() params: Record<string, string>,
-    @Req() req: Request,
+    @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = (req as any).s3UserId as string;
+    const userId = req.s3UserId;
     const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
 
     this.logger.log(`S3 HeadObject: s3://${bucket}/${key} (userId: ${userId})`);
@@ -402,7 +405,7 @@ export class S3Controller {
 
     try {
       const file = await this.s3Service.findObject(userId, bucket, key);
-      const etag = (file as any).etag || `"${file.id}"`;
+      const etag = file.etag || `"${file.id}"`;
 
       res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
       res.setHeader('Content-Length', file.size.toString());
@@ -410,10 +413,11 @@ export class S3Controller {
       res.setHeader('Last-Modified', file.updatedAt.toUTCString());
       res.setHeader('Accept-Ranges', 'bytes');
       res.status(200).end();
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.logger.warn(`S3 HeadObject not found: s3://${bucket}/${key}`);
+      const status = (err as { status?: number }).status;
       res
-        .status(err.status || 404)
+        .status(status || 404)
         .setHeader('Content-Type', 'application/xml')
         .send(
           this.s3Service.buildErrorXml('NoSuchKey', 'The specified key does not exist.'),
@@ -429,10 +433,10 @@ export class S3Controller {
   async handleDelete(
     @Param('bucket') bucket: string,
     @Param() params: Record<string, string>,
-    @Req() req: Request,
+    @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = (req as any).s3UserId as string;
+    const userId = req.s3UserId;
     const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
     const query = req.query as Record<string, string>;
 
@@ -444,7 +448,7 @@ export class S3Controller {
       try {
         await this.s3Multipart.abortMultipartUpload(uploadId, userId);
         res.status(204).end();
-      } catch (err: any) {
+      } catch (err: unknown) {
         this.sendS3Error(res, err);
       }
       return;
@@ -456,9 +460,11 @@ export class S3Controller {
       const file = await this.s3Service.findObject(userId, bucket, key);
       await this.fileService.delete(file.id, userId);
       res.status(204).end();
-    } catch (err: any) {
+    } catch (err: unknown) {
       // S3 spec: DeleteObject returns 204 even if key doesn't exist
-      if (err.status === 404 || err.message === 'NoSuchKey') {
+      const status = (err as { status?: number }).status;
+      const message = err instanceof Error ? err.message : String(err);
+      if (status === 404 || message === 'NoSuchKey') {
         res.status(204).end();
       } else {
         this.sendS3Error(res, err);
@@ -474,7 +480,7 @@ export class S3Controller {
     userId: string,
     bucket: string,
     key: string,
-    req: Request,
+    req: S3AuthenticatedRequest,
     res: Response,
   ) {
     const contentLength = parseInt(
@@ -624,8 +630,8 @@ export class S3Controller {
         res.setHeader('ETag', etag);
         res.status(200).end();
       }
-    } catch (err: any) {
-      this.logger.error(`S3 PutObject error: ${err.message}`, err.stack);
+    } catch (err: unknown) {
+      this.logger.error(`S3 PutObject error: ${err instanceof Error ? err.message : err}`, err instanceof Error ? err.stack : undefined);
       this.sendS3Error(res, err);
     }
   }
@@ -655,7 +661,7 @@ export class S3Controller {
     if (sourceBucket === destBucket && sourceKey === destKey) {
       try {
         const file = await this.s3Service.findObject(userId, sourceBucket, sourceKey);
-        const etag = (file as any).etag || `"${file.id}"`;
+        const etag = file.etag || `"${file.id}"`;
         const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <CopyObjectResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <LastModified>${file.updatedAt.toISOString()}</LastModified>
@@ -664,7 +670,7 @@ export class S3Controller {
         res.setHeader('Content-Type', 'application/xml');
         res.setHeader('ETag', etag);
         return res.status(200).send(xml);
-      } catch (err: any) {
+      } catch (err: unknown) {
         return this.sendS3Error(res, err);
       }
     }
@@ -679,7 +685,7 @@ export class S3Controller {
       const filename = destKey.split('/').pop() || destKey;
 
       // Inherit source ETag
-      const inheritedEtag = (sourceFile as any).etag || `"${sourceFile.id}"`;
+      const inheritedEtag = sourceFile.etag || `"${sourceFile.id}"`;
 
       // Clone FileRecord — shares the same Telegram fileId (no re-download)
       const newRecord = await this.prisma.fileRecord.create({
@@ -716,7 +722,7 @@ export class S3Controller {
       res.setHeader('Content-Type', 'application/xml');
       res.setHeader('ETag', inheritedEtag);
       res.status(200).send(xml);
-    } catch (err: any) {
+    } catch (err: unknown) {
       this.sendS3Error(res, err);
     }
   }
@@ -741,7 +747,9 @@ export class S3Controller {
     res.setHeader('x-amz-id-2', crypto.randomBytes(16).toString('base64'));
   }
 
-  private sendS3Error(res: Response, err: any) {
+  private sendS3Error(res: Response, err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
+    const status = (err as { status?: number }).status;
     const statusMap: Record<string, number> = {
       NoSuchBucket: 404,
       NoSuchKey: 404,
@@ -751,13 +759,13 @@ export class S3Controller {
       AccessDenied: 403,
       InvalidRequest: 400,
     };
-    const code = err.message || 'InternalError';
-    const status = err.status || statusMap[code] || 500;
+    const code = message || 'InternalError';
+    const httpStatus = status || statusMap[code] || 500;
     res
-      .status(status)
+      .status(httpStatus)
       .setHeader('Content-Type', 'application/xml')
       .send(
-        this.s3Service.buildErrorXml(code, err.message || 'An internal error occurred.'),
+        this.s3Service.buildErrorXml(code, message || 'An internal error occurred.'),
       );
   }
 }

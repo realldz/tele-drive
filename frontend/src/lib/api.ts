@@ -1,4 +1,5 @@
 import axios from 'axios';
+import type { FileRecord, FolderRecord, BreadcrumbItem, TrashedFile, TrashedFolder } from './types';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -34,17 +35,17 @@ export async function fetchCurrentUser() {
 
 // ── Folder Content ───────────────────────────────────────────────────────────
 
-export async function fetchFolderContent(folderId?: string) {
+export async function fetchFolderContent(folderId?: string): Promise<{ folders: FolderRecord[]; files: FileRecord[] }> {
   const url = folderId
     ? `${API_URL}/folders/content?folderId=${folderId}`
     : `${API_URL}/folders/content`;
   const res = await api.get(url);
-  return res.data as { folders: any[]; files: any[] };
+  return res.data;
 }
 
-export async function fetchBreadcrumbs(folderId: string) {
+export async function fetchBreadcrumbs(folderId: string): Promise<BreadcrumbItem[]> {
   const res = await api.get(`${API_URL}/folders/${folderId}/breadcrumbs`);
-  return res.data as any[];
+  return res.data;
 }
 
 // ── Folder CRUD ──────────────────────────────────────────────────────────────
@@ -115,7 +116,7 @@ export async function unshareItem(type: 'file' | 'folder', id: string) {
 
 // ── Trash ────────────────────────────────────────────────────────────────────
 
-export async function fetchTrash() {
+export async function fetchTrash(): Promise<{ files: TrashedFile[]; folders: TrashedFolder[] }> {
   const [filesRes, foldersRes] = await Promise.all([
     api.get(`${API_URL}/files/trash/list`),
     api.get(`${API_URL}/folders/trash/list`),
@@ -195,4 +196,14 @@ export async function deleteS3Credential(id: string) {
 export async function fetchUploadConfig() {
   const res = await api.get(`${API_URL}/files/config`);
   return res.data;
+}
+
+// ── Error Helper ────────────────────────────────────────────────────────────
+
+/** Extract API error message from axios errors safely (no `any` needed). */
+export function getApiErrorMessage(error: unknown, fallback: string): string {
+  if (axios.isAxiosError(error)) {
+    return error.response?.data?.message || fallback;
+  }
+  return error instanceof Error ? error.message : fallback;
 }

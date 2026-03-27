@@ -2,18 +2,18 @@ import { IsString, IsNumber, IsOptional, Min } from 'class-validator';
 
 export class InitUploadDto {
   @IsString()
-  filename: string;
+  filename!: string;
 
   @IsNumber()
   @Min(1)
-  size: number;
+  size!: number;
 
   @IsString()
-  mimeType: string;
+  mimeType!: string;
 
   @IsNumber()
   @Min(1)
-  totalChunks: number;
+  totalChunks!: number;
 
   @IsString()
   @IsOptional()

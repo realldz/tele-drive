@@ -189,10 +189,10 @@ export class FolderService {
 
     const updated = await this.prisma.folder.update({
       where: { id },
-      data: { 
+      data: {
         visibility: 'PUBLIC_LINK',
         shareToken,
-      } as any,
+      },
     });
 
     this.logger.log(`Folder shared: "${folder.name}" (folderId: ${id}, token: ${shareToken})`);
@@ -210,10 +210,10 @@ export class FolderService {
 
     const updated = await this.prisma.folder.update({
       where: { id },
-      data: { 
+      data: {
         visibility: 'PRIVATE',
         shareToken: null,
-      } as any,
+      },
     });
 
     this.logger.log(`Folder unshared: "${folder.name}" (folderId: ${id})`);
@@ -226,7 +226,7 @@ export class FolderService {
    */
   async getSharedContent(token: string, targetFolderId?: string) {
     const rootSharedFolder = await this.prisma.folder.findUnique({
-      where: { shareToken: token } as any,
+      where: { shareToken: token },
       include: { user: { select: { username: true } } },
     });
     if (!rootSharedFolder || rootSharedFolder.deletedAt) throw new NotFoundException('Shared folder not found');
@@ -241,7 +241,7 @@ export class FolderService {
         isChild = true;
         break;
       }
-      const f: any = await this.prisma.folder.findUnique({
+      const f: { parentId: string | null; deletedAt: Date | null } | null = await this.prisma.folder.findUnique({
         where: { id: tempId },
         select: { parentId: true, deletedAt: true },
       });
@@ -265,7 +265,7 @@ export class FolderService {
     const breadcrumbs = [];
     tempId = currentFolderId;
     while (tempId && tempId !== rootSharedFolder.id) {
-       const f: any = await this.prisma.folder.findUnique({
+       const f: { id: string; name: string; parentId: string | null } | null = await this.prisma.folder.findUnique({
          where: { id: tempId },
          select: { id: true, name: true, parentId: true },
        });
@@ -284,7 +284,7 @@ export class FolderService {
    */
   async getSharedFileDownloadInfo(token: string, fileId: string) {
     const rootSharedFolder = await this.prisma.folder.findUnique({
-      where: { shareToken: token } as any,
+      where: { shareToken: token },
     });
     if (!rootSharedFolder || rootSharedFolder.deletedAt) throw new NotFoundException('Shared folder not found');
 
@@ -303,7 +303,7 @@ export class FolderService {
         isChild = true;
         break;
       }
-      const f: any = await this.prisma.folder.findUnique({
+      const f: { parentId: string | null; deletedAt: Date | null } | null = await this.prisma.folder.findUnique({
         where: { id: tempId },
         select: { parentId: true, deletedAt: true },
       });

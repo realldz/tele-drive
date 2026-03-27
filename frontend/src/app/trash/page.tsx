@@ -8,14 +8,16 @@ import Sidebar from '@/components/sidebar';
 import {
   formatSize, fetchTrash as fetchTrashApi,
   restoreFile, permanentDeleteFile, restoreFolder, permanentDeleteFolder,
+  getApiErrorMessage,
 } from '@/lib/api';
+import type { TrashedFile, TrashedFolder } from '@/lib/types';
 
 export default function TrashPage() {
   const { isReady, token } = useRequireAuth();
   const { t } = useI18n();
 
-  const [trashedFiles, setTrashedFiles] = useState<any[]>([]);
-  const [trashedFolders, setTrashedFolders] = useState<any[]>([]);
+  const [trashedFiles, setTrashedFiles] = useState<TrashedFile[]>([]);
+  const [trashedFolders, setTrashedFolders] = useState<TrashedFolder[]>([]);
 
   const fetchTrash = useCallback(async () => {
     if (!token) return;
@@ -36,8 +38,8 @@ export default function TrashPage() {
     try {
       await restoreFile(id);
       fetchTrash();
-    } catch (error: any) {
-      alert(error?.response?.data?.message || 'Error restoring file');
+    } catch (error: unknown) {
+      alert(getApiErrorMessage(error, 'Error restoring file'));
     }
   };
 
@@ -46,8 +48,8 @@ export default function TrashPage() {
     try {
       await permanentDeleteFile(id);
       fetchTrash();
-    } catch (error: any) {
-      alert(error?.response?.data?.message || 'Error deleting file');
+    } catch (error: unknown) {
+      alert(getApiErrorMessage(error, 'Error deleting file'));
     }
   };
 
@@ -55,8 +57,8 @@ export default function TrashPage() {
     try {
       await restoreFolder(id);
       fetchTrash();
-    } catch (error: any) {
-      alert(error?.response?.data?.message || 'Error restoring folder');
+    } catch (error: unknown) {
+      alert(getApiErrorMessage(error, 'Error restoring folder'));
     }
   };
 
@@ -65,8 +67,8 @@ export default function TrashPage() {
     try {
       await permanentDeleteFolder(id);
       fetchTrash();
-    } catch (error: any) {
-      alert(error?.response?.data?.message || 'Error deleting folder');
+    } catch (error: unknown) {
+      alert(getApiErrorMessage(error, 'Error deleting folder'));
     }
   };
 

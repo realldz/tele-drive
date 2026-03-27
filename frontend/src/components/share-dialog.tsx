@@ -3,12 +3,13 @@ import { X, Copy, Check, Globe, Lock, Share2 } from 'lucide-react';
 import { shareItem, unshareItem } from '@/lib/api';
 import { useI18n } from '@/components/i18n-context';
 import toast from 'react-hot-toast';
+import type { FileRecord, FolderRecord } from '@/lib/types';
 
 interface ShareDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  item: any;
+  item: FileRecord | FolderRecord | null;
   itemType: 'file' | 'folder';
 }
 
@@ -92,7 +93,7 @@ export default function ShareDialog({ isOpen, onClose, onSuccess, item, itemType
             </div>
             <div>
               <h3 className="font-semibold text-gray-800 break-all line-clamp-2">
-                {item.filename || item.name}
+                {'filename' in item ? item.filename : item.name}
               </h3>
               <p className="text-sm text-gray-500">
                 {t('share.status')}: <span className={isShared ? 'text-green-600 font-medium' : 'text-gray-500 font-medium'}>

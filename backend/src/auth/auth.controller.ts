@@ -3,6 +3,7 @@ import { AuthService } from './auth.service';
 import { Public } from './public.decorator';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import type { AuthenticatedRequest } from '../common/types/request';
 
 @Controller('auth')
 export class AuthController {
@@ -22,7 +23,7 @@ export class AuthController {
   }
 
   @Get('profile')
-  async getProfile(@Req() req: any) {
+  async getProfile(@Req() req: AuthenticatedRequest) {
     return this.authService.getProfile(req.user.userId);
   }
 }

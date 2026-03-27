@@ -98,8 +98,10 @@ export class S3AuthService {
 
       this.logger.debug(`S3 auth success: userId=${credential.userId}, accessKeyId=${accessKeyId}`);
       return credential.userId;
-    } catch (err: any) {
-      this.logger.error(`S3 auth error: ${err.message}`, err.stack);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      this.logger.error(`S3 auth error: ${message}`, stack);
       return null;
     }
   }
@@ -212,8 +214,10 @@ export class S3AuthService {
 
       this.logger.debug(`Presigned URL auth success: userId=${credential.userId}, accessKeyId=${accessKeyId}`);
       return credential.userId;
-    } catch (err: any) {
-      this.logger.error(`Presigned URL auth error: ${err.message}`, err.stack);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      const stack = err instanceof Error ? err.stack : undefined;
+      this.logger.error(`Presigned URL auth error: ${message}`, stack);
       return null;
     }
   }

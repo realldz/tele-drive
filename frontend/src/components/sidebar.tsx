@@ -6,7 +6,7 @@ import { Home, Trash2, KeyRound, ShieldAlert, LogOut, User, HardDrive, Menu, X, 
 import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/i18n-context';
 import LanguageSwitcher from '@/components/language-switcher';
-import { formatSize, changePassword } from '@/lib/api';
+import { formatSize, changePassword, getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 interface SidebarProps {
@@ -44,8 +44,8 @@ export default function Sidebar({ children }: SidebarProps) {
       toast.success(t('password.changeSuccess'));
       setShowChangePassword(false);
       setPwForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
-    } catch (err: any) {
-      const msg = err.response?.data?.message || t('password.changeError');
+    } catch (err: unknown) {
+      const msg = getApiErrorMessage(err, t('password.changeError'));
       toast.error(msg);
     } finally {
       setPwLoading(false);

@@ -18,7 +18,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { API_URL, getAbsoluteApiUrl, fetchS3Credentials, createS3Credential, deleteS3Credential } from '@/lib/api';
+import { API_URL, getAbsoluteApiUrl, fetchS3Credentials, createS3Credential, deleteS3Credential, getApiErrorMessage } from '@/lib/api';
 
 interface S3Credential {
   id: string;
@@ -77,8 +77,8 @@ export default function S3KeysPage() {
       setShowCreateForm(false);
       await loadCredentials();
       toast.success(t('s3.createSuccess'));
-    } catch (err: any) {
-      toast.error(err?.response?.data?.message || t('s3.createError'));
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, t('s3.createError')));
     } finally {
       setCreating(false);
     }

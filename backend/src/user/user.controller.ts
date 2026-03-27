@@ -6,19 +6,20 @@ import { UpdateQuotaDto } from './dto/update-quota.dto';
 import { UpdateBandwidthDto } from './dto/update-bandwidth.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import type { AuthenticatedRequest } from '../common/types/request';
 
 @Controller('users')
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
   @Get('me')
-  getMe(@Req() req: any) {
+  getMe(@Req() req: AuthenticatedRequest) {
     return this.userService.getMe(req.user.userId);
   }
 
   @Patch('me/password')
   changePassword(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Body() body: ChangePasswordDto,
   ) {
     return this.userService.changePassword(req.user.userId, body.currentPassword, body.newPassword);
@@ -53,7 +54,7 @@ export class UserController {
 
   @UseGuards(AdminGuard)
   @Delete(':id')
-  deleteUser(@Param('id') id: string, @Req() req: any) {
+  deleteUser(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.userService.deleteUser(id, req.user.userId);
   }
 
@@ -62,7 +63,7 @@ export class UserController {
   updateRole(
     @Param('id') id: string,
     @Body() body: UpdateRoleDto,
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
   ) {
     return this.userService.updateRole(id, body.role, req.user.userId);
   }

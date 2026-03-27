@@ -8,6 +8,7 @@ import * as crypto from 'crypto';
 import type { Response } from 'express';
 import { CryptoService } from '../crypto/crypto.service';
 import { MAX_CHUNK_SIZE } from '../config/upload.config';
+import type { DownloadInfo } from '../common/types/download';
 
 /**
  * Transform stream đếm bytes đi qua — dùng để biết kích thước chunk
@@ -164,7 +165,7 @@ export class FileService {
 
       this.logger.log(`File uploaded: "${filename}" (${file.size} bytes, userId: ${userId}, recordId: ${record.id})`);
       return updated;
-    } catch (err: any) {
+    } catch (err: unknown) {
       // Nếu lỗi upload, xoá placeholder record
       await this.prisma.fileRecord.delete({ where: { id: record.id } });
       this.logger.error(`Failed to upload file to Telegram: ${filename}`, err);
@@ -550,7 +551,26 @@ export class FileService {
   /**
    * Helper trích xuất metadata download từ FileRecord (không resolve URL — URL được resolve lazily khi stream)
    */
-  getDownloadMetadata(fileRecord: any) {
+  getDownloadMetadata(fileRecord: {
+    filename: string;
+    size: bigint | number;
+    telegramFileId: string | null;
+    botIndex: number;
+    telegramMessageId: number | null;
+    isChunked: boolean;
+    isEncrypted: boolean;
+    encryptedKey: string | null;
+    encryptionIv: string | null;
+    mimeType: string;
+    chunks: Array<{
+      id: string;
+      telegramFileId: string;
+      botIndex: number;
+      telegramMessageId: number | null;
+      encryptionIv: string | null;
+      size: number | bigint;
+    }>;
+  }): DownloadInfo {
     let dek: Buffer | null = null;
     if (fileRecord.isEncrypted && fileRecord.encryptedKey) {
       dek = this.cryptoService.decryptKey(fileRecord.encryptedKey);
@@ -570,7 +590,7 @@ export class FileService {
       };
     }
 
-    const chunks = fileRecord.chunks.map((chunk: any) => ({
+    const chunks = fileRecord.chunks.map((chunk) => ({
       id: chunk.id,
       telegramFileId: chunk.telegramFileId,
       botIndex: chunk.botIndex ?? 0,
@@ -726,15 +746,19 @@ export class FileService {
     });
   }
 
-  private isClientDisconnect(err: any): boolean {
-    return err?.code === 'ECONNRESET' || err?.message === 'terminated' || err?.code === 'ERR_STREAM_PREMATURE_CLOSE';
+  private isClientDisconnect(err: unknown): boolean {
+    if (err instanceof Error) {
+      const code = (err as NodeJS.ErrnoException).code;
+      return code === 'ECONNRESET' || err.message === 'terminated' || code === 'ERR_STREAM_PREMATURE_CLOSE';
+    }
+    return false;
   }
 
   /**
    * Helper process download file (dùng Streams)
    * Resolve URLs lazily: stream chunk[i] trong khi prefetch URL cho chunk[i+1..i+PREFETCH_AHEAD]
    */
-  async processDownload(downloadInfo: any, res: Response, rangeHeader?: string) {
+  async processDownload(downloadInfo: DownloadInfo, res: Response, rangeHeader?: string) {
     // Multi-thread download: nếu có Range header và tính năng được bật → delegate sang processRangeDownload
     if (rangeHeader && await this.isMultiThreadEnabled()) {
       return this.processRangeDownload(downloadInfo, rangeHeader, res);
@@ -768,11 +792,11 @@ export class FileService {
             : undefined,
           endResponse: true,
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (this.isClientDisconnect(err)) {
           this.logger.debug(`Client disconnected during download: "${downloadInfo.filename}"`);
         } else {
-          this.logger.error(`Download failed: "${downloadInfo.filename}"`, err.message);
+          this.logger.error(`Download failed: "${downloadInfo.filename}"`, err instanceof Error ? err.message : String(err));
           if (!res.headersSent) res.status(500).end();
           else if (!res.destroyed) res.end();
         }
@@ -806,12 +830,12 @@ export class FileService {
 
           await this.pipeStreamToResponse(fetchRes.body!, res, {
             decrypt: (downloadInfo.isEncrypted && downloadInfo.dek && chunks[i].iv)
-              ? { dek: downloadInfo.dek, iv: chunks[i].iv }
+              ? { dek: downloadInfo.dek, iv: chunks[i].iv! }
               : undefined,
           });
         }
         res.end();
-      } catch (error: any) {
+      } catch (error: unknown) {
         if (this.isClientDisconnect(error)) {
           this.logger.debug(`Client disconnected during chunked download: "${downloadInfo.filename}"`);
         } else {
@@ -830,7 +854,7 @@ export class FileService {
    * Helper process streaming media (dùng Range Requests)
    * Resolve chunk URLs lazily — chỉ resolve cho các chunks overlap với Range
    */
-  async processStream(downloadInfo: any, rangeHeader: string | undefined, res: Response) {
+  async processStream(downloadInfo: DownloadInfo, rangeHeader: string | undefined, res: Response) {
     const fileSize = Number(downloadInfo.size);
     let start = 0;
     let end = fileSize - 1;
@@ -884,11 +908,11 @@ export class FileService {
             : undefined,
           endResponse: true,
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (this.isClientDisconnect(err)) {
           this.logger.debug(`Client disconnected during stream: "${downloadInfo.filename}"`);
         } else {
-          this.logger.error(`Stream failed: "${downloadInfo.filename}"`, err.message);
+          this.logger.error(`Stream failed: "${downloadInfo.filename}"`, err instanceof Error ? err.message : String(err));
           if (!res.headersSent) res.status(500).end();
           else if (!res.destroyed) res.end();
         }
@@ -948,7 +972,7 @@ export class FileService {
           });
         }
         res.end();
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (this.isClientDisconnect(err)) {
           this.logger.debug(`Client disconnected during stream: "${downloadInfo.filename}"`);
         } else {
@@ -964,7 +988,7 @@ export class FileService {
    * Download với Range header (cho multi-thread download managers như IDM)
    * Giống processStream nhưng giữ Content-Disposition: attachment
    */
-  private async processRangeDownload(downloadInfo: any, rangeHeader: string, res: Response) {
+  private async processRangeDownload(downloadInfo: DownloadInfo, rangeHeader: string, res: Response) {
     const fileSize = Number(downloadInfo.size);
     let start = 0;
     let end = fileSize - 1;
@@ -1012,11 +1036,11 @@ export class FileService {
             : undefined,
           endResponse: true,
         });
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (this.isClientDisconnect(err)) {
           this.logger.debug(`Client disconnected during range download: "${downloadInfo.filename}"`);
         } else {
-          this.logger.error(`Range download failed: "${downloadInfo.filename}"`, err.message);
+          this.logger.error(`Range download failed: "${downloadInfo.filename}"`, err instanceof Error ? err.message : String(err));
           if (!res.headersSent) res.status(500).end();
           else if (!res.destroyed) res.end();
         }
@@ -1075,11 +1099,11 @@ export class FileService {
           });
         }
         res.end();
-      } catch (err: any) {
+      } catch (err: unknown) {
         if (this.isClientDisconnect(err)) {
           this.logger.debug(`Client disconnected during range download: "${downloadInfo.filename}"`);
         } else {
-          this.logger.error(`Range download error: "${downloadInfo.filename}"`, err.message);
+          this.logger.error(`Range download error: "${downloadInfo.filename}"`, err instanceof Error ? err.message : String(err));
         }
         if (!res.headersSent) res.status(500).end();
         else if (!res.destroyed) res.end();

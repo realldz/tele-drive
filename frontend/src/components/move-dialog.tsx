@@ -2,20 +2,21 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { X, Folder, ChevronRight, Home } from 'lucide-react';
 import { fetchFolderContent, fetchBreadcrumbs } from '@/lib/api';
 import { useI18n } from '@/components/i18n-context';
+import type { FileRecord, FolderRecord, BreadcrumbItem } from '@/lib/types';
 
 interface MoveDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: (destinationFolderId: string | null) => Promise<void> | void;
-  itemToMove: any;
+  itemToMove: FileRecord | FolderRecord | null;
   itemType: 'file' | 'folder';
 }
 
 export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, itemType }: MoveDialogProps) {
   const { t } = useI18n();
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
-  const [folders, setFolders] = useState<any[]>([]);
-  const [breadcrumbs, setBreadcrumbs] = useState<any[]>([]);
+  const [folders, setFolders] = useState<FolderRecord[]>([]);
+  const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -23,8 +24,8 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
     setIsLoading(true);
     try {
       const data = await fetchFolderContent(parentId || undefined);
-      const visibleFolders = data.folders.filter((f: any) =>
-        itemType !== 'folder' || f.id !== itemToMove.id
+      const visibleFolders = data.folders.filter((f) =>
+        itemType !== 'folder' || f.id !== itemToMove?.id
       );
       setFolders(visibleFolders);
 
