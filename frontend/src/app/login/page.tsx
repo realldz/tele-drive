@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { useI18n } from '@/components/i18n-context';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import { LogIn, Loader2 } from 'lucide-react';
+import { getApiErrorMessage } from '@/lib/api';
 
 export default function LoginPage() {
   const { login } = useAuth();
@@ -27,8 +28,8 @@ export default function LoginPage() {
     try {
       await login(username, password);
       router.push('/');
-    } catch (err: any) {
-      setError(err?.response?.data?.message || t('login.failed'));
+    } catch (err: unknown) {
+      setError(getApiErrorMessage(err, t('login.failed')));
     } finally {
       setLoading(false);
     }

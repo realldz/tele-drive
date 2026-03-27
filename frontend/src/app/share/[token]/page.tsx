@@ -8,13 +8,14 @@ import { useI18n } from '@/components/i18n-context';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 
 import { API_URL } from '@/lib/api';
+import type { SharedFileInfo } from '@/lib/types';
 
 export default function SharePage() {
   const params = useParams();
   const token = params.token as string;
   const { t } = useI18n();
 
-  const [fileInfo, setFileInfo] = useState<any>(null);
+  const [fileInfo, setFileInfo] = useState<SharedFileInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
@@ -24,8 +25,8 @@ export default function SharePage() {
       try {
         const res = await axios.get(`${API_URL}/files/share/${token}`);
         setFileInfo(res.data);
-      } catch (err: any) {
-        setError(err.response?.data?.message || t('sharePage.fileNotFound'));
+      } catch (err: unknown) {
+        setError(axios.isAxiosError(err) ? err.response?.data?.message || t('sharePage.fileNotFound') : t('sharePage.fileNotFound'));
       }
     };
     fetchFileInfo();
@@ -46,8 +47,8 @@ export default function SharePage() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-    } catch (err: any) {
-      if (err?.response?.status === 429) {
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
         alert(t('sharePage.bandwidthExceeded'));
       } else {
         alert(t('sharePage.downloadError'));

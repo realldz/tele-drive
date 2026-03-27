@@ -7,7 +7,7 @@ import { useRequireAuth } from '@/hooks/use-require-auth';
 import axios from 'axios';
 import { FileIcon, Download, ArrowLeft, Loader2, FileText, Film, Image as ImageIcon, Music } from 'lucide-react';
 
-import { API_URL } from '@/lib/api';
+import { API_URL, getApiErrorMessage } from '@/lib/api';
 import dynamic from 'next/dynamic';
 
 const PreviewRenderer = dynamic(() => import('@/components/preview-renderer'), { ssr: false });
@@ -37,8 +37,8 @@ export default function FilePreviewPage() {
       try {
         const res = await axios.get(`${API_URL}/files/${fileId}/info`);
         setFileInfo(res.data);
-      } catch (err: any) {
-        setError(err.response?.data?.message || 'Failed to load file information');
+      } catch (err: unknown) {
+        setError(getApiErrorMessage(err, 'Failed to load file information'));
       } finally {
         setIsLoading(false);
       }

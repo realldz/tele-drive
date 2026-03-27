@@ -12,6 +12,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { S3AuthService } from './s3-auth.service';
 import { CreateS3CredentialDto } from './dto/create-s3-credential.dto';
+import type { AuthenticatedRequest } from '../common/types/request';
 
 /**
  * S3CredentialController — Quản lý S3 Access Keys (per user).
@@ -36,7 +37,7 @@ export class S3CredentialController {
    * GET /s3-credentials — Liệt kê credentials của user hiện tại
    */
   @Get()
-  async listCredentials(@Req() req: any) {
+  async listCredentials(@Req() req: AuthenticatedRequest) {
     const userId = req.user.userId;
     const credentials = await this.prisma.s3Credential.findMany({
       where: { userId, isActive: true },
@@ -59,7 +60,7 @@ export class S3CredentialController {
    */
   @Post()
   async createCredential(
-    @Req() req: any,
+    @Req() req: AuthenticatedRequest,
     @Body() body: CreateS3CredentialDto,
   ) {
     const userId = req.user.userId;
@@ -96,7 +97,7 @@ export class S3CredentialController {
    * DELETE /s3-credentials/:id — Xoá (deactivate) credential
    */
   @Delete(':id')
-  async deleteCredential(@Param('id') id: string, @Req() req: any) {
+  async deleteCredential(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const userId = req.user.userId;
 
     const credential = await this.prisma.s3Credential.findFirst({

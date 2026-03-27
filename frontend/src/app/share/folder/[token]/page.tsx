@@ -8,17 +8,18 @@ import { useI18n } from '@/components/i18n-context';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 
 import { API_URL } from '@/lib/api';
+import type { SharedFolderRoot, FolderRecord, FileRecord, BreadcrumbItem } from '@/lib/types';
 
 export default function SharedFolderPage() {
   const params = useParams();
   const token = params.token as string;
   const { t } = useI18n();
 
-  const [rootFolder, setRootFolder] = useState<any>(null);
+  const [rootFolder, setRootFolder] = useState<SharedFolderRoot | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
-  const [folders, setFolders] = useState<any[]>([]);
-  const [files, setFiles] = useState<any[]>([]);
-  const [breadcrumbs, setBreadcrumbs] = useState<any[]>([]);
+  const [folders, setFolders] = useState<FolderRecord[]>([]);
+  const [files, setFiles] = useState<FileRecord[]>([]);
+  const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
@@ -37,8 +38,8 @@ export default function SharedFolderPage() {
       setFolders(res.data.folders || []);
       setFiles(res.data.files || []);
       setBreadcrumbs(res.data.breadcrumbs || []);
-    } catch (err: any) {
-      setError(err.response?.data?.message || t('shareFolder.folderNotFound'));
+    } catch (err: unknown) {
+      setError(axios.isAxiosError(err) ? err.response?.data?.message || t('shareFolder.folderNotFound') : t('shareFolder.folderNotFound'));
     } finally {
       setIsLoading(false);
     }
@@ -48,7 +49,7 @@ export default function SharedFolderPage() {
     fetchContent();
   }, [fetchContent]);
 
-  const handleDownload = async (file: any) => {
+  const handleDownload = async (file: FileRecord) => {
     setDownloadingId(file.id);
     try {
       const res = await axios.get(`${API_URL}/folders/share/${token}/download/${file.id}`, {
@@ -62,8 +63,8 @@ export default function SharedFolderPage() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-    } catch (err: any) {
-      if (err?.response?.status === 429) {
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
         alert(t('shareFolder.bandwidthExceeded'));
       } else {
         alert(t('shareFolder.downloadError'));

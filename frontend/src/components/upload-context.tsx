@@ -171,13 +171,14 @@ export function UploadProvider({ children }: { children: ReactNode }) {
             },
           );
           break; // success
-        } catch (err: any) {
+        } catch (err: unknown) {
           if (
-            err?.response?.status === 429 &&
+            axios.isAxiosError(err) &&
+            err.response?.status === 429 &&
             attempt < MAX_429_RETRIES &&
             !abortController.signal.aborted
           ) {
-            const retryAfter = err?.response?.data?.retryAfter || 5;
+            const retryAfter = err.response?.data?.retryAfter || 5;
             chunkProgress[chunkIndex] = 0;
             updateProgress();
             await new Promise(r => setTimeout(r, retryAfter * 1000));
@@ -259,13 +260,16 @@ export function UploadProvider({ children }: { children: ReactNode }) {
             onUploadSuccessRef.current?.();
             refreshQuota();
           }
-        } catch (error: any) {
-          if (axios.isCancel(error) || error?.message === 'Upload cancelled') {
+        } catch (error: unknown) {
+          if (axios.isCancel(error) || (error instanceof Error && error.message === 'Upload cancelled')) {
             // Already handled by cancelItem
           } else {
+            const errorMessage = axios.isAxiosError(error)
+              ? error.response?.data?.message || error.message || 'Upload failed'
+              : error instanceof Error ? error.message : 'Upload failed';
             updateItem(nextItem.id, {
               status: 'error',
-              errorMessage: error?.response?.data?.message || error?.message || 'Upload failed',
+              errorMessage,
             });
           }
         }
@@ -334,8 +338,9 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       try {
         const folder = await createFolder(name, parentId);
         folderMap.set(dir, folder.id);
-      } catch (error: any) {
-        console.warn(`Failed to create folder "${dir}":`, error?.response?.data?.message || error?.message);
+      } catch (error: unknown) {
+        const msg = axios.isAxiosError(error) ? error.response?.data?.message || error.message : error instanceof Error ? error.message : String(error);
+        console.warn(`Failed to create folder "${dir}":`, msg);
         folderMap.set(dir, parentId || '');
       }
     }

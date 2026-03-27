@@ -10,7 +10,7 @@ import {
   fetchUsers as fetchUsersApi, fetchSettings as fetchSettingsApi,
   updateSetting, updateUserRole, updateUserQuota, updateUserBandwidth,
   deleteUser as deleteUserApi, fetchUserFiles as fetchUserFilesApi,
-  deleteUserFile as deleteUserFileApi, adminResetPassword,
+  deleteUserFile as deleteUserFileApi, adminResetPassword, getApiErrorMessage,
 } from '@/lib/api';
 
 type UserRole = 'ADMIN' | 'USER';
@@ -133,8 +133,8 @@ export default function AdminDashboard() {
       toast.success(t('admin.updateUserSuccess'));
       setEditingUser(null);
       fetchUsers();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || t('admin.updateUserError'));
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, t('admin.updateUserError')));
     }
   };
 
@@ -144,8 +144,8 @@ export default function AdminDashboard() {
       await deleteUserApi(id);
       toast.success(t('admin.deleteUserSuccess'));
       fetchUsers();
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || t('admin.deleteUserError'));
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, t('admin.deleteUserError')));
     }
   };
 
@@ -178,8 +178,8 @@ export default function AdminDashboard() {
       toast.success(t('admin.resetPasswordSuccess'));
       setResetPwUser(null);
       setResetPwForm({ newPassword: '', confirmPassword: '' });
-    } catch (err: any) {
-      toast.error(err.response?.data?.message || t('admin.resetPasswordError'));
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, t('admin.resetPasswordError')));
     } finally {
       setResetPwLoading(false);
     }
