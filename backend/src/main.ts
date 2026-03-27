@@ -1,6 +1,7 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import helmet from 'helmet';
 import * as bodyParser from 'body-parser';
 
 async function bootstrap() {
@@ -36,14 +37,24 @@ async function bootstrap() {
     });
   });
 
-  // Cho phép gọi API từ Next.js
+  // Security headers
+  app.use(helmet());
+
+  // Global validation pipe — reject unknown/invalid fields
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
+  }));
+
+  // CORS
+  const corsOrigin = process.env.CORS_ORIGIN;
   app.enableCors({
-    origin: true,
+    origin: corsOrigin || true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
   });
 
-  // Tránh xung đột cổng với Next.js
   const port = process.env.PORT ?? 3001;
   await app.listen(port);
 

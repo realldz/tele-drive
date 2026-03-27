@@ -1,10 +1,12 @@
-import { Controller, Logger, Get, Post, Patch, Delete, Param, Req, Res, UseInterceptors, ParseIntPipe, Body, Head, HttpCode, HttpStatus, HttpException, UploadedFile } from '@nestjs/common';
+import { Controller, Logger, Get, Post, Patch, Delete, Param, Req, Res, UseInterceptors, UseGuards, ParseIntPipe, Body, Head, HttpCode, HttpStatus, HttpException, UploadedFile } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { FileService } from './file.service';
 import { MAX_CHUNK_SIZE } from '../config/upload.config';
 import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
 import { Public } from '../auth/public.decorator';
+import { AdminGuard } from '../auth/admin.guard';
+import { InitUploadDto } from './dto/init-upload.dto';
 import type { Response, Request } from 'express';
 import { Readable } from 'stream';
 
@@ -49,20 +51,16 @@ export class FileController {
    */
   @Post('upload/init')
   async initChunkedUpload(
-    @Body('filename') filename: string,
-    @Body('size') size: number,
-    @Body('mimeType') mimeType: string,
-    @Body('totalChunks') totalChunks: number,
-    @Body('folderId') folderId: string | undefined,
+    @Body() body: InitUploadDto,
     @Req() req: any,
   ) {
     return this.fileService.initChunkedUpload(
-      filename,
-      Number(size),
-      mimeType,
-      Number(totalChunks),
+      body.filename,
+      body.size,
+      body.mimeType,
+      body.totalChunks,
       req.user.userId,
-      folderId,
+      body.folderId,
     );
   }
 
@@ -242,11 +240,9 @@ export class FileController {
   /**
    * POST /files/admin/reindex-bots — Re-index chunks/files từ bot không còn available
    */
+  @UseGuards(AdminGuard)
   @Post('admin/reindex-bots')
-  async reindexBots(@Req() req: any) {
-    if (req.user.role !== 'ADMIN') {
-      throw new HttpException('Admin only', HttpStatus.FORBIDDEN);
-    }
+  async reindexBots() {
     return this.fileService.reindexUnavailableBots();
   }
 }

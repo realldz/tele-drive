@@ -424,7 +424,10 @@ export class S3AuthService {
   }
 
   private getMasterKey(): Buffer {
-    const masterSecret = process.env.MASTER_SECRET || 'default-master-secret-change-me!';
+    const masterSecret = process.env.MASTER_SECRET;
+    if (!masterSecret) {
+      throw new Error('MASTER_SECRET environment variable is not set. S3 credential encryption requires it.');
+    }
     // Derive a 32-byte key from MASTER_SECRET
     return crypto.createHash('sha256').update(masterSecret).digest();
   }

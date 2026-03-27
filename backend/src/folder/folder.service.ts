@@ -56,15 +56,39 @@ export class FolderService {
     const folders = await this.prisma.folder.findMany({
       where: { parentId: folderId || null, userId, deletedAt: null },
       orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        name: true,
+        parentId: true,
+        userId: true,
+        visibility: true,
+        shareToken: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
     const files = await this.prisma.fileRecord.findMany({
-      where: { 
-        folderId: folderId || null, 
-        userId, 
-        status: { in: ['complete', 'uploading'] }, 
-        deletedAt: null 
+      where: {
+        folderId: folderId || null,
+        userId,
+        status: { in: ['complete', 'uploading'] },
+        deletedAt: null
       },
       orderBy: { createdAt: 'desc' },
+      select: {
+        id: true,
+        filename: true,
+        size: true,
+        mimeType: true,
+        status: true,
+        totalChunks: true,
+        folderId: true,
+        userId: true,
+        visibility: true,
+        shareToken: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
     return { folders, files };
   }

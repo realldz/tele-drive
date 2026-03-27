@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { S3AuthService } from './s3-auth.service';
+import { CreateS3CredentialDto } from './dto/create-s3-credential.dto';
 
 /**
  * S3CredentialController — Quản lý S3 Access Keys (per user).
@@ -59,7 +60,7 @@ export class S3CredentialController {
   @Post()
   async createCredential(
     @Req() req: any,
-    @Body('label') label: string,
+    @Body() body: CreateS3CredentialDto,
   ) {
     const userId = req.user.userId;
 
@@ -72,12 +73,12 @@ export class S3CredentialController {
         userId,
         accessKeyId,
         secretAccessKey: encryptedSecret,
-        label: label || 'Default',
+        label: body.label || 'Default',
       },
     });
 
     this.logger.log(
-      `S3 credential created: accessKeyId=${accessKeyId} (userId: ${userId}, label: "${label || 'Default'}")`,
+      `S3 credential created: accessKeyId=${accessKeyId} (userId: ${userId}, label: "${body.label || 'Default'}")`,
     );
 
     // Return plaintext secret ONLY on creation
