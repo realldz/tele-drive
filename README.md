@@ -174,10 +174,10 @@ aws configure --profile tele-drive
 # Secret Access Key: <from web UI>
 
 # Usage
-aws --profile tele-drive --endpoint-url http://localhost:3001 \
+aws --profile tele-drive --endpoint-url http://localhost:3001/s3 \
   s3 cp ./myfile.pdf s3://my-bucket/myfile.pdf
 
-aws --profile tele-drive --endpoint-url http://localhost:3001 \
+aws --profile tele-drive --endpoint-url http://localhost:3001/s3 \
   s3 ls s3://my-bucket/
 ```
 
