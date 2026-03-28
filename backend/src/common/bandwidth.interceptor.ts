@@ -11,6 +11,7 @@ import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
 import { CryptoService } from '../crypto/crypto.service';
+import { getClientIp } from './utils/get-client-ip';
 
 /**
  * BandwidthInterceptor — gắn vào route download/stream.
@@ -202,7 +203,7 @@ export class BandwidthInterceptor implements NestInterceptor {
   }
 
   private async checkAndIncrementGuestBandwidth(res: { setHeader: (name: string, value: string) => void }, req: unknown, fileSize: bigint, isCheckOnly: boolean): Promise<void> {
-    const ip = this.getClientIp(req);
+    const ip = getClientIp(req);
 
     // Lấy guest bandwidth limit từ system settings
     const setting = await this.prisma.systemSetting.findUnique({
@@ -255,23 +256,5 @@ export class BandwidthInterceptor implements NestInterceptor {
         });
       }
     }
-  }
-
-  private getClientIp(req: any): string {
-    const forwardedFor = req.headers?.['x-forwarded-for'];
-    if (forwardedFor) {
-      const firstIp = typeof forwardedFor === 'string'
-        ? forwardedFor.split(',')[0]
-        : forwardedFor[0]?.split(',')[0];
-      if (firstIp) return firstIp.trim();
-    }
-
-    const realIp = req.headers?.['x-real-ip'];
-    if (realIp) {
-      const ip = typeof realIp === 'string' ? realIp : realIp[0];
-      if (ip) return ip.trim();
-    }
-
-    return req.ip || req.connection?.remoteAddress || '127.0.0.1';
   }
 }

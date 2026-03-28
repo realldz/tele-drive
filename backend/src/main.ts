@@ -26,8 +26,21 @@ async function bootstrap() {
   // Apply body parsers only to non-S3 routes.
   // S3 routes stream the raw body themselves (PutObject, UploadPart, etc.)
   const expressApp = app.getHttpAdapter().getInstance();
+
+  // Trust nginx reverse proxy so req.ip returns the real client IP
+  expressApp.set('trust proxy', 1);
+
+  // Normalize /api/s3 → /s3 for NestJS route matching.
+  // req.originalUrl keeps the full /api/s3/... path so SigV4 validation works.
+  expressApp.use((req: any, _res: any, next: any) => {
+    if (req.url.startsWith('/api/s3/') || req.url === '/api/s3') {
+      req.url = req.url.replace(/^\/api\/s3/, '/s3');
+    }
+    next();
+  });
+
   expressApp.use((req: any, res: any, next: any) => {
-    if (req.path && req.path.startsWith('/s3/')) {
+    if (req.path && (req.path.startsWith('/s3/') || req.path === '/s3')) {
       // Skip body parsing for S3 — controller reads raw stream
       return next();
     }
