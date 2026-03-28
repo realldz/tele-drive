@@ -52,7 +52,9 @@
   "dashboard.undoError": "Lỗi hoàn tác",
   "dashboard.moveError": "Lỗi di chuyển",
   "dashboard.downloadError": "Lỗi tải xuống file",
-  "dashboard.bandwidthExceeded": "Đã vượt giới hạn băng thông hàng ngày. Vui lòng thử lại vào ngày mai.",
+  "dashboard.bandwidthExceeded": "Đã vượt giới hạn băng thông hàng ngày.",
+  "dashboard.bandwidthExceededAt": "Đã vượt giới hạn băng thông. Sẽ được reset lúc {time}.",
+  "dashboard.downloadStarted": "Bắt đầu tải xuống...",
   "dashboard.createFolderError": "Lỗi tạo thư mục",
   "dashboard.renameError": "Lỗi đổi tên",
   "dashboard.deleteStuckError": "Lỗi xoá file đang kẹt",
@@ -290,6 +292,7 @@
   "sharePage.downloadFile": "Tải xuống tập tin",
   "sharePage.fileNotFound": "Tập tin không tồn tại hoặc đã ngừng chia sẻ",
   "sharePage.bandwidthExceeded": "Tập tin này đã vượt quá giới hạn băng thông hôm nay.",
+  "sharePage.bandwidthExceededAt": "Đã vượt giới hạn băng thông. Sẽ được reset lúc {time}.",
   "sharePage.downloadError": "Lỗi tải tập tin",
   "shareFolder.sharedBy": "Thư mục chia sẻ bởi",
   "shareFolder.user": "Người dùng",
@@ -300,5 +303,6 @@
   "shareFolder.folderNotFound": "Thư mục không tồn tại hoặc đã ngừng chia sẻ",
   "shareFolder.download": "Tải xuống",
   "shareFolder.bandwidthExceeded": "Tập tin này đã vượt quá giới hạn băng thông hôm nay.",
+  "shareFolder.bandwidthExceededAt": "Đã vượt giới hạn băng thông. Sẽ được reset lúc {time}.",
   "shareFolder.downloadError": "Lỗi tải tập tin"
 }

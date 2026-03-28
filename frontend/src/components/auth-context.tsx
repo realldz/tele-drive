@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, Re
 import axios from 'axios';
 
 import { API_URL, fetchCurrentUser } from '@/lib/api';
+import toast from 'react-hot-toast';
 
 interface User {
   id: string;
@@ -105,14 +106,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     responseInterceptorId.current = axios.interceptors.response.use(
       (response) => response,
       (error) => {
-        if (error?.response?.status === 401) {
+        const url = error.config?.url || '';
+        const isAuthRoute = url.includes('/auth/login') || url.includes('/auth/register');
+        
+        if (error?.response?.status === 401 && !isAuthRoute) {
           localStorage.removeItem('token');
           localStorage.removeItem('user');
           delete axios.defaults.headers.common['Authorization'];
           setToken(null);
           setUser(null);
           setQuotaInfo(null);
-          window.location.href = '/login';
+          
+          if (window.location.pathname !== '/login') {
+            window.location.href = '/login';
+          }
         }
         return Promise.reject(error);
       },

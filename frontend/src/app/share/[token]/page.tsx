@@ -6,8 +6,9 @@ import axios from 'axios';
 import { Download, FileText, AlertCircle } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
+import toast from 'react-hot-toast';
 
-import { API_URL } from '@/lib/api';
+import { API_URL, formatBandwidthResetTime, formatSize, requestShareDownloadToken } from '@/lib/api';
 import type { SharedFileInfo } from '@/lib/types';
 
 export default function SharePage() {
@@ -36,33 +37,26 @@ export default function SharePage() {
     if (!fileInfo) return;
     setIsDownloading(true);
     try {
-      const res = await axios.get(`${API_URL}/files/share/${token}/download`, {
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const { url } = await requestShareDownloadToken(token);
+      toast(t('dashboard.downloadStarted'), { icon: '⬇️', duration: 2000 });
       const link = document.createElement('a');
-      link.href = url;
+      link.href = API_URL + url;
       link.setAttribute('download', fileInfo.filename);
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.URL.revokeObjectURL(url);
     } catch (err: unknown) {
       if (axios.isAxiosError(err) && err.response?.status === 429) {
-        alert(t('sharePage.bandwidthExceeded'));
+        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset']);
+        toast.error(resetTime
+          ? t('sharePage.bandwidthExceededAt', { time: resetTime })
+          : t('sharePage.bandwidthExceeded'));
       } else {
-        alert(t('sharePage.downloadError'));
+        toast.error(t('sharePage.downloadError'));
       }
     } finally {
-      setIsDownloading(false);
+      setTimeout(() => setIsDownloading(false), 2000);
     }
-  };
-
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
   };
 
   return (

@@ -69,7 +69,7 @@ function PlyrVideo({ src }: { src: string }) {
 
   return (
     <div className="flex h-full items-center justify-center bg-black plyr-container">
-      <video ref={videoRef} src={src} crossOrigin="anonymous" playsInline />
+      <video ref={videoRef} src={src} crossOrigin="use-credentials" playsInline />
     </div>
   );
 }
@@ -95,7 +95,7 @@ function PlyrAudio({ src }: { src: string }) {
     <div className="flex h-full flex-col items-center justify-center p-4 bg-gray-100">
       <Music className="mb-8 h-32 w-32 text-gray-400" />
       <div className="w-full max-w-xl">
-        <audio ref={audioRef} src={src} crossOrigin="anonymous" />
+        <audio ref={audioRef} src={src} crossOrigin="use-credentials" />
       </div>
     </div>
   );

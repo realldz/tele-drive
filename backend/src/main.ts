@@ -3,6 +3,7 @@ import { Logger, ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
 import * as bodyParser from 'body-parser';
+import cookieParser from 'cookie-parser';
 
 async function bootstrap() {
   const isProduction = process.env.NODE_ENV === 'production';
@@ -40,6 +41,9 @@ async function bootstrap() {
   // Security headers
   app.use(helmet());
 
+  // Cookie parser — cần cho stream_token cookie
+  app.use(cookieParser());
+
   // Global validation pipe — reject unknown/invalid fields
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
@@ -53,6 +57,7 @@ async function bootstrap() {
     origin: corsOrigin || true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
+    exposedHeaders: ['X-Bandwidth-Reset'],
   });
 
   const port = process.env.PORT ?? 3001;

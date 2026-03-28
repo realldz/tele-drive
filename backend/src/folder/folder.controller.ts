@@ -81,6 +81,12 @@ export class FolderController {
   }
 
   @Public()
+  @Post('share/:token/download-token/:fileId')
+  generateShareFolderDownloadToken(@Param('token') token: string, @Param('fileId') fileId: string) {
+    return this.folderService.generateShareFolderDownloadToken(token, fileId);
+  }
+
+  @Public()
   @UseInterceptors(BandwidthInterceptor)
   @Get('share/:token/download/:fileId')
   async downloadSharedFile(

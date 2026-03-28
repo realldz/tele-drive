@@ -55,7 +55,9 @@
   "dashboard.undoError": "撤销失败",
   "dashboard.moveError": "移动失败",
   "dashboard.downloadError": "文件下载失败",
-  "dashboard.bandwidthExceeded": "已超出每日带宽限制，请明天再试。",
+  "dashboard.bandwidthExceeded": "已超出每日带宽限制。",
+  "dashboard.bandwidthExceededAt": "已超出带宽限制。将于 {time} 重置。",
+  "dashboard.downloadStarted": "开始下载...",
   "dashboard.createFolderError": "创建文件夹失败",
   "dashboard.renameError": "重命名失败",
   "dashboard.deleteStuckError": "删除卡住的文件失败",
@@ -306,6 +308,7 @@
   "sharePage.downloadFile": "下载文件",
   "sharePage.fileNotFound": "文件不存在或已停止分享",
   "sharePage.bandwidthExceeded": "该文件今日已超出带宽限制。",
+  "sharePage.bandwidthExceededAt": "已超出带宽限制。将于 {time} 重置。",
   "sharePage.downloadError": "文件下载失败",
 
   "shareFolder.sharedBy": "分享自",
@@ -317,5 +320,6 @@
   "shareFolder.folderNotFound": "文件夹不存在或已停止分享",
   "shareFolder.download": "下载",
   "shareFolder.bandwidthExceeded": "该文件今日已超出带宽限制。",
+  "shareFolder.bandwidthExceededAt": "已超出带宽限制。将于 {time} 重置。",
   "shareFolder.downloadError": "文件下载失败"
 }

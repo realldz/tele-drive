@@ -55,7 +55,9 @@
   "dashboard.undoError": "Undo failed",
   "dashboard.moveError": "Move failed",
   "dashboard.downloadError": "File download failed",
-  "dashboard.bandwidthExceeded": "Daily bandwidth limit exceeded. Please try again tomorrow.",
+  "dashboard.bandwidthExceeded": "Daily bandwidth limit exceeded.",
+  "dashboard.bandwidthExceededAt": "Bandwidth limit exceeded. Resets at {time}.",
+  "dashboard.downloadStarted": "Download started...",
   "dashboard.createFolderError": "Failed to create folder",
   "dashboard.renameError": "Rename failed",
   "dashboard.deleteStuckError": "Failed to delete stuck file",
@@ -306,6 +308,7 @@
   "sharePage.downloadFile": "Download file",
   "sharePage.fileNotFound": "File does not exist or is no longer shared",
   "sharePage.bandwidthExceeded": "This file has exceeded today's bandwidth limit.",
+  "sharePage.bandwidthExceededAt": "Bandwidth limit exceeded. Resets at {time}.",
   "sharePage.downloadError": "File download failed",
 
   "shareFolder.sharedBy": "Folder shared by",
@@ -317,5 +320,6 @@
   "shareFolder.folderNotFound": "Folder does not exist or is no longer shared",
   "shareFolder.download": "Download",
   "shareFolder.bandwidthExceeded": "This file has exceeded today's bandwidth limit.",
+  "shareFolder.bandwidthExceededAt": "Bandwidth limit exceeded. Resets at {time}.",
   "shareFolder.downloadError": "File download failed"
 }

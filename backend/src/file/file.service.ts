@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, HttpException, HttpStatus } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, HttpException, HttpStatus, UnauthorizedException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { fetchWithRetry } from '../telegram/telegram.service';
@@ -34,6 +34,14 @@ export class FileService {
   /** Cached max concurrent chunks setting */
   private _maxConcurrentChunks: number | null = null;
   private _maxConcurrentChunksAt = 0;
+
+  /** Cached download URL TTL */
+  private _downloadTtl: number | null = null;
+  private _downloadTtlAt = 0;
+
+  /** Cached stream cookie TTL */
+  private _streamTtl: number | null = null;
+  private _streamTtlAt = 0;
 
   /** Track active chunk uploads per user for concurrency enforcement */
   private readonly activeUploads = new Map<string, number>();
@@ -72,6 +80,126 @@ export class FileService {
     this._maxConcurrentChunks = setting ? parseInt(setting.value, 10) || 3 : 3;
     this._maxConcurrentChunksAt = Date.now();
     return this._maxConcurrentChunks;
+  }
+
+  /**
+   * Lấy TTL cho signed download URL (cache 30 giây)
+   */
+  async getDownloadTtl(): Promise<number> {
+    if (this._downloadTtl !== null && Date.now() - this._downloadTtlAt < 30_000) {
+      return this._downloadTtl;
+    }
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'DOWNLOAD_URL_TTL_SECONDS' },
+    });
+    this._downloadTtl = setting ? parseInt(setting.value, 10) || 300 : 300;
+    this._downloadTtlAt = Date.now();
+    return this._downloadTtl;
+  }
+
+  /**
+   * Lấy TTL cho stream cookie (cache 30 giây)
+   */
+  async getStreamTtl(): Promise<number> {
+    if (this._streamTtl !== null && Date.now() - this._streamTtlAt < 30_000) {
+      return this._streamTtl;
+    }
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key: 'STREAM_COOKIE_TTL_SECONDS' },
+    });
+    this._streamTtl = setting ? parseInt(setting.value, 10) || 3600 : 3600;
+    this._streamTtlAt = Date.now();
+    return this._streamTtl;
+  }
+
+  // ── Signed Download Token ──────────────────────────────────────────────
+
+  /**
+   * Tạo signed download URL cho user (auth required)
+   */
+  async generateDownloadToken(fileId: string, userId: string): Promise<{ url: string; expiresAt: string }> {
+    const file = await this.prisma.fileRecord.findFirst({
+      where: { id: fileId, userId, status: 'complete', deletedAt: null },
+      select: { id: true },
+    });
+    if (!file) throw new NotFoundException('File not found');
+
+    const ttl = await this.getDownloadTtl();
+    const token = this.cryptoService.createSignedToken(fileId, 'u', ttl, userId);
+    const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+
+    this.logger.debug(`Download token generated: fileId=${fileId}, userId=${userId}, ttl=${ttl}s`);
+    return { url: `/files/d/${token}`, expiresAt };
+  }
+
+  /**
+   * Tạo signed download URL cho shared file (public)
+   */
+  async generateShareDownloadToken(shareToken: string): Promise<{ url: string; expiresAt: string }> {
+    const file = await this.prisma.fileRecord.findUnique({
+      where: { shareToken },
+      select: { id: true, status: true, deletedAt: true },
+    });
+    if (!file || file.deletedAt) throw new NotFoundException('Shared file not found');
+    if (file.status !== 'complete') throw new BadRequestException('File upload not completed yet');
+
+    const ttl = await this.getDownloadTtl();
+    const token = this.cryptoService.createSignedToken(file.id, 's', ttl);
+    const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+
+    this.logger.debug(`Share download token generated: shareToken=${shareToken}, fileId=${file.id}, ttl=${ttl}s`);
+    return { url: `/files/d/${token}`, expiresAt };
+  }
+
+  /**
+   * Resolve signed download token → DownloadInfo
+   */
+  async downloadBySignedToken(signedToken: string): Promise<DownloadInfo> {
+    const payload = this.cryptoService.verifySignedToken(signedToken);
+    if (!payload) throw new UnauthorizedException('Invalid or expired download link');
+
+    const fileRecord = await this.prisma.fileRecord.findFirst({
+      where: { id: payload.fid, status: 'complete', deletedAt: null },
+      include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
+    });
+    if (!fileRecord) throw new NotFoundException('File not found');
+
+    return this.getDownloadMetadata(fileRecord);
+  }
+
+  // ── Stream by Cookie ───────────────────────────────────────────────────
+
+  /**
+   * Lấy DownloadInfo cho stream — verify cookie subject khớp file owner
+   */
+  async getStreamInfoByOwner(fileId: string, cookieSubject: string): Promise<DownloadInfo> {
+    const fileRecord = await this.prisma.fileRecord.findFirst({
+      where: { id: fileId, userId: cookieSubject, status: 'complete', deletedAt: null },
+      include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
+    });
+    if (!fileRecord) throw new NotFoundException('File not found');
+
+    return this.getDownloadMetadata(fileRecord);
+  }
+
+  /**
+   * Lấy DownloadInfo cho stream shared file (guest — không cần verify owner)
+   */
+  async getShareStreamInfo(shareToken: string): Promise<DownloadInfo> {
+    return this.getDownloadInfoByToken(shareToken);
+  }
+
+  /**
+   * Lấy DownloadInfo cho stream bởi guest (không verify owner, chỉ check file tồn tại + complete)
+   */
+  async getStreamInfoByGuest(fileId: string): Promise<DownloadInfo> {
+    const fileRecord = await this.prisma.fileRecord.findFirst({
+      where: { id: fileId, status: 'complete', deletedAt: null, visibility: 'PUBLIC_LINK' },
+      include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
+    });
+    if (!fileRecord) throw new NotFoundException('File not found or not shared');
+
+    return this.getDownloadMetadata(fileRecord);
   }
 
   /**
