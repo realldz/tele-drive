@@ -39,7 +39,9 @@ async function bootstrap() {
   });
 
   // Security headers
-  app.use(helmet());
+  app.use(helmet({
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  }));
 
   // Cookie parser — cần cho stream_token cookie
   app.use(cookieParser());
