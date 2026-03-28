@@ -174,7 +174,7 @@ export class S3MultipartService {
     const cipherStream = this.cryptoService.createEncryptStream(dek, chunkIv);
     const uploadStream = req.pipe(counterTransform).pipe(cipherStream);
 
-    const { fileId: telegramFileId, messageId: telegramMessageId } =
+    const { fileId: telegramFileId, messageId: telegramMessageId, botId } =
       await this.telegramService.uploadStream(uploadStream, chunkFilename);
 
     // Persist the chunk record — store MD5 etag for multipart ETag computation later
@@ -188,6 +188,7 @@ export class S3MultipartService {
         size: totalBytes,
         telegramFileId,
         telegramMessageId,
+        botId,
         encryptionIv: chunkIv.toString('hex'),
         etag,
       },

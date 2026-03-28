@@ -269,7 +269,7 @@ export class FileService {
       const cipher = this.cryptoService.createEncryptStream(dek, iv);
       const encryptedBuffer = Buffer.concat([cipher.update(file.buffer), cipher.final()]);
       // Use record.id as the Telegram filename to avoid leaking the real filename
-      const { fileId: telegramFileId, messageId: telegramMessageId, botIndex } = await this.telegram.uploadFile(encryptedBuffer, record.id);
+      const { fileId: telegramFileId, messageId: telegramMessageId, botId } = await this.telegram.uploadFile(encryptedBuffer, record.id);
 
       // 3) Thành công -> Update trạng thái và cộng dung lượng
       const updated = await this.prisma.$transaction(async (tx) => {
@@ -278,7 +278,7 @@ export class FileService {
           data: {
             telegramFileId,
             telegramMessageId,
-            botIndex,
+            botId,
             status: 'complete',
           },
         });
@@ -488,12 +488,12 @@ export class FileService {
           })
             .then((pendingChunk) => {
               return this.telegram.uploadFile(buffer, chunkFilename, signal)
-                .then(async ({ fileId: telegramFileId, messageId: telegramMessageId, botIndex }) => {
+                .then(async ({ fileId: telegramFileId, messageId: telegramMessageId, botId }) => {
                   try {
                     // Update with real Telegram IDs
                     const updated = await this.prisma.fileChunk.update({
                       where: { id: pendingChunk.id },
-                      data: { telegramFileId, telegramMessageId, botIndex },
+                      data: { telegramFileId, telegramMessageId, botId },
                     });
 
                     // Check if file was aborted while we were uploading
@@ -683,7 +683,7 @@ export class FileService {
     filename: string;
     size: bigint | number;
     telegramFileId: string | null;
-    botIndex: number;
+    botId: bigint;
     telegramMessageId: number | null;
     isChunked: boolean;
     isEncrypted: boolean;
@@ -693,7 +693,7 @@ export class FileService {
     chunks: Array<{
       id: string;
       telegramFileId: string;
-      botIndex: number;
+      botId: bigint;
       telegramMessageId: number | null;
       encryptionIv: string | null;
       size: number | bigint;
@@ -709,7 +709,7 @@ export class FileService {
         filename: fileRecord.filename,
         size: fileRecord.size,
         telegramFileId: fileRecord.telegramFileId,
-        botIndex: fileRecord.botIndex ?? 0,
+        botId: fileRecord.botId,
         telegramMessageId: fileRecord.telegramMessageId,
         isEncrypted: fileRecord.isEncrypted,
         dek,
@@ -721,7 +721,7 @@ export class FileService {
     const chunks = fileRecord.chunks.map((chunk) => ({
       id: chunk.id,
       telegramFileId: chunk.telegramFileId,
-      botIndex: chunk.botIndex ?? 0,
+      botId: chunk.botId,
       telegramMessageId: chunk.telegramMessageId,
       iv: chunk.encryptionIv ? Buffer.from(chunk.encryptionIv, 'hex') : null,
       size: Number(chunk.size),
@@ -747,40 +747,45 @@ export class FileService {
    */
   private async resolveFileLink(
     telegramFileId: string,
-    botIndex: number,
+    botId: bigint,
     telegramMessageId: number | null,
     chunkDbId: string | null,
     context?: string,
   ): Promise<string> {
-    if (botIndex < this.telegram.botCount) {
-      return this.telegram.getFileLink(telegramFileId, botIndex, context);
+    if (this.telegram.isBotAvailable(botId)) {
+      return this.telegram.getFileLink(telegramFileId, botId, context);
     }
     // Bot unavailable → recover via forwardMessage
     if (!telegramMessageId) {
-      throw new Error(`Bot ${botIndex} unavailable and no messageId for recovery`);
+      throw new Error(`Bot ${botId} unavailable and no messageId for recovery`);
     }
-    this.logger.warn(`Bot ${botIndex} unavailable, recovering via forward (messageId: ${telegramMessageId})`);
-    const { fileId: newFileId, botIndex: newBotIndex } = await this.telegram.recoverFileId(telegramMessageId);
+    this.logger.warn(`Bot ${botId} unavailable, recovering via forward (messageId: ${telegramMessageId})`);
+    const { fileId: newFileId, botId: newBotId } = await this.telegram.recoverFileId(telegramMessageId);
     // Cập nhật DB (fire-and-forget, không block download)
     if (chunkDbId) {
       this.prisma.fileChunk.update({
         where: { id: chunkDbId },
-        data: { telegramFileId: newFileId, botIndex: newBotIndex },
+        data: { telegramFileId: newFileId, botId: newBotId },
       }).catch(e => this.logger.warn(`Failed to update recovered chunk: ${e.message}`));
     }
-    return this.telegram.getFileLink(newFileId, newBotIndex, context);
+    return this.telegram.getFileLink(newFileId, newBotId, context);
   }
 
   /**
    * Admin: re-index all chunks/files whose bot is no longer available.
    */
   async reindexUnavailableBots(): Promise<{ recovered: number; failed: number }> {
-    const botCount = this.telegram.botCount;
+    const availableIds = this.telegram.availableBotIds;
+
     const staleChunks = await this.prisma.fileChunk.findMany({
-      where: { botIndex: { gte: botCount } },
+      where: { botId: { notIn: availableIds } },
     });
     const staleFiles = await this.prisma.fileRecord.findMany({
-      where: { botIndex: { gte: botCount }, isChunked: false, telegramMessageId: { not: null } },
+      where: {
+        isChunked: false,
+        telegramMessageId: { not: null },
+        botId: { notIn: availableIds },
+      },
     });
 
     let recovered = 0;
@@ -789,10 +794,10 @@ export class FileService {
     for (const chunk of staleChunks) {
       try {
         if (!chunk.telegramMessageId) { failed++; continue; }
-        const { fileId, botIndex } = await this.telegram.recoverFileId(chunk.telegramMessageId);
+        const { fileId, botId } = await this.telegram.recoverFileId(chunk.telegramMessageId);
         await this.prisma.fileChunk.update({
           where: { id: chunk.id },
-          data: { telegramFileId: fileId, botIndex },
+          data: { telegramFileId: fileId, botId },
         });
         recovered++;
       } catch {
@@ -803,10 +808,10 @@ export class FileService {
     for (const file of staleFiles) {
       try {
         if (!file.telegramMessageId) { failed++; continue; }
-        const { fileId, botIndex } = await this.telegram.recoverFileId(file.telegramMessageId);
+        const { fileId, botId } = await this.telegram.recoverFileId(file.telegramMessageId);
         await this.prisma.fileRecord.update({
           where: { id: file.id },
-          data: { telegramFileId: fileId, botIndex },
+          data: { telegramFileId: fileId, botId },
         });
         recovered++;
       } catch {
@@ -903,7 +908,7 @@ export class FileService {
 
     if (!downloadInfo.isChunked) {
       const url = await this.resolveFileLink(
-        downloadInfo.telegramFileId, downloadInfo.botIndex ?? 0,
+        downloadInfo.telegramFileId, downloadInfo.botId,
         downloadInfo.telegramMessageId, null,
       );
       const fetchRes = await fetchWithRetry(url);
@@ -938,7 +943,7 @@ export class FileService {
           // Prefetch URLs cho các chunk tiếp theo (fire-and-forget, chúng sẽ được cache)
           for (let p = i + 1; p < Math.min(i + 1 + this.PREFETCH_AHEAD, totalChunks); p++) {
             this.resolveFileLink(
-              chunks[p].telegramFileId, chunks[p].botIndex ?? 0,
+              chunks[p].telegramFileId, chunks[p].botId,
               chunks[p].telegramMessageId, chunks[p].id,
               `prefetch chunk ${p + 1}/${totalChunks} of "${downloadInfo.filename}"`,
             );
@@ -946,7 +951,7 @@ export class FileService {
 
           // Resolve URL cho chunk hiện tại (instant nếu đã prefetch/cache)
           const url = await this.resolveFileLink(
-            chunks[i].telegramFileId, chunks[i].botIndex ?? 0,
+            chunks[i].telegramFileId, chunks[i].botId,
             chunks[i].telegramMessageId, chunks[i].id,
             `chunk ${i + 1}/${totalChunks} of "${downloadInfo.filename}"`,
           );
@@ -1018,7 +1023,7 @@ export class FileService {
 
     if (!downloadInfo.isChunked) {
       const url = await this.resolveFileLink(
-        downloadInfo.telegramFileId, downloadInfo.botIndex ?? 0,
+        downloadInfo.telegramFileId, downloadInfo.botId,
         downloadInfo.telegramMessageId, null,
       );
       const fetchRes = await fetchWithRetry(url, {
@@ -1047,7 +1052,7 @@ export class FileService {
       }
     } else {
       let currentOffset = 0;
-      const chunksToFetch: { telegramFileId: string; botIndex: number; telegramMessageId: number | null; id: string | null; iv: Buffer | null; size: number; fetchStart: number; fetchEnd: number; byteOffsetInChunk: number }[] = [];
+      const chunksToFetch: { telegramFileId: string; botId: bigint; telegramMessageId: number | null; id: string | null; iv: Buffer | null; size: number; fetchStart: number; fetchEnd: number; byteOffsetInChunk: number }[] = [];
 
       for (const chunk of downloadInfo.chunks) {
         const chunkStart = currentOffset;
@@ -1059,7 +1064,7 @@ export class FileService {
 
           chunksToFetch.push({
             telegramFileId: chunk.telegramFileId,
-            botIndex: chunk.botIndex ?? 0,
+            botId: chunk.botId,
             telegramMessageId: chunk.telegramMessageId,
             id: chunk.id,
             iv: chunk.iv,
@@ -1079,13 +1084,13 @@ export class FileService {
           // Prefetch URLs cho các chunk tiếp theo
           for (let p = i + 1; p < Math.min(i + 1 + this.PREFETCH_AHEAD, chunksToFetch.length); p++) {
             this.resolveFileLink(
-              chunksToFetch[p].telegramFileId, chunksToFetch[p].botIndex ?? 0,
+              chunksToFetch[p].telegramFileId, chunksToFetch[p].botId,
               chunksToFetch[p].telegramMessageId, chunksToFetch[p].id,
             );
           }
 
           const url = await this.resolveFileLink(
-            chunkReq.telegramFileId, chunkReq.botIndex ?? 0,
+            chunkReq.telegramFileId, chunkReq.botId,
             chunkReq.telegramMessageId, chunkReq.id,
           );
           const fetchRes = await fetchWithRetry(url, {
@@ -1146,7 +1151,7 @@ export class FileService {
 
     if (!downloadInfo.isChunked) {
       const url = await this.resolveFileLink(
-        downloadInfo.telegramFileId, downloadInfo.botIndex ?? 0,
+        downloadInfo.telegramFileId, downloadInfo.botId,
         downloadInfo.telegramMessageId, null,
       );
       const fetchRes = await fetchWithRetry(url, {
@@ -1175,7 +1180,7 @@ export class FileService {
       }
     } else {
       let currentOffset = 0;
-      const chunksToFetch: { telegramFileId: string; botIndex: number; telegramMessageId: number | null; id: string | null; iv: Buffer | null; size: number; fetchStart: number; fetchEnd: number; byteOffsetInChunk: number }[] = [];
+      const chunksToFetch: { telegramFileId: string; botId: bigint; telegramMessageId: number | null; id: string | null; iv: Buffer | null; size: number; fetchStart: number; fetchEnd: number; byteOffsetInChunk: number }[] = [];
 
       for (const chunk of downloadInfo.chunks) {
         const chunkStart = currentOffset;
@@ -1187,7 +1192,7 @@ export class FileService {
 
           chunksToFetch.push({
             telegramFileId: chunk.telegramFileId,
-            botIndex: chunk.botIndex ?? 0,
+            botId: chunk.botId,
             telegramMessageId: chunk.telegramMessageId,
             id: chunk.id,
             iv: chunk.iv,
@@ -1206,13 +1211,13 @@ export class FileService {
 
           for (let p = i + 1; p < Math.min(i + 1 + this.PREFETCH_AHEAD, chunksToFetch.length); p++) {
             this.resolveFileLink(
-              chunksToFetch[p].telegramFileId, chunksToFetch[p].botIndex ?? 0,
+              chunksToFetch[p].telegramFileId, chunksToFetch[p].botId,
               chunksToFetch[p].telegramMessageId, chunksToFetch[p].id,
             );
           }
 
           const url = await this.resolveFileLink(
-            chunkReq.telegramFileId, chunkReq.botIndex ?? 0,
+            chunkReq.telegramFileId, chunkReq.botId,
             chunkReq.telegramMessageId, chunkReq.id,
           );
           const fetchRes = await fetchWithRetry(url, {
