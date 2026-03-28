@@ -31,18 +31,19 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
   const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Request stream cookie + download token khi modal mở
-  const setupUrls = useCallback(async (fId: string) => {
+  /** Đợi browser xử lý Set-Cookie header trước khi render player */
+  const waitForCookieCommit = (): Promise<void> =>
+    new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+
+  // Request stream cookie khi modal mở
+  const setupStream = useCallback(async (fId: string) => {
     try {
-      const [cookieRes, dlRes] = await Promise.all([
-        requestStreamCookie(),
-        requestDownloadToken(fId),
-      ]);
+      const cookieRes = await requestStreamCookie();
+      // Đợi browser commit cookie vào cookie jar trước khi render player
+      await waitForCookieCommit();
       setStreamUrl(getStreamUrl(fId));
-      setDownloadUrl(API_URL + dlRes.url);
 
       // Auto-refresh cookie ở 80% TTL
       const refreshMs = cookieRes.ttl * 800; // 80% of TTL in ms
@@ -56,8 +57,7 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
     } catch (err: unknown) {
       // Fallback: dùng legacy URL nếu signed URL fail
       setStreamUrl(`${API_URL}/files/${fId}/stream?token=${token}`);
-      setDownloadUrl(`${API_URL}/files/${fId}/download?token=${token}`);
-      
+
       if (axios.isAxiosError(err) && err.response?.status === 429) {
         const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset'], LOCALE_DATE_MAP[locale]);
         toast.error(resetTime
@@ -75,7 +75,6 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
       setFileInfo(null);
       setError(null);
       setStreamUrl(null);
-      setDownloadUrl(null);
       // Cleanup cookie + timer
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
       clearStreamCookie().catch(() => { });
@@ -86,13 +85,12 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
     setError(null);
     setFileInfo(null);
     setStreamUrl(null);
-    setDownloadUrl(null);
 
     axios
       .get(`${API_URL}/files/${fileId}/info`)
       .then(async (res) => {
         setFileInfo(res.data);
-        await setupUrls(fileId);
+        await setupStream(fileId);
       })
       .catch((err: unknown) => {
         const message = axios.isAxiosError(err) ? err.response?.data?.message : undefined;
@@ -103,7 +101,7 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
     return () => {
       if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
     };
-  }, [fileId, setupUrls]);
+  }, [fileId, setupStream]);
 
   // ESC key handler
   useEffect(() => {
@@ -200,10 +198,10 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
           </div>
         )}
 
-        {fileInfo && !isLoading && !error && streamUrl && downloadUrl && (
+        {fileInfo && !isLoading && !error && streamUrl && (
           <PreviewRenderer
             streamUrl={streamUrl}
-            downloadUrl={downloadUrl}
+            onDownload={handleDownload}
             fileInfo={fileInfo}
             t={t}
           />

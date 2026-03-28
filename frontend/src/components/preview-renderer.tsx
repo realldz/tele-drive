@@ -234,12 +234,12 @@ function CodeViewer({ url, filename }: { url: string; filename: string }) {
 
 interface PreviewRendererProps {
   streamUrl: string;
-  downloadUrl: string;
+  onDownload: () => void;
   fileInfo: { filename: string; mimeType: string; size: number };
   t: (key: string, params?: any) => string;
 }
 
-export default function PreviewRenderer({ streamUrl, downloadUrl, fileInfo, t }: PreviewRendererProps) {
+export default function PreviewRenderer({ streamUrl, onDownload, fileInfo, t }: PreviewRendererProps) {
   const { mimeType, filename } = fileInfo;
 
   // Image
@@ -281,14 +281,13 @@ export default function PreviewRenderer({ streamUrl, downloadUrl, fileInfo, t }:
       <FileIcon className="mb-4 h-24 w-24 text-gray-400" />
       <h3 className="mb-2 text-xl font-medium text-gray-800">{t('preview.notAvailable')}</h3>
       <p className="mb-6 text-gray-500">{t('preview.cannotPreview', { mimeType })}</p>
-      <a
-        href={downloadUrl}
-        download={filename}
+      <button
+        onClick={onDownload}
         className="flex items-center gap-2 rounded bg-blue-500 px-6 py-3 font-semibold text-white shadow hover:bg-blue-600 transition-colors"
       >
         <Download className="h-5 w-5" />
         {t('preview.downloadFile')}
-      </a>
+      </button>
     </div>
   );
 }

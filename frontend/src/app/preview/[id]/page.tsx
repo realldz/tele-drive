@@ -1,14 +1,15 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useI18n } from '@/components/i18n-context';
+import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import axios from 'axios';
-import { FileIcon, Download, ArrowLeft, Loader2, FileText, Film, Image as ImageIcon, Music } from 'lucide-react';
-
-import { API_URL, getApiErrorMessage } from '@/lib/api';
+import { FileIcon, Download, ArrowLeft, Loader2 } from 'lucide-react';
+import { getFileIcon } from '@/lib/file-icon';
+import { API_URL, requestDownloadToken, requestStreamCookie, clearStreamCookie, getStreamUrl, getApiErrorMessage, formatBandwidthResetTime } from '@/lib/api';
 import dynamic from 'next/dynamic';
+import toast from 'react-hot-toast';
 
 const PreviewRenderer = dynamic(() => import('@/components/preview-renderer'), { ssr: false });
 
@@ -24,28 +25,80 @@ export default function FilePreviewPage() {
   const fileId = params.id as string;
   const router = useRouter();
   const { isReady, token } = useRequireAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
 
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  /** Đợi browser xử lý Set-Cookie header trước khi render player */
+  const waitForCookieCommit = (): Promise<void> =>
+    new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+
+  const setupStream = useCallback(async (fId: string) => {
+    try {
+      const cookieRes = await requestStreamCookie();
+      await waitForCookieCommit();
+      setStreamUrl(getStreamUrl(fId));
+
+      const refreshMs = cookieRes.ttl * 800;
+      refreshTimerRef.current = setTimeout(function refresh() {
+        requestStreamCookie()
+          .then((res) => { refreshTimerRef.current = setTimeout(refresh, res.ttl * 800); })
+          .catch(() => { });
+      }, refreshMs);
+    } catch {
+      // Fallback: legacy URL
+      setStreamUrl(`${API_URL}/files/${fId}/stream?token=${token}`);
+    }
+  }, [token]);
 
   useEffect(() => {
     if (!isReady) return;
 
-    const fetchFileInfo = async () => {
-      try {
-        const res = await axios.get(`${API_URL}/files/${fileId}/info`);
-        setFileInfo(res.data);
-      } catch (err: unknown) {
-        setError(getApiErrorMessage(err, 'Failed to load file information'));
-      } finally {
-        setIsLoading(false);
-      }
-    };
+    setIsLoading(true);
+    setStreamUrl(null);
 
-    fetchFileInfo();
-  }, [fileId, isReady]);
+    axios.get(`${API_URL}/files/${fileId}/info`)
+      .then(async (res) => {
+        setFileInfo(res.data);
+        await setupStream(fileId);
+      })
+      .catch((err: unknown) => {
+        setError(getApiErrorMessage(err, 'Failed to load file information'));
+      })
+      .finally(() => setIsLoading(false));
+
+    return () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      clearStreamCookie().catch(() => { });
+    };
+  }, [fileId, isReady, setupStream]);
+
+  const handleDownload = useCallback(async () => {
+    if (!fileInfo) return;
+    try {
+      const { url } = await requestDownloadToken(fileInfo.id);
+      toast(t('dashboard.downloadStarted'), { icon: '⬇️', duration: 2000 });
+      const link = document.createElement('a');
+      link.href = API_URL + url;
+      link.setAttribute('download', fileInfo.filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset'], LOCALE_DATE_MAP[locale]);
+        toast.error(resetTime
+          ? t('dashboard.bandwidthExceededAt', { time: resetTime })
+          : t('dashboard.bandwidthExceeded'));
+      } else {
+        toast.error(getApiErrorMessage(err, t('dashboard.downloadError')));
+      }
+    }
+  }, [fileInfo, locale, t]);
 
   if (isLoading || !isReady) {
     return (
@@ -73,17 +126,6 @@ export default function FilePreviewPage() {
     );
   }
 
-  const streamUrl = `${API_URL}/files/${fileId}/stream?token=${token}`;
-  const downloadUrl = `${API_URL}/files/${fileId}/download?token=${token}`;
-
-  const getFileIcon = (mimeType: string) => {
-    if (mimeType.startsWith('image/')) return <ImageIcon className="h-5 w-5 text-gray-500" />;
-    if (mimeType.startsWith('video/')) return <Film className="h-5 w-5 text-gray-500" />;
-    if (mimeType.startsWith('audio/')) return <Music className="h-5 w-5 text-gray-500" />;
-    if (mimeType.startsWith('text/')) return <FileText className="h-5 w-5 text-gray-500" />;
-    return <FileIcon className="h-5 w-5 text-gray-500" />;
-  };
-
   return (
     <div className="flex h-screen flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden">
       {/* Top Navigation Bar */}
@@ -98,7 +140,7 @@ export default function FilePreviewPage() {
           </button>
 
           <div className="flex items-center gap-3 min-w-0">
-            {getFileIcon(fileInfo.mimeType)}
+            {getFileIcon(fileInfo.mimeType, 'h-5 w-5 text-gray-500')}
             <h1 className="truncate font-semibold text-gray-800 dark:text-gray-100">
               {fileInfo.filename}
             </h1>
@@ -109,25 +151,30 @@ export default function FilePreviewPage() {
           <span className="text-sm text-gray-500 hidden sm:inline-block">
             {(fileInfo.size / (1024 * 1024)).toFixed(2)} MB
           </span>
-          <a
-            href={downloadUrl}
-            download={fileInfo.filename}
+          <button
+            onClick={handleDownload}
             className="flex items-center gap-2 rounded-md bg-transparent px-3 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-colors"
           >
             <Download className="h-4 w-4" />
             <span className="hidden sm:inline-block">{t('preview.download')}</span>
-          </a>
+          </button>
         </div>
       </header>
 
       {/* Main Preview Area */}
       <main className="flex-1 relative overflow-hidden bg-gray-100 dark:bg-gray-900">
-        <PreviewRenderer
-          streamUrl={streamUrl}
-          downloadUrl={downloadUrl}
-          fileInfo={fileInfo}
-          t={t}
-        />
+        {streamUrl ? (
+          <PreviewRenderer
+            streamUrl={streamUrl}
+            onDownload={handleDownload}
+            fileInfo={fileInfo}
+            t={t}
+          />
+        ) : (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+          </div>
+        )}
       </main>
     </div>
   );
