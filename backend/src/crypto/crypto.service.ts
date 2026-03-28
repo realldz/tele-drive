@@ -4,13 +4,19 @@ import { Transform, TransformCallback } from 'stream';
 
 /**
  * Transform stream that handles AES-256-CTR decryption with an arbitrary random-access byte offset.
- * It computes the correct block index, fast-forwards the IV, and drops the leading bytes of the first block 
+ * It computes the correct block index, fast-forwards the IV, and drops the leading bytes of the first block
  * to align perfectly with the requested offset.
+ *
+ * IMPORTANT: The input ciphertext is expected to start exactly at `byteOffset` (i.e. the upstream
+ * Range response already skipped bytes before `byteOffset`).  When the offset is not block-aligned
+ * we must feed `bytesToDrop` dummy ciphertext bytes into the decipher first so that the AES-CTR
+ * keystream counter is properly aligned before the real ciphertext arrives.
  */
 export class AesCtrOffsetStream extends Transform {
   private decipher: crypto.Decipher;
   private dropped = 0;
   private bytesToDrop: number;
+  private paddingInjected = false;
 
   constructor(algo: string, key: Buffer, iv: Buffer, byteOffset: number) {
     super();
@@ -46,6 +52,13 @@ export class AesCtrOffsetStream extends Transform {
   }
 
   _transform(chunk: Buffer, _encoding: BufferEncoding, callback: TransformCallback) {
+    // On the first chunk, inject `bytesToDrop` zero-padding bytes into the decipher
+    // so the keystream advances past the partial block before real ciphertext arrives.
+    // The decrypted output of these padding bytes will be dropped by the `data` handler above.
+    if (!this.paddingInjected && this.bytesToDrop > 0) {
+      this.paddingInjected = true;
+      this.decipher.write(Buffer.alloc(this.bytesToDrop));
+    }
     this.decipher.write(chunk);
     callback();
   }

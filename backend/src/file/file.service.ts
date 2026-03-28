@@ -838,7 +838,6 @@ export class FileService {
     return new Promise<void>((resolve, reject) => {
       const rawStream = Readable.fromWeb(fetchBody as any);
 
-      // CRITICAL: always attach error handler on the raw stream
       rawStream.on('error', (err) => {
         if (!res.destroyed) res.end();
         reject(err);
@@ -858,11 +857,9 @@ export class FileService {
         output = rawStream.pipe(decryptStream);
       }
 
-      output.on('end', resolve);
-      // For non-encrypted, this duplicates rawStream's handler — safe because reject() is idempotent for promises
+      output.on('end', () => resolve());
       output.on('error', reject);
 
-      // Detect client disconnect → cleanup Telegram fetch stream
       const onResClose = () => {
         if (!res.writableFinished) {
           rawStream.destroy();
@@ -872,7 +869,6 @@ export class FileService {
 
       output.pipe(res, { end: options.endResponse ?? false });
 
-      // Cleanup: remove close listener when pipe finishes to avoid accumulation on chunked downloads
       const cleanup = () => res.removeListener('close', onResClose);
       output.on('end', cleanup);
       output.on('error', cleanup);
@@ -1157,6 +1153,7 @@ export class FileService {
       const fetchRes = await fetchWithRetry(url, {
         headers: { Range: `bytes=${start}-${end}` },
       });
+
       if (!fetchRes.ok || !fetchRes.body) {
         this.logger.error(`Failed to fetch range from Telegram: "${downloadInfo.filename}"`);
         return res.status(500).end();
@@ -1223,6 +1220,7 @@ export class FileService {
           const fetchRes = await fetchWithRetry(url, {
             headers: { Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}` },
           });
+
           if (!fetchRes.ok || !fetchRes.body) throw new Error('Fetch chunk error');
 
           await this.pipeStreamToResponse(fetchRes.body, res, {
