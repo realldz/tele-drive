@@ -93,6 +93,14 @@ export class S3AuthService {
 
       if (expectedSignature !== signature) {
         this.logger.warn(`S3 auth failed: signature mismatch for AccessKeyId: ${accessKeyId}`);
+        this.logger.debug(
+          `[S3-AUTH-DEBUG] method=${req.method} url="${req.originalUrl || req.url}" ` +
+          `dateTime="${dateTime}" credentialScope="${credentialScope}" ` +
+          `signedHeaders=[${signedHeaders.join(';')}] ` +
+          `canonicalRequest=\n${canonicalRequest}\n---END--- ` +
+          `stringToSign=\n${stringToSign}\n---END--- ` +
+          `expectedSig=${expectedSignature} clientSig=${signature}`,
+        );
         return null;
       }
 
@@ -119,7 +127,8 @@ export class S3AuthService {
    */
   private async verifyPresignedUrl(req: any): Promise<string | null> {
     try {
-      const url = new URL(req.url, `http://${req.headers['host'] || 'localhost'}`);
+      const requestUrl = req.originalUrl || req.url;
+      const url = new URL(requestUrl, `http://${req.headers['host'] || 'localhost'}`);
       const params = url.searchParams;
 
       const algorithm = params.get('X-Amz-Algorithm');
@@ -239,7 +248,7 @@ export class S3AuthService {
       const content = authHeader.replace('AWS4-HMAC-SHA256 ', '');
       const parts: Record<string, string> = {};
 
-      for (const part of content.split(', ')) {
+      for (const part of content.split(/,\s*/)) {
         const eqIdx = part.indexOf('=');
         if (eqIdx === -1) continue;
         const key = part.substring(0, eqIdx).trim();
@@ -280,8 +289,9 @@ export class S3AuthService {
   private buildCanonicalRequest(req: any, signedHeaders: string[]): string {
     const method = req.method.toUpperCase();
 
-    // Canonical URI — the path (without query string)
-    const url = new URL(req.url, `http://${req.headers['host'] || 'localhost'}`);
+    // Canonical URI — must use originalUrl to preserve the full path the client signed
+    const requestUrl = req.originalUrl || req.url;
+    const url = new URL(requestUrl, `http://${req.headers['host'] || 'localhost'}`);
     const canonicalUri = url.pathname || '/';
 
     // Canonical Query String — sorted by key
@@ -327,7 +337,8 @@ export class S3AuthService {
   private buildCanonicalRequestPresigned(req: any, signedHeaders: string[]): string {
     const method = req.method.toUpperCase();
 
-    const url = new URL(req.url, `http://${req.headers['host'] || 'localhost'}`);
+    const requestUrl = req.originalUrl || req.url;
+    const url = new URL(requestUrl, `http://${req.headers['host'] || 'localhost'}`);
     const canonicalUri = url.pathname || '/';
 
     // Canonical Query String — sorted by key, excluding X-Amz-Signature
