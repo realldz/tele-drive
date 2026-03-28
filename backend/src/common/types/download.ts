@@ -1,7 +1,7 @@
 interface ChunkInfo {
   id: string;
   telegramFileId: string;
-  botIndex: number;
+  botId: bigint;
   telegramMessageId: number | null;
   iv: Buffer | null;
   size: number;
@@ -11,7 +11,7 @@ export interface SingleFileDownloadInfo {
   filename: string;
   size: bigint | number;
   telegramFileId: string;
-  botIndex: number;
+  botId: bigint;
   telegramMessageId: number | null;
   isEncrypted: boolean;
   dek: Buffer | null;

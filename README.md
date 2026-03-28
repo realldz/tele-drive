@@ -125,7 +125,7 @@ Configure routing in [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) d
 | Force rebuild (no cache) | `docker compose build --no-cache frontend` |
 | Force rebuild + restart all | `docker compose up -d --build --force-recreate` |
 | Restart (no rebuild) | `docker compose restart frontend` |
-| View logs | `docker compose logs -f backend` |
+| View logs | `docker container logs -f backend` |
 | Rebuild all | `docker compose build` |
 
 ## Environment Variables

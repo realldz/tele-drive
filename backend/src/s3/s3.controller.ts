@@ -550,13 +550,13 @@ export class S3Controller {
           },
         });
 
-        const { fileId: telegramFileId, messageId: telegramMessageId } =
+        const { fileId: telegramFileId, messageId: telegramMessageId, botId } =
           await this.telegramService.uploadFile(encryptedBuffer, record.id);
 
         await this.prisma.$transaction(async (tx) => {
           await tx.fileRecord.update({
             where: { id: record.id },
-            data: { telegramFileId, telegramMessageId, status: 'complete' },
+            data: { telegramFileId, telegramMessageId, botId, status: 'complete' },
           });
           await tx.user.update({
             where: { id: userId },
@@ -602,7 +602,7 @@ export class S3Controller {
           .pipe(counterTransform)
           .pipe(cipherStream);
 
-        const { fileId: telegramFileId, messageId: telegramMessageId } =
+        const { fileId: telegramFileId, messageId: telegramMessageId, botId } =
           await this.telegramService.uploadStream(uploadStream, record.id);
 
         const etag = `"${md5.digest('hex')}"`;
@@ -613,6 +613,7 @@ export class S3Controller {
             data: {
               telegramFileId,
               telegramMessageId,
+              botId,
               status: 'complete',
               size: totalBytes,
               etag,
