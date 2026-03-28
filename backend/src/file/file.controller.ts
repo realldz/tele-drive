@@ -8,6 +8,7 @@ import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
 import { Public } from '../auth/public.decorator';
 import { AdminGuard } from '../auth/admin.guard';
 import { InitUploadDto } from './dto/init-upload.dto';
+import { getClientIp } from '../common/utils/get-client-ip';
 import type { AuthenticatedRequest } from '../common/types/request';
 import type { Response, Request } from 'express';
 
@@ -145,7 +146,7 @@ export class FileController {
   @UseInterceptors(BandwidthInterceptor)
   @SetMetadata('BANDWIDTH_CHECK_ONLY', true)
   async issueGuestStreamCookie(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const ip = this.getClientIp(req);
+    const ip = getClientIp(req);
     const ttl = await this.fileService.getStreamTtl();
     const token = this.cryptoService.createStreamCookieToken(`guest:${ip}`, ttl);
     res.cookie('stream_token', token, {
@@ -292,14 +293,4 @@ export class FileController {
     return payload;
   }
 
-  private getClientIp(req: Request): string {
-    const forwarded = req.headers['x-forwarded-for'];
-    if (forwarded) {
-      const first = typeof forwarded === 'string' ? forwarded.split(',')[0] : forwarded[0]?.split(',')[0];
-      if (first) return first.trim();
-    }
-    const realIp = req.headers['x-real-ip'];
-    if (realIp) return (typeof realIp === 'string' ? realIp : realIp[0]).trim();
-    return req.ip || '127.0.0.1';
-  }
 }
