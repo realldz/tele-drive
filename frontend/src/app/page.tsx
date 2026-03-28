@@ -155,7 +155,7 @@ export default function Dashboard() {
   useEffect(() => { fetchContent(); }, [fetchContent]);
   useEffect(() => { setUploadFolderId(currentFolderId); }, [currentFolderId, setUploadFolderId]);
   useEffect(() => {
-    setOnUploadSuccess(() => fetchContent);
+    setOnUploadSuccess(fetchContent);
     return () => setOnUploadSuccess(undefined);
   }, [fetchContent, setOnUploadSuccess]);
 
