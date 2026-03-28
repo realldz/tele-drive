@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { X, Download, Loader2, FileIcon } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
 import { useAuth } from '@/components/auth-context';
-import { useI18n } from '@/components/i18n-context';
-import { API_URL } from '@/lib/api';
+import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
+import { API_URL, requestDownloadToken, requestStreamCookie, clearStreamCookie, getStreamUrl, getApiErrorMessage, formatBandwidthResetTime } from '@/lib/api';
 import dynamic from 'next/dynamic';
+import toast from 'react-hot-toast';
 
 const PreviewRenderer = dynamic(() => import('@/components/preview-renderer'), { ssr: false });
 
@@ -25,35 +26,89 @@ interface FilePreviewModalProps {
 
 export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalProps) {
   const { token } = useAuth();
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [streamUrl, setStreamUrl] = useState<string | null>(null);
+  const [downloadUrl, setDownloadUrl] = useState<string | null>(null);
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Request stream cookie + download token khi modal mở
+  const setupUrls = useCallback(async (fId: string) => {
+    try {
+      const [cookieRes, dlRes] = await Promise.all([
+        requestStreamCookie(),
+        requestDownloadToken(fId),
+      ]);
+      setStreamUrl(getStreamUrl(fId));
+      setDownloadUrl(API_URL + dlRes.url);
+
+      // Auto-refresh cookie ở 80% TTL
+      const refreshMs = cookieRes.ttl * 800; // 80% of TTL in ms
+      refreshTimerRef.current = setTimeout(function refresh() {
+        requestStreamCookie()
+          .then((res) => {
+            refreshTimerRef.current = setTimeout(refresh, res.ttl * 800);
+          })
+          .catch(() => { /* cookie refresh failed, stream may break */ });
+      }, refreshMs);
+    } catch (err: unknown) {
+      // Fallback: dùng legacy URL nếu signed URL fail
+      setStreamUrl(`${API_URL}/files/${fId}/stream?token=${token}`);
+      setDownloadUrl(`${API_URL}/files/${fId}/download?token=${token}`);
+      
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset'], LOCALE_DATE_MAP[locale]);
+        toast.error(resetTime
+          ? t('dashboard.bandwidthExceededAt', { time: resetTime })
+          : t('dashboard.bandwidthExceeded'));
+      } else {
+        const msg = getApiErrorMessage(err, '');
+        if (msg) toast.error(msg);
+      }
+    }
+  }, [token, locale, t]);
 
   useEffect(() => {
     if (!fileId) {
       setFileInfo(null);
       setError(null);
+      setStreamUrl(null);
+      setDownloadUrl(null);
+      // Cleanup cookie + timer
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+      clearStreamCookie().catch(() => { });
       return;
     }
 
     setIsLoading(true);
     setError(null);
     setFileInfo(null);
+    setStreamUrl(null);
+    setDownloadUrl(null);
 
     axios
       .get(`${API_URL}/files/${fileId}/info`)
-      .then((res) => setFileInfo(res.data))
-      .catch((err: any) => setError(err.response?.data?.message || 'Failed to load file'))
+      .then(async (res) => {
+        setFileInfo(res.data);
+        await setupUrls(fileId);
+      })
+      .catch((err: unknown) => {
+        const message = axios.isAxiosError(err) ? err.response?.data?.message : undefined;
+        setError(message || 'Failed to load file');
+      })
       .finally(() => setIsLoading(false));
-  }, [fileId]);
+
+    return () => {
+      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
+    };
+  }, [fileId, setupUrls]);
 
   // ESC key handler
   useEffect(() => {
     if (!fileId) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
     document.addEventListener('keydown', handler);
     return () => document.removeEventListener('keydown', handler);
   }, [fileId, onClose]);
@@ -65,10 +120,30 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
     return () => { document.body.style.overflow = ''; };
   }, [fileId]);
 
-  if (!fileId) return null;
+  const handleDownload = useCallback(async () => {
+    if (!fileInfo) return;
+    try {
+      const { url } = await requestDownloadToken(fileInfo.id);
+      toast(t('dashboard.downloadStarted'), { icon: '⬇️', duration: 2000 });
+      const link = document.createElement('a');
+      link.href = API_URL + url;
+      link.setAttribute('download', fileInfo.filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset'], LOCALE_DATE_MAP[locale]);
+        toast.error(resetTime
+          ? t('dashboard.bandwidthExceededAt', { time: resetTime })
+          : t('dashboard.bandwidthExceeded'));
+      } else {
+        toast.error(getApiErrorMessage(err, t('dashboard.downloadError')));
+      }
+    }
+  }, [fileInfo, locale, t]);
 
-  const streamUrl = `${API_URL}/files/${fileId}/stream?token=${token}`;
-  const downloadUrl = `${API_URL}/files/${fileId}/download?token=${token}`;
+  if (!fileId) return null;
 
   return (
     <div
@@ -90,14 +165,13 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
         </div>
         <div className="flex items-center gap-2 flex-none ml-4">
           {fileInfo && (
-            <a
-              href={downloadUrl}
-              download={fileInfo.filename}
+            <button
+              onClick={handleDownload}
               className="flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium text-blue-600 hover:bg-blue-50 transition-colors"
             >
               <Download className="h-4 w-4" />
               <span className="hidden sm:inline-block">{t('preview.download')}</span>
-            </a>
+            </button>
           )}
           <button
             onClick={onClose}
@@ -126,7 +200,7 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
           </div>
         )}
 
-        {fileInfo && !isLoading && !error && (
+        {fileInfo && !isLoading && !error && streamUrl && downloadUrl && (
           <PreviewRenderer
             streamUrl={streamUrl}
             downloadUrl={downloadUrl}

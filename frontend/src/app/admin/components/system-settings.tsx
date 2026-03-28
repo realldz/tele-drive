@@ -3,6 +3,7 @@
 import { useState } from 'react';
 
 const BYTE_SETTING_KEYS = ['DEFAULT_USER_QUOTA', 'DEFAULT_GUEST_BANDWIDTH', 'DEFAULT_DAILY_BANDWIDTH_LIMIT'];
+const SECONDS_SETTING_KEYS = ['DOWNLOAD_URL_TTL_SECONDS', 'STREAM_COOKIE_TTL_SECONDS'];
 
 interface Setting {
   key: string;
@@ -20,6 +21,7 @@ interface SystemSettingsProps {
 
 function getSettingHint(key: string, value: string, formatBytes: (b: string | number) => string): string {
   if (BYTE_SETTING_KEYS.includes(key)) return formatBytes(value);
+  if (SECONDS_SETTING_KEYS.includes(key)) return `${value}s`;
   if (key === 'ENABLE_MULTI_THREAD_DOWNLOAD') return value === 'true' ? 'Enabled' : 'Disabled';
   return value;
 }

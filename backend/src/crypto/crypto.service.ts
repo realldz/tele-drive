@@ -16,7 +16,7 @@ export class AesCtrOffsetStream extends Transform {
     super();
     this.bytesToDrop = byteOffset % 16;
     const blockIndex = Math.floor(byteOffset / 16);
-    
+
     // Increment the 16-byte IV by blockIndex (Big-Endian integer addition)
     const newIv = Buffer.from(iv);
     // JS Number is exact up to 2^53, blockIndex easily fits for files up to TBs
@@ -26,7 +26,7 @@ export class AesCtrOffsetStream extends Transform {
       newIv[i] = sum & 0xff;
       carry = Math.floor(sum / 256);
     }
-    
+
     this.decipher = crypto.createDecipheriv(algo, key, newIv);
 
     this.decipher.on('data', (chunk: Buffer) => {
@@ -57,6 +57,18 @@ export class AesCtrOffsetStream extends Transform {
   }
 }
 
+export interface SignedTokenPayload {
+  fid: string;
+  exp: number;
+  t: 'u' | 's' | 'sf';
+  uid?: string;
+}
+
+export interface StreamCookiePayload {
+  sub: string;
+  exp: number;
+}
+
 @Injectable()
 export class CryptoService {
   private readonly logger = new Logger(CryptoService.name);
@@ -65,7 +77,7 @@ export class CryptoService {
 
   constructor() {
     this.MASTER_SECRET = process.env.MASTER_SECRET || 'default_secret_key_32_bytes_long.';
-    
+
     // Ensure MASTER_SECRET is exactly 32 bytes for aes-256
     if (Buffer.from(this.MASTER_SECRET).length !== 32) {
       if (process.env.NODE_ENV === 'production') {
@@ -134,5 +146,71 @@ export class CryptoService {
       return this.createDecryptStream(dek, iv);
     }
     return new AesCtrOffsetStream(this.ALGO, dek, iv, byteOffset);
+  }
+
+  // ── Signed Download Token ────────────────────────────────────────────────
+
+  private hmacSign(data: string): string {
+    return crypto.createHmac('sha256', this.MASTER_SECRET).update(data).digest('hex');
+  }
+
+  /**
+   * Tạo signed download token (base64url-encoded JSON)
+   */
+  createSignedToken(fileId: string, type: 'u' | 's' | 'sf', ttlSeconds: number, userId?: string): string {
+    const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
+    const sigStr = userId ? `${fileId}:${exp}:${type}:${userId}` : `${fileId}:${exp}:${type}`;
+    const sig = this.hmacSign(sigStr);
+    const payloadObj: any = { fid: fileId, exp, t: type, sig };
+    if (userId) payloadObj.uid = userId;
+    const payload = JSON.stringify(payloadObj);
+    return Buffer.from(payload).toString('base64url');
+  }
+
+  /**
+   * Verify + decode signed download token. Returns null nếu invalid hoặc expired.
+   */
+  verifySignedToken(token: string): SignedTokenPayload | null {
+    try {
+      const json = Buffer.from(token, 'base64url').toString('utf8');
+      const { fid, exp, t, sig, uid } = JSON.parse(json);
+      if (!fid || !exp || !t || !sig) return null;
+      const sigStr = uid ? `${fid}:${exp}:${t}:${uid}` : `${fid}:${exp}:${t}`;
+      const expectedSig = this.hmacSign(sigStr);
+      if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expectedSig, 'hex'))) return null;
+      if (Math.floor(Date.now() / 1000) > exp) return null;
+      return { fid, exp, t, uid };
+    } catch {
+      return null;
+    }
+  }
+
+  // ── Stream Cookie Token ──────────────────────────────────────────────────
+
+  /**
+   * Tạo stream cookie token — chứa subject (userId hoặc guest:ip), dùng chung cho mọi file.
+   */
+  createStreamCookieToken(subject: string, ttlSeconds: number): string {
+    const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
+    const sig = this.hmacSign(`stream:${subject}:${exp}`);
+    const payload = JSON.stringify({ sub: subject, exp, sig });
+    return Buffer.from(payload).toString('base64url');
+  }
+
+  /**
+   * Verify + decode stream cookie token. Returns null nếu invalid hoặc expired.
+   */
+  verifyStreamCookieToken(token: string): StreamCookiePayload | null {
+    try {
+      const json = Buffer.from(token, 'base64url').toString('utf8');
+      const { sub, exp, sig } = JSON.parse(json);
+      if (!sub || !exp || !sig) return null;
+      const expectedSig = this.hmacSign(`stream:${sub}:${exp}`);
+      if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expectedSig, 'hex'))) return null;
+      if (Math.floor(Date.now() / 1000) > exp) return null;
+      return { sub, exp };
+    } catch {
+      return null;
+    }
   }
 }

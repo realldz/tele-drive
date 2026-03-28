@@ -55,7 +55,9 @@
   "dashboard.undoError": "元に戻す際にエラーが発生しました",
   "dashboard.moveError": "移動エラー",
   "dashboard.downloadError": "ファイルのダウンロードエラー",
-  "dashboard.bandwidthExceeded": "1日の帯域幅制限を超えました。明日もう一度お試しください。",
+  "dashboard.bandwidthExceeded": "1日の帯域幅制限を超えました。",
+  "dashboard.bandwidthExceededAt": "帯域幅制限を超えました。{time} にリセットされます。",
+  "dashboard.downloadStarted": "ダウンロードを開始しました...",
   "dashboard.createFolderError": "フォルダ作成エラー",
   "dashboard.renameError": "名前変更エラー",
   "dashboard.deleteStuckError": "停滞ファイルの削除エラー",
@@ -306,6 +308,7 @@
   "sharePage.downloadFile": "ファイルをダウンロード",
   "sharePage.fileNotFound": "ファイルが存在しないか、共有が停止されています",
   "sharePage.bandwidthExceeded": "このファイルは本日の帯域幅制限を超えました。",
+  "sharePage.bandwidthExceededAt": "帯域幅制限を超えました。{time} にリセットされます。",
   "sharePage.downloadError": "ファイルのダウンロードエラー",
 
   "shareFolder.sharedBy": "共有フォルダ：",
@@ -317,5 +320,6 @@
   "shareFolder.folderNotFound": "フォルダが存在しないか、共有が停止されています",
   "shareFolder.download": "ダウンロード",
   "shareFolder.bandwidthExceeded": "このファイルは本日の帯域幅制限を超えました。",
+  "shareFolder.bandwidthExceededAt": "帯域幅制限を超えました。{time} にリセットされます。",
   "shareFolder.downloadError": "ファイルのダウンロードエラー"
 }

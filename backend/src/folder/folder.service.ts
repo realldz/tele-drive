@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FileService } from '../file/file.service';
+import { CryptoService } from '../crypto/crypto.service';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -10,6 +11,7 @@ export class FolderService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fileService: FileService,
+    private readonly cryptoService: CryptoService,
   ) { }
 
   /**
@@ -485,6 +487,34 @@ export class FolderService {
    * Kiểm tra folderId có phải descendant (hoặc chính nó) của ancestorId.
    * Đi ngược parent chain, bỏ qua folder đã soft-delete.
    */
+  /**
+   * Tạo signed download URL cho file trong shared folder
+   */
+  async generateShareFolderDownloadToken(shareToken: string, fileId: string): Promise<{ url: string; expiresAt: string }> {
+    const rootSharedFolder = await this.prisma.folder.findUnique({
+      where: { shareToken },
+    });
+    if (!rootSharedFolder || rootSharedFolder.deletedAt) throw new NotFoundException('Shared folder not found');
+
+    const fileRecord = await this.prisma.fileRecord.findFirst({
+      where: { id: fileId, deletedAt: null },
+      select: { id: true, folderId: true, status: true },
+    });
+    if (!fileRecord) throw new NotFoundException('File not found');
+    if (fileRecord.status !== 'complete') throw new BadRequestException('File upload not completed yet');
+    if (!fileRecord.folderId) throw new BadRequestException('File is not part of this shared link');
+
+    const isChild = await this.isDescendantOf(fileRecord.folderId, rootSharedFolder.id);
+    if (!isChild) throw new BadRequestException('File is not part of this shared link');
+
+    const ttl = await this.fileService.getDownloadTtl();
+    const token = this.cryptoService.createSignedToken(fileId, 'sf', ttl);
+    const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+
+    this.logger.debug(`Share folder download token generated: shareToken=${shareToken}, fileId=${fileId}, ttl=${ttl}s`);
+    return { url: `/files/d/${token}`, expiresAt };
+  }
+
   private async isDescendantOf(folderId: string, ancestorId: string): Promise<boolean> {
     let currentId: string | null = folderId;
     while (currentId) {

@@ -38,7 +38,7 @@ export default function AdminDashboard() {
 
   // Edit user modal
   const [editingUser, setEditingUser] = useState<UserRecord | null>(null);
-  const [editForm, setEditForm] = useState({ quotaGB: 15, bandwidthLimitGB: 0, role: 'USER' });
+  const [editForm, setEditForm] = useState<{ quotaGB: number | string, bandwidthLimitGB: number | string, role: string }>({ quotaGB: 15, bandwidthLimitGB: 0, role: 'USER' });
   // Reset password modal
   const [resetPwUser, setResetPwUser] = useState<UserRecord | null>(null);
   const [resetPwForm, setResetPwForm] = useState({ newPassword: '', confirmPassword: '' });
@@ -81,8 +81,12 @@ export default function AdminDashboard() {
     if (!editingUser) return;
     try {
       await updateUserRole(editingUser.id, editForm.role);
-      await updateUserQuota(editingUser.id, (editForm.quotaGB * 1024 ** 3).toString());
-      const bwBytes = editForm.bandwidthLimitGB > 0 ? (editForm.bandwidthLimitGB * 1024 ** 3).toString() : null;
+      
+      const quotaBytes = Math.round(Number(editForm.quotaGB) * (1024 ** 3)).toString();
+      const bwGb = Number(editForm.bandwidthLimitGB);
+      const bwBytes = bwGb > 0 ? Math.round(bwGb * (1024 ** 3)).toString() : null;
+      
+      await updateUserQuota(editingUser.id, quotaBytes);
       await updateUserBandwidth(editingUser.id, bwBytes);
       toast.success(t('admin.updateUserSuccess'));
       setEditingUser(null);
@@ -176,7 +180,7 @@ export default function AdminDashboard() {
             <UserManagement users={users} selectedUser={selectedUser} currentUserId={user?.id} locale={locale} t={t} formatBytes={formatBytes}
               onSelectUser={(u) => { setSelectedUser(u); setActiveTab('USER_FILES'); fetchUserFiles(u.id); }}
               onBack={() => { setActiveTab('USERS'); setSelectedUser(null); }}
-              onEditUser={(u) => { setEditingUser(u); setEditForm({ quotaGB: Math.round(Number(u.quota) / (1024 ** 3)), bandwidthLimitGB: u.dailyBandwidthLimit ? Math.round(Number(u.dailyBandwidthLimit) / (1024 ** 3)) : 0, role: u.role }); }}
+              onEditUser={(u) => { setEditingUser(u); setEditForm({ quotaGB: Number(u.quota) / (1024 ** 3), bandwidthLimitGB: u.dailyBandwidthLimit ? Number(u.dailyBandwidthLimit) / (1024 ** 3) : 0, role: u.role }); }}
               onResetPassword={(u) => { setResetPwUser(u); setResetPwForm({ newPassword: '', confirmPassword: '' }); }}
               onDeleteUser={handleDeleteUser} userFiles={userFiles} onDeleteUserFile={handleDeleteUserFile} />
           )}
@@ -189,7 +193,7 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden relative">
             <div className="p-6 border-b border-gray-100">
               <h3 className="text-lg font-bold text-gray-800">{t('admin.editUser', { username: editingUser.username })}</h3>
-              <button className="absolute top-6 right-6 text-gray-400 hover:text-gray-600" onClick={() => setEditingUser(null)}><X size={20}/></button>
+              <button className="absolute top-6 right-6 text-gray-400 hover:text-gray-600" onClick={() => setEditingUser(null)}><X size={20} /></button>
             </div>
             <form onSubmit={handleEditUserSubmit} className="p-6 space-y-4">
               <div>
@@ -202,12 +206,12 @@ export default function AdminDashboard() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.maxQuota')}</label>
-                <input type="number" min="1" step="0.1" value={editForm.quotaGB} onChange={(e) => setEditForm({ ...editForm, quotaGB: parseFloat(e.target.value) })}
+                <input type="number" min="0" step="0.1" value={editForm.quotaGB} onChange={(e) => setEditForm({ ...editForm, quotaGB: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring focus:ring-blue-100 outline-none" required />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.bandwidthLimit')}</label>
-                <input type="number" min="0" step="0.1" value={editForm.bandwidthLimitGB} onChange={(e) => setEditForm({ ...editForm, bandwidthLimitGB: parseFloat(e.target.value) })}
+                <input type="number" min="0" step="0.1" value={editForm.bandwidthLimitGB} onChange={(e) => setEditForm({ ...editForm, bandwidthLimitGB: e.target.value })}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring focus:ring-blue-100 outline-none" placeholder={t('admin.bandwidthNoLimit')} />
                 <p className="text-xs text-gray-500 mt-1">{t('admin.zeroNoLimit')}</p>
               </div>
@@ -226,7 +230,7 @@ export default function AdminDashboard() {
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden relative">
             <div className="p-6 border-b border-gray-100">
               <h3 className="text-lg font-bold text-gray-800">{t('admin.resetPasswordTitle', { username: resetPwUser.username })}</h3>
-              <button className="absolute top-6 right-6 text-gray-400 hover:text-gray-600" onClick={() => setResetPwUser(null)}><X size={20}/></button>
+              <button className="absolute top-6 right-6 text-gray-400 hover:text-gray-600" onClick={() => setResetPwUser(null)}><X size={20} /></button>
             </div>
             <form onSubmit={handleAdminResetPassword} className="p-6 space-y-4">
               <div>

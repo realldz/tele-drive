@@ -17,10 +17,11 @@ import RenameDialog from '@/components/rename-dialog';
 import ShareDialog from '@/components/share-dialog';
 import MoveDialog from '@/components/move-dialog';
 import toast from 'react-hot-toast';
+import axios from 'axios';
 import {
   formatSize, fetchFolderContent, fetchBreadcrumbs,
   createFolder, deleteFolder, restoreFolder, deleteFile, restoreFile,
-  abortUpload, getDownloadUrl, renameItem, moveItem, getApiErrorMessage,
+  abortUpload, requestDownloadToken, renameItem, moveItem, getApiErrorMessage, formatBandwidthResetTime, API_URL,
 } from '@/lib/api';
 import type { FileRecord, FolderRecord, BreadcrumbItem } from '@/lib/types';
 
@@ -214,16 +215,30 @@ export default function Dashboard() {
     catch (error: unknown) { alert(getApiErrorMessage(error, t('dashboard.deleteStuckError'))); }
   }, [fetchContent, t]);
 
-  const handleDownload = useCallback((fileId: string, filename: string) => {
+  const handleDownload = useCallback(async (fileId: string, filename: string) => {
     setDownloadingFiles(prev => new Set(prev).add(fileId));
-    const link = document.createElement('a');
-    link.href = getDownloadUrl(fileId, token!);
-    link.setAttribute('download', filename);
-    document.body.appendChild(link);
-    link.click();
-    link.remove();
-    setTimeout(() => setDownloadingFiles(prev => { const n = new Set(prev); n.delete(fileId); return n; }), 2000);
-  }, [token]);
+    toast.loading(t('dashboard.downloadStarted'), { icon: '⬇️', duration: 2000 });
+    try {
+      const { url } = await requestDownloadToken(fileId);
+      const link = document.createElement('a');
+      link.href = API_URL + url;
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err) && err.response?.status === 429) {
+        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset'], LOCALE_DATE_MAP[locale]);
+        toast.error(resetTime
+          ? t('dashboard.bandwidthExceededAt', { time: resetTime })
+          : t('dashboard.bandwidthExceeded'));
+      } else {
+        toast.error(t('dashboard.downloadError'));
+      }
+    } finally {
+      setTimeout(() => setDownloadingFiles(prev => { const n = new Set(prev); n.delete(fileId); return n; }), 2000);
+    }
+  }, [locale, t]);
 
   const handleDragStart = (e: React.DragEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
     setDraggedItem({ id: item.id, type }); e.dataTransfer.effectAllowed = 'move';

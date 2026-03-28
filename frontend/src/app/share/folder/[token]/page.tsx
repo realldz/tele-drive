@@ -6,8 +6,9 @@ import axios from 'axios';
 import { Download, FileText, AlertCircle, Folder, ChevronRight, Home } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
+import toast from 'react-hot-toast';
 
-import { API_URL } from '@/lib/api';
+import { API_URL, formatBandwidthResetTime, formatSize, requestShareFolderDownloadToken } from '@/lib/api';
 import type { SharedFolderRoot, FolderRecord, FileRecord, BreadcrumbItem } from '@/lib/types';
 
 export default function SharedFolderPage() {
@@ -52,33 +53,26 @@ export default function SharedFolderPage() {
   const handleDownload = async (file: FileRecord) => {
     setDownloadingId(file.id);
     try {
-      const res = await axios.get(`${API_URL}/folders/share/${token}/download/${file.id}`, {
-        responseType: 'blob',
-      });
-      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const { url } = await requestShareFolderDownloadToken(token, file.id);
+      toast(t('dashboard.downloadStarted'), { icon: '⬇️', duration: 2000 });
       const link = document.createElement('a');
-      link.href = url;
+      link.href = API_URL + url;
       link.setAttribute('download', file.filename);
       document.body.appendChild(link);
       link.click();
       link.remove();
-      window.URL.revokeObjectURL(url);
     } catch (err: unknown) {
       if (axios.isAxiosError(err) && err.response?.status === 429) {
-        alert(t('shareFolder.bandwidthExceeded'));
+        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset']);
+        toast.error(resetTime
+          ? t('shareFolder.bandwidthExceededAt', { time: resetTime })
+          : t('shareFolder.bandwidthExceeded'));
       } else {
-        alert(t('shareFolder.downloadError'));
+        toast.error(t('shareFolder.downloadError'));
       }
     } finally {
-      setDownloadingId(null);
+      setTimeout(() => setDownloadingId(null), 2000);
     }
-  };
-
-  const formatSize = (bytes: number) => {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-    return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
   };
 
   if (error) {

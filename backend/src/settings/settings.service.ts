@@ -8,7 +8,9 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   DEFAULT_FILE_DOWNLOAD_LIMIT: '0',              // 0 = không giới hạn
   DEFAULT_DAILY_BANDWIDTH_LIMIT: '0',            // 0 = không giới hạn
   ENABLE_MULTI_THREAD_DOWNLOAD: 'true',          // Cho phép download managers (IDM) dùng multi-thread
-  MAX_CONCURRENT_CHUNKS: '3',                      // Số chunk tối đa 1 client upload đồng thời
+  MAX_CONCURRENT_CHUNKS: '3',                    // Số chunk tối đa 1 client upload đồng thời
+  DOWNLOAD_URL_TTL_SECONDS: '300',               // 5 phút — thời hạn signed download URL
+  STREAM_COOKIE_TTL_SECONDS: '3600',             // 1 giờ — thời hạn stream cookie
 };
 
 @Injectable()

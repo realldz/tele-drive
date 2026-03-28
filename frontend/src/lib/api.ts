@@ -98,6 +98,66 @@ export async function abortUpload(fileId: string) {
   return api.post(`${API_URL}/files/upload/${fileId}/abort`);
 }
 
+// ── Signed Download URL ─────────────────────────────────────────────────────
+
+export interface SignedDownloadUrl {
+  url: string;
+  expiresAt: string;
+}
+
+export interface StreamCookieResponse {
+  expiresAt: string;
+  ttl: number;
+}
+
+/** Lấy signed download URL cho user (auth required) */
+export async function requestDownloadToken(fileId: string): Promise<SignedDownloadUrl> {
+  const res = await api.post(`${API_URL}/files/${fileId}/download-token`);
+  return res.data;
+}
+
+/** Lấy signed download URL cho shared file (public) */
+export async function requestShareDownloadToken(shareToken: string): Promise<SignedDownloadUrl> {
+  const res = await api.post(`${API_URL}/files/share/${shareToken}/download-token`);
+  return res.data;
+}
+
+/** Lấy signed download URL cho file trong shared folder (public) */
+export async function requestShareFolderDownloadToken(shareToken: string, fileId: string): Promise<SignedDownloadUrl> {
+  const res = await api.post(`${API_URL}/folders/share/${shareToken}/download-token/${fileId}`);
+  return res.data;
+}
+
+// ── Stream Cookie ───────────────────────────────────────────────────────────
+
+/** Yêu cầu stream cookie (auth required) — backend set HttpOnly cookie */
+export async function requestStreamCookie(): Promise<StreamCookieResponse> {
+  const res = await api.post(`${API_URL}/files/stream-cookie`, {}, { withCredentials: true });
+  return res.data;
+}
+
+/** Yêu cầu guest stream cookie (public) */
+export async function requestGuestStreamCookie(): Promise<StreamCookieResponse> {
+  const res = await api.post(`${API_URL}/files/stream-cookie/guest`, {}, { withCredentials: true });
+  return res.data;
+}
+
+/** Xoá stream cookie */
+export async function clearStreamCookie(): Promise<void> {
+  await api.delete(`${API_URL}/files/stream-cookie`, { withCredentials: true });
+}
+
+/** Build stream URL (cookie-based, no token in URL) */
+export function getStreamUrl(fileId: string): string {
+  return `${API_URL}/files/stream/${fileId}`;
+}
+
+/** Build share stream URL */
+export function getShareStreamUrl(shareToken: string): string {
+  return `${API_URL}/files/share/stream/${shareToken}`;
+}
+
+/** @deprecated — dùng requestDownloadToken thay thế */
 export function getDownloadUrl(fileId: string, token: string) {
   return `${API_URL}/files/${fileId}/download?token=${token}`;
 }
@@ -206,4 +266,15 @@ export function getApiErrorMessage(error: unknown, fallback: string): string {
     return error.response?.data?.message || fallback;
   }
   return error instanceof Error ? error.message : fallback;
+}
+
+/**
+ * Format thời điểm reset bandwidth thành chuỗi ngày+giờ.
+ * Trả về '' nếu input không hợp lệ.
+ */
+export function formatBandwidthResetTime(resetAt: string | null | undefined, locale?: string): string {
+  if (!resetAt) return '';
+  const date = new Date(resetAt);
+  if (isNaN(date.getTime())) return '';
+  return date.toLocaleString(locale);
 }

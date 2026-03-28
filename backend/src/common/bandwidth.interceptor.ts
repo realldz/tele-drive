@@ -7,8 +7,10 @@ import {
   HttpStatus,
   Logger,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
 import { PrismaService } from '../prisma/prisma.service';
+import { CryptoService } from '../crypto/crypto.service';
 
 /**
  * BandwidthInterceptor — gắn vào route download/stream.
@@ -29,12 +31,37 @@ import { PrismaService } from '../prisma/prisma.service';
 export class BandwidthInterceptor implements NestInterceptor {
   private readonly logger = new Logger(BandwidthInterceptor.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cryptoService: CryptoService,
+    private readonly reflector: Reflector,
+  ) { }
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
+    const isCheckOnly = this.reflector.get<boolean>('BANDWIDTH_CHECK_ONLY', context.getHandler()) || false;
     const req = context.switchToHttp().getRequest();
-    const fileId = req.params?.id;
-    const isAuthenticated = !!req.user?.userId;
+    const res = context.switchToHttp().getResponse();
+    let fileId = req.params?.id;
+    let userId = req.user?.userId;
+
+    // Try to extract userId from stream_token cookie (for /stream/:id routes)
+    if (!userId && req.cookies?.stream_token) {
+      const streamPayload = this.cryptoService.verifyStreamCookieToken(req.cookies.stream_token);
+      if (streamPayload && streamPayload.sub && !streamPayload.sub.startsWith('guest:')) {
+        userId = streamPayload.sub;
+      }
+    }
+
+    // Signed token route (/files/d/:token) — decode token để lấy fileId và userId
+    if (!fileId && req.params?.token) {
+      const payload = this.cryptoService.verifySignedToken(req.params.token);
+      if (payload) {
+        fileId = payload.fid;
+        if (payload.uid) userId = payload.uid;
+      }
+    }
+
+    const isAuthenticated = !!userId;
 
     // Lấy file size từ DB
     let fileSize = 0n;
@@ -47,18 +74,29 @@ export class BandwidthInterceptor implements NestInterceptor {
         fileSize = file.size;
 
         // Per-file quota check + lazy reset
-        await this.checkPerFileQuota(fileId, file);
+        await this.checkPerFileQuota(res, fileId, file, isCheckOnly);
       }
     }
 
     // User/Guest bandwidth check + optimistic increment
-    if (isAuthenticated) {
-      await this.checkAndIncrementUserBandwidth(req.user.userId, fileSize);
+    if (isAuthenticated && userId) {
+      await this.checkAndIncrementUserBandwidth(res, userId, fileSize, isCheckOnly);
     } else {
-      await this.checkAndIncrementGuestBandwidth(req, fileSize);
+      await this.checkAndIncrementGuestBandwidth(res, req, fileSize, isCheckOnly);
     }
 
     return next.handle();
+  }
+
+  /** Tính thời điểm reset (lastReset + 24h) */
+  private getResetAt(lastReset: Date): string {
+    return new Date(lastReset.getTime() + 24 * 60 * 60 * 1000).toISOString();
+  }
+
+  /** Throw 429 — set resetAt vào header để frontend luôn đọc được (kể cả HEAD request) */
+  private throwBandwidthExceeded(res: { setHeader: (name: string, value: string) => void }, code: string, resetAt: string): never {
+    res.setHeader('X-Bandwidth-Reset', resetAt);
+    throw new HttpException({ code, resetAt }, HttpStatus.TOO_MANY_REQUESTS);
   }
 
   /**
@@ -66,51 +104,52 @@ export class BandwidthInterceptor implements NestInterceptor {
    * Lazy reset nếu > 24h, check downloadLimit24h, increment downloads24h.
    */
   private async checkPerFileQuota(
+    res: { setHeader: (name: string, value: string) => void },
     fileId: string,
     file: { downloadLimit24h: number | null; downloads24h: number; bandwidthLimit24h: bigint | null; bandwidthUsed24h: bigint; lastDownloadReset: Date; size: bigint },
+    isCheckOnly: boolean,
   ): Promise<void> {
     const now = new Date();
     const hoursSinceReset = (now.getTime() - file.lastDownloadReset.getTime()) / (1000 * 60 * 60);
 
     // Lazy reset per-file counters
     if (hoursSinceReset >= 24) {
-      await this.prisma.fileRecord.update({
-        where: { id: fileId },
-        data: { downloads24h: 0, bandwidthUsed24h: 0, lastDownloadReset: now },
-      });
-      // After reset, allow download
+      if (!isCheckOnly) {
+        await this.prisma.fileRecord.update({
+          where: { id: fileId },
+          data: { downloads24h: 0, bandwidthUsed24h: 0, lastDownloadReset: now },
+        });
+      }
       return;
     }
+
+    const resetAt = this.getResetAt(file.lastDownloadReset);
 
     // Check download count limit
     if (file.downloadLimit24h !== null && file.downloads24h >= file.downloadLimit24h) {
       this.logger.warn(`Per-file download limit reached for file ${fileId}: ${file.downloads24h}/${file.downloadLimit24h}`);
-      throw new HttpException(
-        'This file has reached its daily download limit.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+      this.throwBandwidthExceeded(res, 'FILE_DOWNLOAD_LIMIT', resetAt);
     }
 
     // Check per-file bandwidth limit
     if (file.bandwidthLimit24h !== null && file.bandwidthUsed24h + file.size > file.bandwidthLimit24h) {
       this.logger.warn(`Per-file bandwidth limit reached for file ${fileId}`);
-      throw new HttpException(
-        'This file has reached its daily bandwidth limit.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+      this.throwBandwidthExceeded(res, 'FILE_BANDWIDTH_LIMIT', resetAt);
     }
 
     // Optimistic increment per-file counters
-    await this.prisma.fileRecord.update({
-      where: { id: fileId },
-      data: {
-        downloads24h: { increment: 1 },
-        bandwidthUsed24h: { increment: file.size },
-      },
-    });
+    if (!isCheckOnly) {
+      await this.prisma.fileRecord.update({
+        where: { id: fileId },
+        data: {
+          downloads24h: { increment: 1 },
+          bandwidthUsed24h: { increment: file.size },
+        },
+      });
+    }
   }
 
-  private async checkAndIncrementUserBandwidth(userId: string, fileSize: bigint): Promise<void> {
+  private async checkAndIncrementUserBandwidth(res: { setHeader: (name: string, value: string) => void }, userId: string, fileSize: bigint, isCheckOnly: boolean): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -139,31 +178,30 @@ export class BandwidthInterceptor implements NestInterceptor {
     // Pre-check (nếu có limit)
     if (limit !== null && currentUsed + fileSize > limit) {
       this.logger.warn(`Bandwidth limit exceeded for user ${userId}: used=${currentUsed}, limit=${limit}`);
-      throw new HttpException(
-        'Daily bandwidth limit exceeded. Please try again tomorrow.',
-        HttpStatus.TOO_MANY_REQUESTS,
-      );
+      this.throwBandwidthExceeded(res, 'USER_BANDWIDTH_LIMIT', this.getResetAt(user.lastBandwidthReset));
     }
 
     // Optimistic increment
-    if (requiresReset) {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          dailyBandwidthUsed: fileSize,
-          lastBandwidthReset: now,
-        },
-      });
-      this.logger.debug(`Bandwidth reset for user ${userId}`);
-    } else if (fileSize > 0n) {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: { dailyBandwidthUsed: { increment: fileSize } },
-      });
+    if (!isCheckOnly) {
+      if (requiresReset) {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            dailyBandwidthUsed: fileSize,
+            lastBandwidthReset: now,
+          },
+        });
+        this.logger.debug(`Bandwidth reset for user ${userId}`);
+      } else if (fileSize > 0n) {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { dailyBandwidthUsed: { increment: fileSize } },
+        });
+      }
     }
   }
 
-  private async checkAndIncrementGuestBandwidth(req: any, fileSize: bigint): Promise<void> {
+  private async checkAndIncrementGuestBandwidth(res: { setHeader: (name: string, value: string) => void }, req: unknown, fileSize: bigint, isCheckOnly: boolean): Promise<void> {
     const ip = this.getClientIp(req);
 
     // Lấy guest bandwidth limit từ system settings
@@ -185,37 +223,33 @@ export class BandwidthInterceptor implements NestInterceptor {
 
       if (limit !== null && currentUsed + fileSize > limit) {
         this.logger.warn(`Bandwidth limit exceeded for guest ${ip}: used=${currentUsed}, limit=${limit}`);
-        throw new HttpException(
-          'Daily bandwidth limit exceeded. Please try again tomorrow.',
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
+        this.throwBandwidthExceeded(res, 'GUEST_BANDWIDTH_LIMIT', this.getResetAt(tracker.lastBandwidthReset));
       }
 
       // Optimistic increment
-      if (requiresReset) {
-        await this.prisma.guestTracker.update({
-          where: { ipAddress: ip },
-          data: {
-            dailyBandwidthUsed: fileSize,
-            lastBandwidthReset: now,
-          },
-        });
-        this.logger.debug(`Bandwidth reset for guest ${ip}`);
-      } else if (fileSize > 0n) {
-        await this.prisma.guestTracker.update({
-          where: { ipAddress: ip },
-          data: { dailyBandwidthUsed: { increment: fileSize } },
-        });
+      if (!isCheckOnly) {
+        if (requiresReset) {
+          await this.prisma.guestTracker.update({
+            where: { ipAddress: ip },
+            data: {
+              dailyBandwidthUsed: fileSize,
+              lastBandwidthReset: now,
+            },
+          });
+          this.logger.debug(`Bandwidth reset for guest ${ip}`);
+        } else if (fileSize > 0n) {
+          await this.prisma.guestTracker.update({
+            where: { ipAddress: ip },
+            data: { dailyBandwidthUsed: { increment: fileSize } },
+          });
+        }
       }
     } else {
       // Guest chưa có tracker
       if (limit !== null && fileSize > limit) {
-        throw new HttpException(
-          'Daily bandwidth limit exceeded. Please try again tomorrow.',
-          HttpStatus.TOO_MANY_REQUESTS,
-        );
+        this.throwBandwidthExceeded(res, 'GUEST_BANDWIDTH_LIMIT', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString());
       }
-      if (fileSize > 0n) {
+      if (!isCheckOnly && fileSize > 0n) {
         await this.prisma.guestTracker.create({
           data: { ipAddress: ip, dailyBandwidthUsed: fileSize },
         });
