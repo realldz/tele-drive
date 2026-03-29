@@ -227,11 +227,10 @@ export class S3Controller {
 
     // --- DeleteObjects ---
     if ('delete' in query) {
-      const { stream } = wrapRequestStream(req);
-      const bodyBuf = await this.readBody(stream);
-      const bodyStr = bodyBuf.toString('utf8');
-
       try {
+        const { stream } = wrapRequestStream(req);
+        const bodyBuf = await this.readBody(stream);
+        const bodyStr = bodyBuf.toString('utf8');
         const { quiet, keys } = this.s3Service.parseDeleteObjectsXml(bodyStr);
 
         this.logger.log(
