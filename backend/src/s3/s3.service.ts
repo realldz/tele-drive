@@ -260,14 +260,25 @@ export class S3Service {
 
     for (const folder of subFolders) {
       const folderPath = currentPath ? `${currentPath}/${folder.name}` : folder.name;
+      const fullPath = `${folderPath}/`;
 
-      // If delimiter, collapse folder into common prefix
+      if (prefix && !fullPath.startsWith(prefix) && !prefix.startsWith(fullPath)) {
+        continue;
+      }
+
       if (delimiter) {
-        const fullPath = `${folderPath}/`;
-        if (!prefix || fullPath.startsWith(prefix) || prefix.startsWith(folderPath)) {
-          if (prefix && !prefix.startsWith(folderPath) && !fullPath.startsWith(prefix)) {
-            continue;
-          }
+        // Prefix is deeper than this folder, keep traversing down to it.
+        if (prefix && prefix.startsWith(fullPath)) {
+          await this.listRecursive(userId, folder.id, folderPath, prefix, delimiter, objects, commonPrefixes, maxKeys);
+          continue;
+        }
+
+        // Collapse folder path to CommonPrefixes for delimiter-based listing.
+        const rest = fullPath.substring(prefix.length);
+        const delimIdx = rest.indexOf(delimiter);
+        if (delimIdx !== -1) {
+          commonPrefixes.add(prefix + rest.substring(0, delimIdx + 1));
+          continue;
         }
       }
 
