@@ -238,8 +238,27 @@ export class S3Service {
   }
 
   // ---------------------------------------------------------------------------
-  // XML Response Builder
+  // XML Parser/Response Builder
   // ---------------------------------------------------------------------------
+
+  parseDeleteObjectsXml(body: string): { quiet: boolean; keys: string[] } {
+    const quietMatch = body.match(/<Quiet>([\s\S]*?)<\/Quiet>/i);
+    const quiet = quietMatch ? quietMatch[1].trim().toLowerCase() === 'true' : false;
+
+    const keys: string[] = [];
+    const keyRegex = /<Key>([\s\S]*?)<\/Key>/g;
+    let match: RegExpExecArray | null;
+
+    while ((match = keyRegex.exec(body)) !== null) {
+      keys.push(match[1]);
+    }
+
+    if (keys.length === 0 || keys.length > 1000) {
+      throw new BadRequestException('MalformedXML');
+    }
+
+    return { quiet, keys };
+  }
 
   buildListBucketsXml(buckets: Array<{ name: string; createdAt: Date }>, owner: string): string {
     const bucketsXml = buckets
