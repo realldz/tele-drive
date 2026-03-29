@@ -566,9 +566,10 @@ export class S3Controller {
     );
 
     try {
-      if (key.endsWith('/') && contentLength === 0) {
-        await this.s3Service.resolveKeyAsFolder(userId, bucket, key);
-        this.logger.log(`S3 PutObject folder: s3://${bucket}/${key} (userId: ${userId})`);
+      if (contentLength === 0) {
+        const folderKey = key.endsWith('/') ? key : `${key}/`;
+        await this.s3Service.resolveKeyAsFolder(userId, bucket, folderKey);
+        this.logger.log(`S3 PutObject folder: s3://${bucket}/${folderKey} (userId: ${userId})`);
         return res.status(200).end();
       }
 
