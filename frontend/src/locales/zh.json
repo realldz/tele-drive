@@ -6,7 +6,6 @@
   "sidebar.logout": "退出登录",
   "sidebar.used": "已使用",
   "sidebar.language": "语言",
-
   "login.title": "登录您的账户",
   "login.username": "用户名",
   "login.password": "密码",
@@ -15,7 +14,6 @@
   "login.failed": "登录失败",
   "login.noAccount": "还没有账户？",
   "login.register": "注册",
-
   "register.title": "创建新账户",
   "register.username": "用户名",
   "register.password": "密码",
@@ -27,7 +25,6 @@
   "register.passwordTooShort": "密码至少需要4个字符",
   "register.hasAccount": "已有账户？",
   "register.login": "登录",
-
   "dashboard.searchPlaceholder": "搜索文件和文件夹...",
   "dashboard.newFolder": "新建文件夹",
   "dashboard.gridView": "网格视图",
@@ -65,13 +62,11 @@
   "dashboard.new": "新建",
   "dashboard.createdDate": "创建日期",
   "dashboard.loadingContent": "正在加载内容...",
-
   "createFolder.title": "新建文件夹",
   "createFolder.placeholder": "输入文件夹名称...",
   "createFolder.create": "创建",
   "createFolder.creating": "正在创建...",
   "createFolder.cancel": "取消",
-
   "details.title": "文件详情",
   "details.titleFolder": "文件夹详情",
   "details.filename": "文件名",
@@ -83,18 +78,14 @@
   "details.chunks": "分片数",
   "details.visibility": "可见性",
   "details.close": "关闭",
-
   "common.cancel": "取消",
   "common.confirm": "确认",
-
   "breadcrumbs.myDrive": "我的云盘",
-
   "contextMenu.details": "详情",
   "contextMenu.rename": "重命名",
   "contextMenu.move": "移动",
   "contextMenu.share": "分享",
   "contextMenu.delete": "删除",
-
   "upload.dragDrop": "将文件拖放到此处或点击选择",
   "upload.supportInfo": "支持所有格式。上传的文件将被加密并安全存储。",
   "upload.cancel": "取消",
@@ -121,13 +112,11 @@
   "upload.uploadButton": "上传",
   "upload.uploadFile": "上传文件",
   "upload.uploadFolder": "上传文件夹",
-
   "rename.titleFile": "重命名文件",
   "rename.titleFolder": "重命名文件夹",
   "rename.cancel": "取消",
   "rename.confirm": "确认",
   "rename.processing": "正在处理...",
-
   "share.titleFile": "分享文件",
   "share.titleFolder": "分享文件夹",
   "share.status": "状态",
@@ -148,7 +137,6 @@
   "share.revokeError": "撤销分享链接失败",
   "share.createSuccess": "分享链接创建成功",
   "share.revokeSuccess": "分享链接已撤销",
-
   "move.titleFile": "移动文件",
   "move.titleFolder": "移动文件夹",
   "move.loading": "正在加载...",
@@ -156,7 +144,6 @@
   "move.cancel": "取消",
   "move.moving": "正在移动...",
   "move.moveHere": "移动到此处",
-
   "trash.title": "回收站",
   "trash.items": "{count} 个项目",
   "trash.infoBanner": "回收站中的项目将在 7 天后被永久删除。",
@@ -168,7 +155,6 @@
   "trash.permanentDelete": "永久删除",
   "trash.confirmDeleteFile": "永久删除此文件？此操作无法撤销。",
   "trash.confirmDeleteFolder": "永久删除此文件夹及其所有内容？此操作无法撤销。",
-
   "admin.panel": "管理面板",
   "admin.users": "用户",
   "admin.systemSettings": "系统配置",
@@ -234,7 +220,6 @@
   "admin.resetPasswordButton": "重置密码",
   "admin.resetPasswordSuccess": "密码已重置",
   "admin.resetPasswordError": "重置密码失败",
-
   "password.change": "修改密码",
   "password.changeTitle": "修改密码",
   "password.currentPassword": "当前密码",
@@ -246,7 +231,6 @@
   "password.changeError": "密码修改失败",
   "password.mismatch": "两次输入的密码不一致",
   "password.tooShort": "密码至少需要4个字符",
-
   "s3.title": "S3 Access Keys",
   "s3.createKey": "创建 Access Key",
   "s3.infoBanner": "将 Tele-Drive 用作 S3 兼容存储后端",
@@ -283,12 +267,14 @@
   "s3.note": "注意：",
   "s3.noteContent": "Telegram 限制单个文件大小为 2 GB。Tele-Drive 通过自动分片处理大文件。S3 端点位于",
   "s3.notePresigned": "支持 Presigned URLs（最长 7 天）。不支持版本控制。",
+  "s3.step6": "6. 推荐配置以避免速率限制",
+  "s3.step6Desc": "aws-cli 默认使用 10 个线程并行上传 multipart，可能触发 429 错误。请使用下面的配置以匹配服务器当前限制：",
+  "s3.step6Note": "max_concurrent_requests 限制并行上传数以避免 429 Too Many Requests 错误。multipart_chunksize 不应超过服务器最大分片大小（~{maxChunkMB} MB）。对于大文件或慢速连接，请增大 cli_read_timeout。",
   "s3.loadError": "无法加载 S3 凭证",
   "s3.createSuccess": "Access Key 已创建 — 请立即保存 Secret！",
   "s3.createError": "无法创建凭证",
   "s3.revokeSuccess": "Access Key 已撤销",
   "s3.revokeError": "无法撤销 Key",
-
   "preview.errorTitle": "预览加载失败",
   "preview.fileNotFound": "未找到文件",
   "preview.goBack": "返回",
@@ -296,7 +282,6 @@
   "preview.cannotPreview": "此文件类型（{mimeType}）无法在浏览器中预览。",
   "preview.downloadFile": "下载文件",
   "preview.download": "下载",
-
   "sharePage.publicFile": "公开分享的文件",
   "sharePage.cannotAccess": "无法访问",
   "sharePage.loading": "正在加载信息...",
@@ -310,7 +295,6 @@
   "sharePage.bandwidthExceeded": "该文件今日已超出带宽限制。",
   "sharePage.bandwidthExceededAt": "已超出带宽限制。将于 {time} 重置。",
   "sharePage.downloadError": "文件下载失败",
-
   "shareFolder.sharedBy": "分享自",
   "shareFolder.user": "用户",
   "shareFolder.shareHome": "分享首页",

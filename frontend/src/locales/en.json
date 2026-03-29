@@ -6,7 +6,6 @@
   "sidebar.logout": "Log out",
   "sidebar.used": "Used",
   "sidebar.language": "Language",
-
   "login.title": "Sign in to your account",
   "login.username": "Username",
   "login.password": "Password",
@@ -15,7 +14,6 @@
   "login.failed": "Sign in failed",
   "login.noAccount": "Don't have an account?",
   "login.register": "Sign up",
-
   "register.title": "Create a new account",
   "register.username": "Username",
   "register.password": "Password",
@@ -27,7 +25,6 @@
   "register.passwordTooShort": "Password must be at least 4 characters",
   "register.hasAccount": "Already have an account?",
   "register.login": "Sign in",
-
   "dashboard.searchPlaceholder": "Search files and folders...",
   "dashboard.newFolder": "New folder",
   "dashboard.gridView": "Grid view",
@@ -65,13 +62,11 @@
   "dashboard.new": "New",
   "dashboard.createdDate": "Created",
   "dashboard.loadingContent": "Loading content...",
-
   "createFolder.title": "Create new folder",
   "createFolder.placeholder": "Enter folder name...",
   "createFolder.create": "Create",
   "createFolder.creating": "Creating...",
   "createFolder.cancel": "Cancel",
-
   "details.title": "File details",
   "details.titleFolder": "Folder details",
   "details.filename": "File name",
@@ -83,18 +78,14 @@
   "details.chunks": "Chunks",
   "details.visibility": "Visibility",
   "details.close": "Close",
-
   "common.cancel": "Cancel",
   "common.confirm": "Confirm",
-
   "breadcrumbs.myDrive": "My Drive",
-
   "contextMenu.details": "Details",
   "contextMenu.rename": "Rename",
   "contextMenu.move": "Move",
   "contextMenu.share": "Share",
   "contextMenu.delete": "Delete",
-
   "upload.dragDrop": "Drag and drop files here or click to browse",
   "upload.supportInfo": "All formats supported. Uploaded files are encrypted and stored securely.",
   "upload.cancel": "Cancel",
@@ -121,13 +112,11 @@
   "upload.uploadButton": "Upload",
   "upload.uploadFile": "Upload File",
   "upload.uploadFolder": "Upload Folder",
-
   "rename.titleFile": "Rename file",
   "rename.titleFolder": "Rename folder",
   "rename.cancel": "Cancel",
   "rename.confirm": "Confirm",
   "rename.processing": "Processing...",
-
   "share.titleFile": "Share file",
   "share.titleFolder": "Share folder",
   "share.status": "Status",
@@ -148,7 +137,6 @@
   "share.revokeError": "Failed to revoke share link",
   "share.createSuccess": "Share link created successfully",
   "share.revokeSuccess": "Share link revoked successfully",
-
   "move.titleFile": "Move File",
   "move.titleFolder": "Move Folder",
   "move.loading": "Loading...",
@@ -156,7 +144,6 @@
   "move.cancel": "Cancel",
   "move.moving": "Moving...",
   "move.moveHere": "Move here",
-
   "trash.title": "Trash",
   "trash.items": "{count} items",
   "trash.infoBanner": "Items in trash will be permanently deleted after 7 days.",
@@ -168,7 +155,6 @@
   "trash.permanentDelete": "Delete permanently",
   "trash.confirmDeleteFile": "Permanently delete this file? This action cannot be undone.",
   "trash.confirmDeleteFolder": "Permanently delete this folder and all its contents? This action cannot be undone.",
-
   "admin.panel": "ADMIN PANEL",
   "admin.users": "Users",
   "admin.systemSettings": "System Settings",
@@ -234,7 +220,6 @@
   "admin.resetPasswordButton": "Reset Password",
   "admin.resetPasswordSuccess": "Password has been reset",
   "admin.resetPasswordError": "Failed to reset password",
-
   "password.change": "Change password",
   "password.changeTitle": "Change Password",
   "password.currentPassword": "Current password",
@@ -246,7 +231,6 @@
   "password.changeError": "Failed to change password",
   "password.mismatch": "Passwords do not match",
   "password.tooShort": "Password must be at least 4 characters",
-
   "s3.title": "S3 Access Keys",
   "s3.createKey": "Create Access Key",
   "s3.infoBanner": "Use Tele-Drive as an S3-compatible storage backend",
@@ -283,12 +267,14 @@
   "s3.note": "Note:",
   "s3.noteContent": "Telegram limits individual file size to 2 GB. Tele-Drive handles large files with automatic chunking. S3 endpoint at",
   "s3.notePresigned": "Presigned URLs are supported (up to 7 days). Versioning is not supported.",
+  "s3.step6": "6. Recommended config to avoid rate limiting",
+  "s3.step6Desc": "aws-cli sends multipart parts in parallel by default (10 threads), which can trigger 429 errors. Use the config below to match the server's current limits:",
+  "s3.step6Note": "max_concurrent_requests limits parallel uploads to avoid 429 Too Many Requests. multipart_chunksize should not exceed the server's max chunk size (~{maxChunkMB} MB). Increase cli_read_timeout for large files on slow connections.",
   "s3.loadError": "Failed to load S3 credentials",
   "s3.createSuccess": "Access key created — save the secret now!",
   "s3.createError": "Failed to create credential",
   "s3.revokeSuccess": "Access key revoked",
   "s3.revokeError": "Failed to revoke key",
-
   "preview.errorTitle": "Preview Load Error",
   "preview.fileNotFound": "File not found",
   "preview.goBack": "Go Back",
@@ -296,7 +282,6 @@
   "preview.cannotPreview": "This file type ({mimeType}) cannot be previewed in the browser.",
   "preview.downloadFile": "Download File",
   "preview.download": "Download",
-
   "sharePage.publicFile": "Publicly shared file",
   "sharePage.cannotAccess": "Cannot access",
   "sharePage.loading": "Loading info...",
@@ -310,7 +295,6 @@
   "sharePage.bandwidthExceeded": "This file has exceeded today's bandwidth limit.",
   "sharePage.bandwidthExceededAt": "Bandwidth limit exceeded. Resets at {time}.",
   "sharePage.downloadError": "File download failed",
-
   "shareFolder.sharedBy": "Folder shared by",
   "shareFolder.user": "User",
   "shareFolder.shareHome": "Share home",
