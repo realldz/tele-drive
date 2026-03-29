@@ -106,7 +106,8 @@ export default function S3KeysPage() {
 
   const endpointUrl = `${getAbsoluteApiUrl()}/s3`;
   const maxConcurrent = uploadConfig.maxConcurrentChunks;
-  const recommendedChunkMB = Math.floor(uploadConfig.maxChunkSize / (1024 * 1024));
+  const recommendedChunk = uploadConfig.maxChunkSize;
+  const recommendedChunkMB = Math.floor(recommendedChunk / (1024 * 1024));
   // multipart_chunksize nên nhỏ hơn maxChunkSize một chút để an toàn
 
   function awsConfigSnippet(accessKeyId: string, secretKey: string) {
@@ -418,7 +419,7 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
 aws --profile tele-drive \\
     --endpoint-url ${endpointUrl} \\
     s3 cp ./largefile.iso s3://my-bucket/ \\
-    --expected-size 5368709120`}
+    --expected-size ${recommendedChunk}`}
                   </pre>
                 </div>
 
