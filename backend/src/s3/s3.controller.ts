@@ -24,6 +24,7 @@ import type { S3AuthenticatedRequest } from '../common/types/request';
 import type { Response } from 'express';
 import { Readable, Transform } from 'stream';
 import * as crypto from 'crypto';
+import { wrapRequestStream } from './s3-stream.utils';
 
 /**
  * S3Controller — S3-compatible API Gateway.
@@ -237,12 +238,13 @@ export class S3Controller {
     const partNumberStr = query['partNumber'];
     if (uploadId && partNumberStr) {
       const partNumber = parseInt(partNumberStr, 10);
+      const { stream } = wrapRequestStream(req);
       try {
         const { etag } = await this.s3Multipart.uploadPart(
           uploadId,
           partNumber,
           userId,
-          req as unknown as Readable,
+          stream,
         );
         res.setHeader('ETag', etag);
         res.status(200).end();
@@ -254,7 +256,8 @@ export class S3Controller {
     }
 
     // --- PutObject (default) ---
-    return this.doPutObject(userId, bucket, key, req, res);
+    const { stream, contentLength } = wrapRequestStream(req);
+    return this.doPutObject(userId, bucket, key, req, stream, contentLength, res);
   }
 
   // ---------------------------------------------------------------------------
@@ -299,7 +302,8 @@ export class S3Controller {
     const uploadId = query['uploadId'];
     if (uploadId) {
       try {
-        const bodyBuf = await this.readBody(req as unknown as Readable);
+        const { stream: bodyStream } = wrapRequestStream(req);
+        const bodyBuf = await this.readBody(bodyStream);
         const bodyStr = bodyBuf.toString('utf8');
         const partCount = this.s3Multipart.parseCompleteMultipartXml(bodyStr);
 
@@ -481,12 +485,10 @@ export class S3Controller {
     bucket: string,
     key: string,
     req: S3AuthenticatedRequest,
+    stream: Readable,
+    contentLength: number,
     res: Response,
   ) {
-    const contentLength = parseInt(
-      (req.headers['content-length'] as string) || '0',
-      10,
-    );
     const contentType =
       (req.headers['content-type'] as string) || 'application/octet-stream';
     // Content-MD5 header (base64-encoded MD5 of body sent by client)
@@ -507,7 +509,7 @@ export class S3Controller {
 
       if (contentLength > 0 && contentLength <= MAX_CHUNK_SIZE) {
         // ── Small file path: buffer → verify Content-MD5 → encrypt → upload ──
-        const bodyBuffer = await this.readBody(req as unknown as Readable);
+        const bodyBuffer = await this.readBody(stream);
         const computedMd5Hex = crypto.createHash('md5').update(bodyBuffer).digest('hex');
 
         // Content-MD5 verification (Task 8)
@@ -598,7 +600,7 @@ export class S3Controller {
         });
 
         const cipherStream = this.cryptoService.createEncryptStream(dek, iv);
-        const uploadStream = (req as unknown as Readable)
+        const uploadStream = stream
           .pipe(counterTransform)
           .pipe(cipherStream);
 
