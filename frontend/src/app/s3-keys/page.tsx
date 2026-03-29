@@ -122,10 +122,10 @@ export default function S3KeysPage() {
 region = us-east-1
 s3 =
   max_concurrent_requests = ${maxConcurrent}
-  multipart_threshold = 64MB
+  multipart_threshold = ${recommendedChunkMB}MB
   multipart_chunksize = ${recommendedChunkMB}MB
 cli_read_timeout = 300
-cli_connect_timeout = 60
+cli_connect_timeout = 300
 
 # Then use with:
 aws --profile tele-drive --endpoint-url ${endpointUrl} s3 ls
