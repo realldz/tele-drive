@@ -55,6 +55,73 @@ describe('S3Service', () => {
     });
   });
 
+  describe('resolveKeyAsFolder', () => {
+    it('creates full folder chain for key like docs/reports/ and returns leaf folder id', async () => {
+      const prisma = {
+        folder: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce(null),
+          create: jest
+            .fn()
+            .mockResolvedValueOnce({ id: 'bucket-id' })
+            .mockResolvedValueOnce({ id: 'folder-docs' })
+            .mockResolvedValueOnce({ id: 'folder-reports' }),
+        },
+        fileRecord: {},
+      } as any;
+      service = new S3Service(prisma);
+
+      await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/reports/')).resolves.toBe('folder-reports');
+
+      expect(prisma.folder.findFirst).toHaveBeenCalledWith({
+        where: { userId: 'user-1', name: 'bucket-a', parentId: null, deletedAt: null },
+      });
+      expect(prisma.folder.create).toHaveBeenNthCalledWith(1, {
+        data: { name: 'bucket-a', parentId: null, userId: 'user-1' },
+      });
+      expect(prisma.folder.findFirst).toHaveBeenCalledWith({
+        where: { name: 'docs', parentId: 'bucket-id', userId: 'user-1', deletedAt: null },
+      });
+      expect(prisma.folder.create).toHaveBeenNthCalledWith(2, {
+        data: { name: 'docs', parentId: 'bucket-id', userId: 'user-1' },
+      });
+      expect(prisma.folder.findFirst).toHaveBeenCalledWith({
+        where: { name: 'reports', parentId: 'folder-docs', userId: 'user-1', deletedAt: null },
+      });
+      expect(prisma.folder.create).toHaveBeenNthCalledWith(3, {
+        data: { name: 'reports', parentId: 'folder-docs', userId: 'user-1' },
+      });
+      expect(prisma.folder.findFirst).toHaveBeenCalledTimes(4);
+    });
+
+    it('returns existing folder id when folder already exists', async () => {
+      const prisma = {
+        folder: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({ id: 'bucket-id' })
+            .mockResolvedValueOnce({ id: 'folder-docs' })
+            .mockResolvedValueOnce({ id: 'folder-reports' }),
+          create: jest.fn(),
+        },
+        fileRecord: {},
+      } as any;
+      service = new S3Service(prisma);
+
+      await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/reports/')).resolves.toBe('folder-reports');
+
+      expect(prisma.folder.create).not.toHaveBeenCalled();
+    });
+
+    it('throws on empty key / with InvalidArgument', async () => {
+      await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', '/')).rejects.toThrow(BadRequestException);
+      await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', '/')).rejects.toThrow('InvalidArgument');
+    });
+  });
+
   describe('buildDeleteResultXml', () => {
     it('should include both Deleted and Error entries in verbose mode', () => {
       const xml = service.buildDeleteResultXml(
