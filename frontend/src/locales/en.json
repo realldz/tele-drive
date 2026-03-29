@@ -153,6 +153,8 @@
   "trash.daysRemaining": "{days} days remaining",
   "trash.restore": "Restore",
   "trash.permanentDelete": "Delete permanently",
+  "trash.emptyTrash": "Empty Trash",
+  "trash.emptyTrashConfirm": "Are you sure you want to empty the trash? All data will be permanently deleted and CANNOT be recovered!",
   "trash.confirmDeleteFile": "Permanently delete this file? This action cannot be undone.",
   "trash.confirmDeleteFolder": "Permanently delete this folder and all its contents? This action cannot be undone.",
   "admin.panel": "ADMIN PANEL",
@@ -305,5 +307,11 @@
   "shareFolder.download": "Download",
   "shareFolder.bandwidthExceeded": "This file has exceeded today's bandwidth limit.",
   "shareFolder.bandwidthExceededAt": "Bandwidth limit exceeded. Resets at {time}.",
-  "shareFolder.downloadError": "File download failed"
+  "shareFolder.downloadError": "File download failed",
+  "selection.count": "{count} selected",
+  "selection.deleteSelected": "Delete",
+  "selection.moveSelected": "Move",
+  "selection.restoreSelected": "Restore",
+  "selection.permanentDeleteSelected": "Delete permanently",
+  "selection.deselectAll": "Deselect all"
 }

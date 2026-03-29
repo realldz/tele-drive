@@ -184,6 +184,10 @@ export async function fetchTrash(): Promise<{ files: TrashedFile[]; folders: Tra
   return { files: filesRes.data, folders: foldersRes.data };
 }
 
+export async function emptyTrash() {
+  return api.delete(`${API_URL}/files/trash/empty`);
+}
+
 // ── Admin ────────────────────────────────────────────────────────────────────
 
 export async function fetchUsers() {

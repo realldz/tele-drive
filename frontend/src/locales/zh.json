@@ -153,6 +153,8 @@
   "trash.daysRemaining": "剩余 {days} 天",
   "trash.restore": "恢复",
   "trash.permanentDelete": "永久删除",
+  "trash.emptyTrash": "清空垃圾桶",
+  "trash.emptyTrashConfirm": "您确定要清空垃圾桶吗？所有数据将被永久删除，且无法恢复！",
   "trash.confirmDeleteFile": "永久删除此文件？此操作无法撤销。",
   "trash.confirmDeleteFolder": "永久删除此文件夹及其所有内容？此操作无法撤销。",
   "admin.panel": "管理面板",
@@ -305,5 +307,11 @@
   "shareFolder.download": "下载",
   "shareFolder.bandwidthExceeded": "该文件今日已超出带宽限制。",
   "shareFolder.bandwidthExceededAt": "已超出带宽限制。将于 {time} 重置。",
-  "shareFolder.downloadError": "文件下载失败"
+  "shareFolder.downloadError": "文件下载失败",
+  "selection.count": "已选择 {count} 项",
+  "selection.deleteSelected": "删除",
+  "selection.moveSelected": "移动",
+  "selection.restoreSelected": "恢复",
+  "selection.permanentDeleteSelected": "永久删除",
+  "selection.deselectAll": "取消全选"
 }
