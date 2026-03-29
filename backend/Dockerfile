@@ -30,9 +30,6 @@ RUN npx prisma generate
 # Copy built output
 COPY --from=builder /app/dist ./dist
 
-# Create data directory for SQLite volume mount
-RUN mkdir -p /data
-
 EXPOSE 3001
 
 # Push schema to DB on startup, then run

@@ -63,6 +63,7 @@ cd tele-drive
 cd backend
 cp .env.example .env
 # Edit .env with your Telegram bot token, chat ID, and secrets
+# Start PostgreSQL first, then point DATABASE_URL to it
 npm install
 npx prisma db push
 npm run start:dev
@@ -134,7 +135,7 @@ Configure routing in [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) d
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DATABASE_URL` | Yes | `file:./dev.db` | SQLite connection string |
+| `DATABASE_URL` | Yes | `postgresql://tele_drive:tele_drive@localhost:5432/tele_drive` | PostgreSQL connection string |
 | `TELEGRAM_BOT_TOKEN` | Yes | — | Bot token from @BotFather |
 | `TELEGRAM_CHAT_ID` | Yes | — | Private channel/group ID |
 | `JWT_SECRET` | Yes | — | JWT signing secret |
@@ -185,7 +186,7 @@ Supported operations: `PutObject`, `GetObject`, `DeleteObject`, `HeadObject`, `L
 
 ## Tech Stack
 
-- **Backend**: [NestJS](https://nestjs.com/) + [Prisma](https://prisma.io/) + SQLite + [Telegraf](https://telegraf.js.org/)
+- **Backend**: [NestJS](https://nestjs.com/) + [Prisma](https://prisma.io/) + PostgreSQL + [Telegraf](https://telegraf.js.org/)
 - **Frontend**: [Next.js 16](https://nextjs.org/) + [Tailwind CSS](https://tailwindcss.com/) + [Plyr](https://plyr.io/) + [react-pdf](https://github.com/wojtekmaj/react-pdf)
 - **Infrastructure**: Docker + nginx + [Telegram Local Bot API](https://github.com/aiogram/telegram-bot-api) + optional [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/)
 

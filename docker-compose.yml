@@ -1,4 +1,21 @@
 services:
+  # ─── PostgreSQL ─────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tele_drive
+      POSTGRES_USER: tele_drive
+      POSTGRES_PASSWORD: tele_drive
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tele_drive -d tele_drive"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   # ─── Telegram Local Bot API Server ──────────────────────────────────
   telegram-bot-api:
     image: aiogram/telegram-bot-api:latest
@@ -32,15 +49,15 @@ services:
   # ─── Backend (NestJS) ──────────────────────────────────────────────
   backend:
     build: ./backend
-    volumes:
-      - tele-drive-db:/data
     env_file:
       - ./backend/.env
     environment:
       NODE_ENV: production
-      DATABASE_URL: file:/data/tele-drive.db
+      DATABASE_URL: postgresql://tele_drive:tele_drive@postgres:5432/tele_drive
       TELEGRAM_API_ROOT: http://nginx:8088
     depends_on:
+      postgres:
+        condition: service_healthy
       telegram-bot-api:
         condition: service_healthy
     healthcheck:
@@ -75,4 +92,4 @@ services:
 
 volumes:
   telegram-data:
-  tele-drive-db:
+  postgres-data:
