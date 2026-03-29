@@ -95,7 +95,12 @@ export class S3Service {
     return this.resolveKeyUnderFolder(userId, bucket.id, key, create);
   }
 
+  /**
+   * Resolve a folder key ending with '/' and return the leaf folder ID.
+   */
   async resolveKeyAsFolder(userId: string, bucketName: string, key: string): Promise<string> {
+    if (!key.endsWith('/')) throw new BadRequestException('InvalidArgument');
+
     const parts = key.split('/').filter(Boolean);
     if (parts.length === 0) throw new BadRequestException('InvalidArgument');
 
