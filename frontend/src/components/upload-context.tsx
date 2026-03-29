@@ -2,10 +2,11 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import axios from 'axios';
-import { API_URL, fetchUploadConfig, abortUpload, createFolder } from '@/lib/api';
+import { API_URL, abortUpload, createFolder } from '@/lib/api';
 import { useAuth } from '@/components/auth-context';
-
-const CONCURRENCY = 3; // default, overridden by server config
+import { useAppSelector } from '@/lib/store';
+import { loadUploadConfig } from '@/lib/upload-config-slice';
+import { useAppDispatch } from '@/lib/store';
 
 export interface QueueItem {
   id: string;
@@ -45,9 +46,9 @@ function uid(): string {
 
 export function UploadProvider({ children }: { children: ReactNode }) {
   const { refreshQuota } = useAuth();
+  const dispatch = useAppDispatch();
   const [queue, setQueue] = useState<QueueItem[]>([]);
-  const [maxChunkSize, setMaxChunkSize] = useState(19 * 1024 * 1024);
-  const [concurrency, setConcurrency] = useState(CONCURRENCY);
+  const { maxChunkSize, maxConcurrentChunks: concurrency, loaded } = useAppSelector(state => state.uploadConfig);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>();
 
   const abortControllersRef = useRef<Map<string, AbortController[]>>(new Map());
@@ -56,15 +57,11 @@ export function UploadProvider({ children }: { children: ReactNode }) {
   const queueRef = useRef(queue);
   queueRef.current = queue;
 
-  // Fetch upload config once
   useEffect(() => {
-    fetchUploadConfig()
-      .then(data => {
-        setMaxChunkSize(data.maxChunkSize);
-        if (data.maxConcurrentChunks) setConcurrency(data.maxConcurrentChunks);
-      })
-      .catch(() => { });
-  }, []);
+    if (!loaded) {
+      dispatch(loadUploadConfig());
+    }
+  }, [dispatch, loaded]);
 
   // beforeunload handler
   const isUploading = queue.some(item => item.status === 'uploading' || item.status === 'pending');

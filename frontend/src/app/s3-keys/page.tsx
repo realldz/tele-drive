@@ -18,7 +18,8 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { API_URL, getAbsoluteApiUrl, fetchS3Credentials, createS3Credential, deleteS3Credential, getApiErrorMessage, fetchUploadConfig } from '@/lib/api';
+import { getAbsoluteApiUrl, fetchS3Credentials, createS3Credential, deleteS3Credential, getApiErrorMessage } from '@/lib/api';
+import { useAppSelector } from '@/lib/store';
 
 interface S3Credential {
   id: string;
@@ -33,14 +34,10 @@ interface NewCredential extends S3Credential {
   note: string;
 }
 
-interface UploadConfig {
-  maxChunkSize: number;
-  maxConcurrentChunks: number;
-}
-
 export default function S3KeysPage() {
   const { isReady, token } = useRequireAuth();
   const { t } = useI18n();
+  const uploadConfig = useAppSelector(state => state.uploadConfig);
 
   const [credentials, setCredentials] = useState<S3Credential[]>([]);
   const [loading, setLoading] = useState(true);
@@ -54,12 +51,9 @@ export default function S3KeysPage() {
   const [copied, setCopied] = useState<'key' | 'secret' | 'config' | null>(null);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [uploadConfig, setUploadConfig] = useState<UploadConfig | null>(null);
 
   useEffect(() => {
-    if (!isReady) return;
-    loadCredentials();
-    loadUploadConfig();
+    if (isReady) loadCredentials();
   }, [isReady]);
 
   async function loadCredentials() {
@@ -71,15 +65,6 @@ export default function S3KeysPage() {
       toast.error(t('s3.loadError'));
     } finally {
       setLoading(false);
-    }
-  }
-
-  async function loadUploadConfig() {
-    try {
-      const data: UploadConfig = await fetchUploadConfig();
-      setUploadConfig(data);
-    } catch {
-      setUploadConfig(null);
     }
   }
 
@@ -120,10 +105,9 @@ export default function S3KeysPage() {
   }
 
   const endpointUrl = `${getAbsoluteApiUrl()}/s3`;
-  const maxConcurrent = uploadConfig?.maxConcurrentChunks ?? 3;
-  const maxChunkMB = uploadConfig ? Math.floor(uploadConfig.maxChunkSize / (1024 * 1024)) : 19;
+  const maxConcurrent = uploadConfig.maxConcurrentChunks;
+  const recommendedChunkMB = Math.floor(uploadConfig.maxChunkSize / (1024 * 1024));
   // multipart_chunksize nên nhỏ hơn maxChunkSize một chút để an toàn
-  const recommendedChunkMB = Math.min(maxChunkMB - 3, 16);
 
   function awsConfigSnippet(accessKeyId: string, secretKey: string) {
     return `aws configure --profile tele-drive
