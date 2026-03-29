@@ -184,6 +184,48 @@ aws --profile tele-drive --endpoint-url http://localhost:3001/s3 \
 
 Supported operations: `PutObject`, `GetObject`, `DeleteObject`, `HeadObject`, `ListObjectsV2`, `CopyObject`, multipart upload, presigned URLs.
 
+### Recommended aws-cli config (avoid rate limiting)
+
+Tele-Drive limits concurrent chunk uploads per user (default: **3**). `aws-cli` sends up to 10 multipart parts in parallel by default, which will trigger **HTTP 429** errors. Add the following to `~/.aws/config`:
+
+```ini
+[profile tele-drive]
+region = us-east-1
+s3 =
+  max_concurrent_requests = 3
+  multipart_threshold = 64MB
+  multipart_chunksize = 16MB
+cli_read_timeout = 300
+cli_connect_timeout = 60
+```
+
+| Parameter | Value | Why |
+|-----------|-------|-----|
+| `max_concurrent_requests` | `3` | Match the server's `MAX_CONCURRENT_CHUNKS` setting |
+| `multipart_chunksize` | `16MB` | Stay below the server's max chunk size (~19 MB) |
+| `multipart_threshold` | `64MB` | Only use multipart for files larger than 64 MB |
+| `cli_read_timeout` | `300` | Allow enough time for large chunk uploads on slow connections |
+
+## Upload Rate Limiting
+
+Tele-Drive enforces a **per-user limit on concurrent chunk uploads** to prevent overloading the Telegram Bot API.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `MAX_CONCURRENT_CHUNKS` | `3` | Maximum chunks a single user can upload simultaneously |
+
+### How it works
+
+1. **Server-side enforcement** — When a user exceeds the concurrent chunk limit, the backend returns **HTTP 429 Too Many Requests** with a `retryAfter` value (seconds).
+2. **Client auto-retry** — The frontend automatically retries the rejected chunk after waiting `retryAfter` seconds, up to 5 attempts per chunk.
+3. **Server-driven config** — On page load, the frontend fetches `GET /api/files/config` to get `maxConcurrentChunks` and `maxChunkSize`, ensuring the client always respects the current server setting.
+
+### Configuring
+
+Admins can change `MAX_CONCURRENT_CHUNKS` in the **Admin Dashboard → System Settings** panel. The change takes effect within 30 seconds (server-side cache TTL).
+
+> **Note:** This limit is per user, not global. Each user can upload up to `MAX_CONCURRENT_CHUNKS` chunks at the same time. Files smaller than `maxChunkSize` (~19 MB) are uploaded in a single request and are not affected by this limit.
+
 ## Tech Stack
 
 - **Backend**: [NestJS](https://nestjs.com/) + [Prisma](https://prisma.io/) + PostgreSQL + [Telegraf](https://telegraf.js.org/)

@@ -6,7 +6,6 @@
   "sidebar.logout": "ログアウト",
   "sidebar.used": "使用済み",
   "sidebar.language": "言語",
-
   "login.title": "アカウントにログイン",
   "login.username": "ユーザー名",
   "login.password": "パスワード",
@@ -15,7 +14,6 @@
   "login.failed": "ログインに失敗しました",
   "login.noAccount": "アカウントをお持ちでないですか？",
   "login.register": "新規登録",
-
   "register.title": "新しいアカウントを作成",
   "register.username": "ユーザー名",
   "register.password": "パスワード",
@@ -27,7 +25,6 @@
   "register.passwordTooShort": "パスワードは4文字以上で入力してください",
   "register.hasAccount": "すでにアカウントをお持ちですか？",
   "register.login": "ログイン",
-
   "dashboard.searchPlaceholder": "ファイルやフォルダを検索...",
   "dashboard.newFolder": "新しいフォルダ",
   "dashboard.gridView": "グリッド表示",
@@ -65,13 +62,11 @@
   "dashboard.new": "新規",
   "dashboard.createdDate": "作成日",
   "dashboard.loadingContent": "コンテンツを読み込み中...",
-
   "createFolder.title": "新しいフォルダを作成",
   "createFolder.placeholder": "フォルダ名を入力...",
   "createFolder.create": "作成",
   "createFolder.creating": "作成中...",
   "createFolder.cancel": "キャンセル",
-
   "details.title": "ファイルの詳細",
   "details.titleFolder": "フォルダの詳細",
   "details.filename": "ファイル名",
@@ -83,18 +78,14 @@
   "details.chunks": "チャンク数",
   "details.visibility": "公開設定",
   "details.close": "閉じる",
-
   "common.cancel": "キャンセル",
   "common.confirm": "確認",
-
   "breadcrumbs.myDrive": "マイドライブ",
-
   "contextMenu.details": "詳細",
   "contextMenu.rename": "名前を変更",
   "contextMenu.move": "移動",
   "contextMenu.share": "共有",
   "contextMenu.delete": "削除",
-
   "upload.dragDrop": "ここにファイルをドラッグ＆ドロップするか、クリックして選択",
   "upload.supportInfo": "すべてのファイル形式に対応。アップロードされたファイルは暗号化され、安全に保存されます。",
   "upload.cancel": "キャンセル",
@@ -121,13 +112,11 @@
   "upload.uploadButton": "アップロード",
   "upload.uploadFile": "ファイルをアップロード",
   "upload.uploadFolder": "フォルダをアップロード",
-
   "rename.titleFile": "ファイル名を変更",
   "rename.titleFolder": "フォルダ名を変更",
   "rename.cancel": "キャンセル",
   "rename.confirm": "確認",
   "rename.processing": "処理中...",
-
   "share.titleFile": "ファイルを共有",
   "share.titleFolder": "フォルダを共有",
   "share.status": "ステータス",
@@ -148,7 +137,6 @@
   "share.revokeError": "共有リンクの取り消しエラー",
   "share.createSuccess": "共有リンクを作成しました",
   "share.revokeSuccess": "共有リンクを取り消しました",
-
   "move.titleFile": "ファイルを移動",
   "move.titleFolder": "フォルダを移動",
   "move.loading": "読み込み中...",
@@ -156,7 +144,6 @@
   "move.cancel": "キャンセル",
   "move.moving": "移動中...",
   "move.moveHere": "ここに移動",
-
   "trash.title": "ゴミ箱",
   "trash.items": "{count} 件",
   "trash.infoBanner": "ゴミ箱内の項目は7日後に完全に削除されます。",
@@ -168,7 +155,6 @@
   "trash.permanentDelete": "完全に削除",
   "trash.confirmDeleteFile": "このファイルを完全に削除しますか？この操作は元に戻せません。",
   "trash.confirmDeleteFolder": "このフォルダとすべての内容を完全に削除しますか？この操作は元に戻せません。",
-
   "admin.panel": "管理パネル",
   "admin.users": "ユーザー",
   "admin.systemSettings": "システム設定",
@@ -234,7 +220,6 @@
   "admin.resetPasswordButton": "パスワードをリセット",
   "admin.resetPasswordSuccess": "パスワードをリセットしました",
   "admin.resetPasswordError": "パスワードのリセットに失敗しました",
-
   "password.change": "パスワード変更",
   "password.changeTitle": "パスワードを変更",
   "password.currentPassword": "現在のパスワード",
@@ -246,7 +231,6 @@
   "password.changeError": "パスワードの変更に失敗しました",
   "password.mismatch": "パスワードが一致しません",
   "password.tooShort": "パスワードは4文字以上で入力してください",
-
   "s3.title": "S3 アクセスキー",
   "s3.createKey": "アクセスキーを作成",
   "s3.infoBanner": "Tele-DriveをS3互換ストレージバックエンドとして使用",
@@ -283,12 +267,14 @@
   "s3.note": "注意：",
   "s3.noteContent": "Telegramの単一ファイルサイズ上限は2GBです。Tele-Driveは大容量ファイルを自動分割で処理します。S3エンドポイント：",
   "s3.notePresigned": "署名付きURLに対応しています（最大7日間）。バージョニングには対応していません。",
+  "s3.step6": "6. レート制限を避けるための推奨設定",
+  "s3.step6Desc": "aws-cliはデフォルトで10スレッド並列でマルチパートを送信するため、429エラーが発生することがあります。以下の設定で現在のサーバー制限に合わせてください：",
+  "s3.step6Note": "max_concurrent_requestsは429 Too Many Requestsエラーを避けるために並列アップロード数を制限します。multipart_chunksizeはサーバーの最大チャンクサイズ（~{maxChunkMB} MB）を超えないでください。大容量ファイルや低速接続の場合はcli_read_timeoutを増やしてください。",
   "s3.loadError": "S3認証情報を読み込めませんでした",
   "s3.createSuccess": "アクセスキーが作成されました — シークレットを今すぐ保存してください！",
   "s3.createError": "認証情報を作成できませんでした",
   "s3.revokeSuccess": "アクセスキーを取り消しました",
   "s3.revokeError": "キーを取り消せませんでした",
-
   "preview.errorTitle": "プレビュー読み込みエラー",
   "preview.fileNotFound": "ファイルが見つかりません",
   "preview.goBack": "戻る",
@@ -296,7 +282,6 @@
   "preview.cannotPreview": "このファイル形式（{mimeType}）はブラウザでプレビューできません。",
   "preview.downloadFile": "ファイルをダウンロード",
   "preview.download": "ダウンロード",
-
   "sharePage.publicFile": "公開共有ファイル",
   "sharePage.cannotAccess": "アクセスできません",
   "sharePage.loading": "情報を読み込み中...",
@@ -310,7 +295,6 @@
   "sharePage.bandwidthExceeded": "このファイルは本日の帯域幅制限を超えました。",
   "sharePage.bandwidthExceededAt": "帯域幅制限を超えました。{time} にリセットされます。",
   "sharePage.downloadError": "ファイルのダウンロードエラー",
-
   "shareFolder.sharedBy": "共有フォルダ：",
   "shareFolder.user": "ユーザー",
   "shareFolder.shareHome": "共有ホーム",

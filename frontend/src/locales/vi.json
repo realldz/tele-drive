@@ -62,13 +62,11 @@
   "dashboard.new": "Mới",
   "dashboard.createdDate": "Ngày tạo",
   "dashboard.loadingContent": "Đang tải nội dung...",
-
   "createFolder.title": "Tạo thư mục mới",
   "createFolder.placeholder": "Nhập tên thư mục...",
   "createFolder.create": "Tạo",
   "createFolder.creating": "Đang tạo...",
   "createFolder.cancel": "Huỷ",
-
   "details.title": "Chi tiết tập tin",
   "details.titleFolder": "Chi tiết thư mục",
   "details.filename": "Tên tập tin",
@@ -269,6 +267,9 @@
   "s3.note": "Lưu ý:",
   "s3.noteContent": "Telegram giới hạn kích thước file đơn lẻ là 2 GB. Tele-Drive xử lý file lớn bằng tự động phân mảnh. S3 endpoint tại",
   "s3.notePresigned": "Presigned URLs được hỗ trợ (tối đa 7 ngày). Versioning không được hỗ trợ.",
+  "s3.step6": "6. Cấu hình khuyến nghị để tránh rate limit",
+  "s3.step6Desc": "aws-cli mặc định gửi multipart song song 10 luồng, dễ gây lỗi 429. Dùng cấu hình bên dưới để khớp giới hạn hiện tại của server:",
+  "s3.step6Note": "max_concurrent_requests giới hạn số upload song song để tránh lỗi 429 Too Many Requests. multipart_chunksize không nên vượt quá chunk size tối đa của server (~{maxChunkMB} MB). Tăng cli_read_timeout cho file lớn trên kết nối chậm.",
   "s3.loadError": "Không thể tải S3 credentials",
   "s3.createSuccess": "Access key đã tạo — lưu secret ngay!",
   "s3.createError": "Không thể tạo credential",

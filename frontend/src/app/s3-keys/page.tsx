@@ -18,7 +18,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { API_URL, getAbsoluteApiUrl, fetchS3Credentials, createS3Credential, deleteS3Credential, getApiErrorMessage } from '@/lib/api';
+import { API_URL, getAbsoluteApiUrl, fetchS3Credentials, createS3Credential, deleteS3Credential, getApiErrorMessage, fetchUploadConfig } from '@/lib/api';
 
 interface S3Credential {
   id: string;
@@ -31,6 +31,11 @@ interface S3Credential {
 interface NewCredential extends S3Credential {
   secretAccessKey: string;
   note: string;
+}
+
+interface UploadConfig {
+  maxChunkSize: number;
+  maxConcurrentChunks: number;
 }
 
 export default function S3KeysPage() {
@@ -49,9 +54,12 @@ export default function S3KeysPage() {
   const [copied, setCopied] = useState<'key' | 'secret' | 'config' | null>(null);
 
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [uploadConfig, setUploadConfig] = useState<UploadConfig | null>(null);
 
   useEffect(() => {
-    if (isReady) loadCredentials();
+    if (!isReady) return;
+    loadCredentials();
+    loadUploadConfig();
   }, [isReady]);
 
   async function loadCredentials() {
@@ -63,6 +71,15 @@ export default function S3KeysPage() {
       toast.error(t('s3.loadError'));
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadUploadConfig() {
+    try {
+      const data: UploadConfig = await fetchUploadConfig();
+      setUploadConfig(data);
+    } catch {
+      setUploadConfig(null);
     }
   }
 
@@ -103,6 +120,10 @@ export default function S3KeysPage() {
   }
 
   const endpointUrl = `${getAbsoluteApiUrl()}/s3`;
+  const maxConcurrent = uploadConfig?.maxConcurrentChunks ?? 3;
+  const maxChunkMB = uploadConfig ? Math.floor(uploadConfig.maxChunkSize / (1024 * 1024)) : 19;
+  // multipart_chunksize nên nhỏ hơn maxChunkSize một chút để an toàn
+  const recommendedChunkMB = Math.min(maxChunkMB - 3, 16);
 
   function awsConfigSnippet(accessKeyId: string, secretKey: string) {
     return `aws configure --profile tele-drive
@@ -110,6 +131,16 @@ export default function S3KeysPage() {
 # Secret Access Key: ${secretKey}
 # Default region name: us-east-1
 # Default output format: json
+
+# ~/.aws/config
+[profile tele-drive]
+region = us-east-1
+s3 =
+  max_concurrent_requests = ${maxConcurrent}
+  multipart_threshold = 64MB
+  multipart_chunksize = ${recommendedChunkMB}MB
+cli_read_timeout = 300
+cli_connect_timeout = 60
 
 # Then use with:
 aws --profile tele-drive --endpoint-url ${endpointUrl} s3 ls
@@ -405,6 +436,22 @@ aws --profile tele-drive \\
     s3 cp ./largefile.iso s3://my-bucket/ \\
     --expected-size 5368709120`}
                   </pre>
+                </div>
+
+                <div>
+                  <p className="font-medium text-gray-800 mb-1">{t('s3.step6')}</p>
+                  <p className="text-xs text-gray-600 mb-2">{t('s3.step6Desc')}</p>
+                  <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap">
+                    {`[profile tele-drive]
+region = us-east-1
+s3 =
+  max_concurrent_requests = ${maxConcurrent}
+  multipart_threshold = ${recommendedChunkMB}MB
+  multipart_chunksize = ${recommendedChunkMB}MB
+cli_read_timeout = 300
+cli_connect_timeout = 300`}
+                  </pre>
+                  <p className="text-xs text-gray-500 mt-2">{t('s3.step6Note', { maxChunkMB: recommendedChunkMB })}</p>
                 </div>
 
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-800">
