@@ -260,6 +260,25 @@ export class S3Service {
     return { quiet, keys };
   }
 
+  buildDeleteResultXml(
+    deleted: Array<{ key: string }>,
+    errors: Array<{ key: string; code: string; message: string }>,
+    quiet: boolean,
+  ): string {
+    const deletedXml = quiet
+      ? ''
+      : deleted.map((item) => `<Deleted><Key>${this.escapeXml(item.key)}</Key></Deleted>`).join('');
+
+    const errorsXml = errors
+      .map(
+        (item) =>
+          `<Error><Key>${this.escapeXml(item.key)}</Key><Code>${this.escapeXml(item.code)}</Code><Message>${this.escapeXml(item.message)}</Message></Error>`,
+      )
+      .join('');
+
+    return `<?xml version="1.0" encoding="UTF-8"?>\n<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${deletedXml}${errorsXml}</DeleteResult>`;
+  }
+
   buildListBucketsXml(buckets: Array<{ name: string; createdAt: Date }>, owner: string): string {
     const bucketsXml = buckets
       .map(

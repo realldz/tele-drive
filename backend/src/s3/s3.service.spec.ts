@@ -54,4 +54,54 @@ describe('S3Service', () => {
       expect(() => service.parseDeleteObjectsXml(xml)).toThrow('MalformedXML');
     });
   });
+
+  describe('buildDeleteResultXml', () => {
+    it('should include both Deleted and Error entries in verbose mode', () => {
+      const xml = service.buildDeleteResultXml(
+        [{ key: 'ok.txt' }],
+        [{ key: 'missing.txt', code: 'NoSuchKey', message: 'The specified key does not exist.' }],
+        false,
+      );
+
+      expect(xml).toContain('<Deleted>');
+      expect(xml).toContain('<Key>ok.txt</Key>');
+      expect(xml).toContain('<Error>');
+      expect(xml).toContain('<Key>missing.txt</Key>');
+      expect(xml).toContain('<Code>NoSuchKey</Code>');
+      expect(xml).toContain('<Message>The specified key does not exist.</Message>');
+    });
+
+    it('should include only Error entries in quiet mode', () => {
+      const xml = service.buildDeleteResultXml(
+        [{ key: 'ok.txt' }],
+        [{ key: 'missing.txt', code: 'NoSuchKey', message: 'The specified key does not exist.' }],
+        true,
+      );
+
+      expect(xml).not.toContain('<Deleted>');
+      expect(xml).toContain('<Error>');
+      expect(xml).toContain('<Key>missing.txt</Key>');
+    });
+
+    it('should return empty DeleteResult body for all-success quiet mode', () => {
+      const xml = service.buildDeleteResultXml([{ key: 'ok.txt' }], [], true);
+
+      expect(xml).toContain('<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>');
+      expect(xml).not.toContain('<Deleted>');
+      expect(xml).not.toContain('<Error>');
+    });
+
+    it('should escape XML entities in output', () => {
+      const xml = service.buildDeleteResultXml(
+        [{ key: `a&b<"'` }],
+        [{ key: `x&y`, code: `Bad<&>"'`, message: `Oops<&>"'` }],
+        false,
+      );
+
+      expect(xml).toContain('<Key>a&amp;b&lt;&quot;&apos;</Key>');
+      expect(xml).toContain('<Key>x&amp;y</Key>');
+      expect(xml).toContain('<Code>Bad&lt;&amp;&gt;&quot;&apos;</Code>');
+      expect(xml).toContain('<Message>Oops&lt;&amp;&gt;&quot;&apos;</Message>');
+    });
+  });
 });
