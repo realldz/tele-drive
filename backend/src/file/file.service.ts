@@ -46,11 +46,32 @@ export class FileService {
   /** Track active chunk uploads per user for concurrency enforcement */
   private readonly activeUploads = new Map<string, number>();
 
+  /** Lock map to prevent concurrent permanent deletions per user (preventing dual clicks) */
+  private readonly deletionLocks = new Map<string, Promise<void>>();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegram: TelegramService,
     private readonly cryptoService: CryptoService,
   ) {}
+
+  /**
+   * Acquire a per-user lock to serialize concurrent deletions.
+   */
+  private async acquireDeletionLock(userId: string): Promise<() => void> {
+    while (this.deletionLocks.has(userId)) {
+      await this.deletionLocks.get(userId);
+    }
+    let releaseLock!: () => void;
+    const lockPromise = new Promise<void>((resolve) => {
+      releaseLock = () => {
+        this.deletionLocks.delete(userId);
+        resolve();
+      };
+    });
+    this.deletionLocks.set(userId, lockPromise);
+    return releaseLock;
+  }
 
   /**
    * Kiểm tra setting ENABLE_MULTI_THREAD_DOWNLOAD (cache 30 giây)
@@ -1431,43 +1452,186 @@ export class FileService {
    * Xoá vĩnh viễn file từ thùng rác — xoá trên Telegram + DB + hoàn trả usedSpace.
    */
   async permanentDelete(id: string, userId: string) {
-    const fileRecord = await this.prisma.fileRecord.findFirst({
-      where: { id, userId, deletedAt: { not: null } },
-      include: { chunks: true },
-    });
-    if (!fileRecord) throw new NotFoundException('File not found in trash');
+    const releaseLock = await this.acquireDeletionLock(userId);
+    try {
+      const fileRecord = await this.prisma.fileRecord.findFirst({
+        where: { id, userId, deletedAt: { not: null } },
+        include: { chunks: true },
+      });
+      if (!fileRecord) throw new NotFoundException('File not found in trash');
 
-    // Xoá trên Telegram
-    if (fileRecord.telegramMessageId) {
-      await this.telegram.deleteMessage(fileRecord.telegramMessageId);
-    }
-    for (const chunk of fileRecord.chunks) {
-      if (chunk.telegramMessageId) {
-        await this.telegram.deleteMessage(chunk.telegramMessageId);
+      // Xoá trên Telegram
+      if (fileRecord.telegramMessageId) {
+        await this.telegram.deleteMessage(fileRecord.telegramMessageId).catch(() => {});
       }
+      for (const chunk of fileRecord.chunks) {
+        if (chunk.telegramMessageId) {
+          await this.telegram.deleteMessage(chunk.telegramMessageId).catch(() => {});
+        }
+      }
+
+      // Transaction: xoá DB + trừ usedSpace
+      await this.prisma.$transaction(async (tx) => {
+        await tx.fileRecord.delete({ where: { id } });
+
+        if (fileRecord.status === 'complete') {
+          await tx.user.update({
+            where: { id: fileRecord.userId },
+            data: { usedSpace: { decrement: fileRecord.size } },
+          });
+        }
+      });
+
+      this.logger.log(`File permanently deleted: "${fileRecord.filename}" (fileId: ${id}, freed: ${fileRecord.size} bytes)`);
+    } finally {
+      releaseLock();
     }
+  }
 
-    // Transaction: xoá DB + trừ usedSpace
-    await this.prisma.$transaction(async (tx) => {
-      await tx.fileRecord.delete({ where: { id } });
+  /**
+   * Xoá hàng loạt files vĩnh viễn (sử dụng khi xoá folder) - xoá Telegram, DB, và trừ usedSpace trong 1 transaction.
+   */
+  async bulkPermanentDeleteFiles(fileIds: string[], userId: string) {
+    if (fileIds.length === 0) return 0n;
 
-      if (fileRecord.status === 'complete') {
-        await tx.user.update({
-          where: { id: fileRecord.userId },
-          data: { usedSpace: { decrement: fileRecord.size } },
+    const releaseLock = await this.acquireDeletionLock(userId);
+    try {
+      const files = await this.prisma.fileRecord.findMany({
+        where: { id: { in: fileIds }, userId },
+        include: { chunks: true },
+      });
+
+      if (files.length === 0) return 0n;
+
+      let freedSize = BigInt(0);
+      const deleteMessageIds: number[] = [];
+
+      for (const file of files) {
+        if (file.status === 'complete') {
+          freedSize += file.size;
+        }
+        if (file.telegramMessageId) deleteMessageIds.push(file.telegramMessageId);
+        for (const chunk of file.chunks) {
+          if (chunk.telegramMessageId) deleteMessageIds.push(chunk.telegramMessageId);
+        }
+      }
+
+      // Xóa từ Telegram một cách an toàn (tránh ngắt quãng nếu 1 file lỗi)
+      for (const msgId of deleteMessageIds) {
+        try {
+          await this.telegram.deleteMessage(msgId);
+          // Delay nhỏ để tránh rate-limit nếu số lượng quá lớn
+          await new Promise(res => setTimeout(res, 50));
+        } catch (err) {
+          this.logger.warn(`Failed to delete message ${msgId} during bulk delete: ${err}`);
+        }
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        await tx.fileRecord.deleteMany({
+          where: { id: { in: fileIds } },
         });
-      }
-    });
 
-    this.logger.log(`File permanently deleted: "${fileRecord.filename}" (fileId: ${id}, freed: ${fileRecord.size} bytes)`);
+        if (freedSize > 0n) {
+          await tx.user.update({
+            where: { id: userId },
+            data: { usedSpace: { decrement: freedSize } },
+          });
+        }
+      });
+
+      this.logger.log(`Bulk permanently deleted ${files.length} files, freed: ${freedSize} bytes`);
+      return freedSize;
+    } finally {
+      releaseLock();
+    }
+  }
+
+  /**
+   * Dọn sạch toàn bộ thùng rác (files và folders)
+   */
+  async emptyTrash(userId: string) {
+    const releaseLock = await this.acquireDeletionLock(userId);
+    try {
+      const files = await this.prisma.fileRecord.findMany({
+        where: { userId, deletedAt: { not: null } },
+        include: { chunks: true },
+      });
+
+      const folders = await this.prisma.folder.findMany({
+        where: { userId, deletedAt: { not: null } },
+        select: { id: true },
+      });
+
+      if (files.length === 0 && folders.length === 0) {
+        return { success: true, count: 0, freedSize: 0 };
+      }
+
+      let freedSize = BigInt(0);
+      const deleteMessageIds: number[] = [];
+      const fileIds = files.map(f => f.id);
+      const folderIds = folders.map(f => f.id);
+
+      for (const file of files) {
+        if (file.status === 'complete') freedSize += file.size;
+        if (file.telegramMessageId) deleteMessageIds.push(file.telegramMessageId);
+        for (const chunk of file.chunks) {
+          if (chunk.telegramMessageId) deleteMessageIds.push(chunk.telegramMessageId);
+        }
+      }
+
+      // Xoá batch trên Telegram
+      for (const msgId of deleteMessageIds) {
+        try {
+          await this.telegram.deleteMessage(msgId);
+          await new Promise(res => setTimeout(res, 50));
+        } catch (err) {
+          this.logger.warn(`Failed to delete message ${msgId} during empty trash: ${err}`);
+        }
+      }
+
+      await this.prisma.$transaction(async (tx) => {
+        if (fileIds.length > 0) {
+          await tx.fileRecord.deleteMany({
+            where: { id: { in: fileIds } },
+          });
+        }
+
+        if (folderIds.length > 0) {
+          await tx.folder.deleteMany({
+            where: { id: { in: folderIds } },
+          });
+        }
+
+        if (freedSize > 0n) {
+          await tx.user.update({
+            where: { id: userId },
+            data: { usedSpace: { decrement: freedSize } },
+          });
+        }
+      });
+
+      this.logger.log(`Emptied trash for userId ${userId}: ${files.length} files, ${folders.length} folders, freed: ${freedSize} bytes`);
+      return { success: true, count: files.length + folders.length, freedSize: freedSize.toString() };
+    } finally {
+      releaseLock();
+    }
   }
 
   /**
    * Danh sách file trong thùng rác của user.
+   * Chỉ hiển thị các file trực tiếp bị xoá (không hiển thị các file con của 1 folder đã bị xoá).
    */
   async listTrash(userId: string) {
     return this.prisma.fileRecord.findMany({
-      where: { userId, deletedAt: { not: null } },
+      where: {
+        userId,
+        deletedAt: { not: null },
+        OR: [
+          { folderId: null },
+          { folder: { deletedAt: null } },
+        ],
+      },
       orderBy: { deletedAt: 'desc' },
     });
   }

@@ -257,6 +257,11 @@ export class FileController {
     return this.fileService.getSharedFileInfo(token);
   }
 
+  @Delete('trash/empty')
+  emptyTrash(@Req() req: AuthenticatedRequest) {
+    return this.fileService.emptyTrash(req.user.userId);
+  }
+
   @Delete(':id')
   softDelete(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.fileService.softDelete(id, req.user.userId);

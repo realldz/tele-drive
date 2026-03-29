@@ -153,6 +153,8 @@
   "trash.daysRemaining": "残り {days} 日",
   "trash.restore": "復元",
   "trash.permanentDelete": "完全に削除",
+  "trash.emptyTrash": "ゴミ箱を空にする",
+  "trash.emptyTrashConfirm": "ゴミ箱を空にしてもよろしいですか？すべてのデータは完全に削除され、復元することはできません！",
   "trash.confirmDeleteFile": "このファイルを完全に削除しますか？この操作は元に戻せません。",
   "trash.confirmDeleteFolder": "このフォルダとすべての内容を完全に削除しますか？この操作は元に戻せません。",
   "admin.panel": "管理パネル",
@@ -305,5 +307,11 @@
   "shareFolder.download": "ダウンロード",
   "shareFolder.bandwidthExceeded": "このファイルは本日の帯域幅制限を超えました。",
   "shareFolder.bandwidthExceededAt": "帯域幅制限を超えました。{time} にリセットされます。",
-  "shareFolder.downloadError": "ファイルのダウンロードエラー"
+  "shareFolder.downloadError": "ファイルのダウンロードエラー",
+  "selection.count": "{count} 件選択中",
+  "selection.deleteSelected": "削除",
+  "selection.moveSelected": "移動",
+  "selection.restoreSelected": "復元",
+  "selection.permanentDeleteSelected": "完全に削除",
+  "selection.deselectAll": "選択を解除"
 }

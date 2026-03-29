@@ -339,12 +339,8 @@ export class FolderService {
 
     const allFileIds = await this.collectAllFileIds(id);
 
-    const deletePromises = allFileIds.map(fileId =>
-      this.fileService.delete(fileId).catch(err =>
-        this.logger.warn(`Failed to delete file ${fileId} from Telegram during folder cleanup: ${err}`)
-      )
-    );
-    await Promise.allSettled(deletePromises);
+    // Atomically delete all files inside the folder tree before deleting the folder
+    await this.fileService.bulkPermanentDeleteFiles(allFileIds, userId);
 
     await this.prisma.folder.delete({ where: { id } });
 

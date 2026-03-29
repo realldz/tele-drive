@@ -5,10 +5,13 @@ import { Folder, Download, Trash2, MoreVertical, Loader2, Search, LayoutGrid, Li
 import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import { useLazyLoad } from '@/hooks/use-lazy-load';
+import { useSelection } from '@/hooks/use-selection';
+import { useDragSelect, DragSelectOverlay } from '@/hooks/use-drag-select';
 import { getFileIcon } from '@/lib/file-icon';
 import Sidebar from '@/components/sidebar';
 import Breadcrumbs from '@/components/breadcrumbs';
 import ContextMenu from '@/components/context-menu';
+import SelectionActionBar from '@/components/selection-action-bar';
 import FilePreviewModal from '@/components/file-preview-modal';
 import CreateFolderDialog from '@/components/create-folder-dialog';
 import FileDetailsDialog from '@/components/file-details-dialog';
@@ -43,7 +46,7 @@ export default function Dashboard() {
   // Modal / dialog state
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
-  const [activeDialog, setActiveDialog] = useState<'rename' | 'move' | 'share' | 'details' | 'none'>('none');
+  const [activeDialog, setActiveDialog] = useState<'rename' | 'move' | 'share' | 'details' | 'batchMove' | 'none'>('none');
   const [dialogItem, setDialogItem] = useState<FileRecord | FolderRecord | null>(null);
   const [dialogItemType, setDialogItemType] = useState<'file' | 'folder'>('file');
 
@@ -70,6 +73,19 @@ export default function Dashboard() {
   const [sortField, setSortField] = useState<SortField>('createdAt');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
+  // Selection
+  const selection = useSelection();
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  const handleDragSelect = useCallback((ids: string[]) => {
+    selection.selectAll(ids);
+  }, [selection]);
+
+  const { isDragging, rect: dragRect } = useDragSelect({
+    containerRef: contentRef,
+    onSelect: handleDragSelect,
+  });
+
   const handleSort = useCallback((field: SortField) => {
     setSortDirection(prev => sortField === field ? (prev === 'asc' ? 'desc' : 'asc') : 'desc');
     setSortField(field);
@@ -95,6 +111,12 @@ export default function Dashboard() {
       return sortDirection === 'asc' ? cmp : -cmp;
     });
   }, [files, searchQuery, sortField, sortDirection]);
+
+  // Ordered IDs for shift-select
+  const orderedIds = useMemo(
+    () => [...filteredFolders.map(f => f.id), ...filteredFiles.map(f => f.id)],
+    [filteredFolders, filteredFiles],
+  );
 
   // Lazy load
   const totalItems = filteredFolders.length + filteredFiles.length;
@@ -130,6 +152,9 @@ export default function Dashboard() {
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
   }, [showNewMenu]);
+
+  // Clear selection when folder changes
+  useEffect(() => { selection.clearSelection(); }, [currentFolderId, selection.clearSelection]);
 
   // Fetch content
   const fetchContent = useCallback(async () => {
@@ -240,6 +265,46 @@ export default function Dashboard() {
     }
   }, [locale, t]);
 
+  // Batch delete selected items
+  const handleBatchDelete = useCallback(async () => {
+    const ids = Array.from(selection.selectedIds);
+    for (const id of ids) {
+      const isFolder = folders.some(f => f.id === id);
+      try {
+        if (isFolder) {
+          await deleteFolder(id);
+        } else {
+          await deleteFile(id);
+        }
+      } catch (error: unknown) {
+        alert(getApiErrorMessage(error, t('dashboard.deleteStuckError')));
+      }
+    }
+    selection.clearSelection();
+    fetchContent();
+    toast.success(t('dashboard.deletedFile'));
+  }, [selection, folders, fetchContent, t]);
+
+  // Batch move: open the move dialog
+  const handleBatchMoveOpen = useCallback(() => {
+    setActiveDialog('batchMove');
+  }, []);
+
+  const handleBatchMoveConfirm = useCallback(async (destFolderId: string | null) => {
+    const ids = Array.from(selection.selectedIds);
+    for (const id of ids) {
+      const isFolder = folders.some(f => f.id === id);
+      try {
+        await moveItem(isFolder ? 'folder' : 'file', id, destFolderId);
+      } catch (error: unknown) {
+        alert(getApiErrorMessage(error, t('dashboard.moveError')));
+      }
+    }
+    selection.clearSelection();
+    setActiveDialog('none');
+    fetchContent();
+  }, [selection, folders, fetchContent, t]);
+
   const handleDragStart = (e: React.DragEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
     setDraggedItem({ id: item.id, type }); e.dataTransfer.effectAllowed = 'move';
   };
@@ -258,8 +323,13 @@ export default function Dashboard() {
 
   const openContextMenu = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
     e.preventDefault(); e.stopPropagation();
+    // If item is not in selection, select it alone
+    if (!selection.isSelected(item.id)) {
+      selection.clearSelection();
+      selection.handleSelect(item.id, { ...e, ctrlKey: false, metaKey: false, shiftKey: false, stopPropagation: () => {} } as React.MouseEvent, orderedIds);
+    }
     setTimeout(() => setContextMenu({ isOpen: true, x: e.clientX, y: e.clientY, item, type }), 0);
-  }, []);
+  }, [selection, orderedIds]);
 
   const handleOpenDialog = useCallback((targetDialog: 'rename' | 'move' | 'share' | 'details') => {
     setActiveDialog(targetDialog);
@@ -268,12 +338,52 @@ export default function Dashboard() {
     setContextMenu(prev => ({ ...prev, isOpen: false }));
   }, [contextMenu.item, contextMenu.type]);
 
+  // Handle click on an item (selection)
+  const handleItemClick = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      // Multi-select mode
+      selection.handleSelect(item.id, e, orderedIds);
+    } else {
+      // Single click behavior
+      if (type === 'folder') {
+        setCurrentFolderId(item.id);
+      } else {
+        const file = item as FileRecord;
+        if (file.status === 'complete') setPreviewFileId(file.id);
+      }
+    }
+  }, [selection, orderedIds]);
+
   const formatDate = useCallback((d: string) => new Date(d).toLocaleDateString(LOCALE_DATE_MAP[locale]), [locale]);
 
   const SortIcon = ({ field }: { field: SortField }) => {
     if (sortField !== field) return null;
     return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
   };
+
+  // Handle context menu actions for batch
+  const handleContextMenuDelete = useCallback((e: React.MouseEvent) => {
+    e.stopPropagation();
+    setContextMenu(prev => ({ ...prev, isOpen: false }));
+    if (selection.selectedCount > 1) {
+      handleBatchDelete();
+    } else if (contextMenu.item) {
+      if (contextMenu.type === 'folder') {
+        handleDeleteFolder(e, contextMenu.item.id);
+      } else {
+        handleDeleteFile(e, contextMenu.item.id);
+      }
+    }
+  }, [selection.selectedCount, contextMenu, handleBatchDelete, handleDeleteFolder, handleDeleteFile]);
+
+  const handleContextMenuMove = useCallback(() => {
+    setContextMenu(prev => ({ ...prev, isOpen: false }));
+    if (selection.selectedCount > 1) {
+      handleBatchMoveOpen();
+    } else {
+      handleOpenDialog('move');
+    }
+  }, [selection.selectedCount, handleBatchMoveOpen, handleOpenDialog]);
 
   if (!isReady) {
     return (<div className="min-h-screen bg-gray-50 flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={32} /></div>);
@@ -282,7 +392,16 @@ export default function Dashboard() {
   return (
     <div className="h-screen bg-white flex overflow-hidden">
       <Sidebar />
-      <main className="flex-1 flex flex-col min-w-0 bg-white relative">
+      <main className="flex-1 flex flex-col min-w-0 bg-white relative"
+        onClick={(e) => {
+          // Click on empty area -> clear selection
+          if (e.target === e.currentTarget || (e.target as HTMLElement).closest('[data-content-area]')) {
+            if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
+              selection.clearSelection();
+            }
+          }
+        }}
+      >
 
         {/* Topbar */}
         <header className="h-16 border-b border-gray-100 flex items-center justify-between pl-14 pr-4 md:px-4 lg:px-6 bg-white w-full flex-shrink-0 z-10">
@@ -355,10 +474,16 @@ export default function Dashboard() {
         </header>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto relative" ref={contentRef} style={{ userSelect: isDragging ? 'none' : undefined }}>
+          <DragSelectOverlay rect={dragRect} />
           <Breadcrumbs items={breadcrumbs} onNavigate={setCurrentFolderId} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} dragOverFolderId={dragOverFolderId} />
 
-          <div className="px-2 py-6 md:px-6">
+          <div className="px-2 py-6 md:px-6" data-content-area onClick={(e) => {
+            // Only clear if clicking directly on content area background
+            if (e.target === e.currentTarget && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+              selection.clearSelection();
+            }
+          }}>
             {/* Loading state */}
             {isLoadingContent && folders.length === 0 && files.length === 0 ? (
               <div className="flex items-center justify-center py-20">
@@ -380,11 +505,19 @@ export default function Dashboard() {
                     {viewMode === 'grid' ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                         {visibleFolders.map(folder => (
-                          <div key={folder.id} onClick={() => setCurrentFolderId(folder.id)} draggable
+                          <div key={folder.id} data-selectable-id={folder.id}
+                            onClick={(e) => handleItemClick(e, folder, 'folder')}
+                            draggable
                             onDragStart={(e) => handleDragStart(e, folder, 'folder')} onDragOver={(e) => handleDragOver(e, folder.id)}
                             onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, folder.id)}
                             onContextMenu={(e) => openContextMenu(e, folder, 'folder')}
-                            className={`p-4 bg-white border rounded-xl shadow-sm cursor-pointer transition-all group relative flex items-center justify-between ${dragOverFolderId === folder.id ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200' : 'border-gray-200 hover:shadow-md hover:border-blue-300'}`}
+                            className={`p-4 bg-white border rounded-xl shadow-sm cursor-pointer transition-all group relative flex items-center justify-between ${
+                              selection.isSelected(folder.id)
+                                ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                                : dragOverFolderId === folder.id
+                                  ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                                  : 'border-gray-200 hover:shadow-md hover:border-blue-300'
+                            }`}
                           >
                             <div className="flex items-center truncate pr-2">
                               <div className="relative mr-3 flex-shrink-0">
@@ -394,7 +527,7 @@ export default function Dashboard() {
                               <span className="font-semibold text-gray-700 truncate">{folder.name}</span>
                             </div>
                             <div className="flex items-center md:opacity-0 md:group-hover:opacity-100 transition-opacity">
-                              <button onClick={(e) => openContextMenu(e, folder, 'folder')} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-md">
+                              <button onClick={(e) => { e.stopPropagation(); openContextMenu(e, folder, 'folder'); }} className="p-1.5 text-gray-500 hover:bg-gray-100 rounded-md">
                                 <MoreVertical size={16} />
                               </button>
                             </div>
@@ -417,11 +550,17 @@ export default function Dashboard() {
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                             {visibleFolders.map(folder => (
-                              <tr key={folder.id} onClick={() => setCurrentFolderId(folder.id)} draggable
+                              <tr key={folder.id} data-selectable-id={folder.id}
+                                onClick={(e) => handleItemClick(e, folder, 'folder')}
+                                draggable
                                 onDragStart={(e) => handleDragStart(e, folder, 'folder')} onDragOver={(e) => handleDragOver(e, folder.id)}
                                 onDragLeave={handleDragLeave} onDrop={(e) => handleDrop(e, folder.id)}
                                 onContextMenu={(e) => openContextMenu(e, folder, 'folder')}
-                                className={`cursor-pointer transition-colors group ${dragOverFolderId === folder.id ? 'bg-blue-50' : 'hover:bg-gray-50'}`}
+                                className={`cursor-pointer transition-colors group ${
+                                  selection.isSelected(folder.id)
+                                    ? 'bg-blue-50'
+                                    : dragOverFolderId === folder.id ? 'bg-blue-50' : 'hover:bg-gray-50'
+                                }`}
                               >
                                 <td className="p-3 md:p-4 flex items-center gap-3">
                                   <div className="relative flex-shrink-0">
@@ -432,7 +571,7 @@ export default function Dashboard() {
                                 </td>
                                 <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">{formatDate(folder.createdAt)}</td>
                                 <td className="p-3 md:p-4 text-right">
-                                  <button onClick={(e) => openContextMenu(e, folder, 'folder')}
+                                  <button onClick={(e) => { e.stopPropagation(); openContextMenu(e, folder, 'folder'); }}
                                     className="md:opacity-0 md:group-hover:opacity-100 p-1.5 text-gray-500 hover:bg-gray-200 rounded-md transition-opacity inline-flex items-center">
                                     <MoreVertical size={16} />
                                   </button>
@@ -453,10 +592,14 @@ export default function Dashboard() {
                     {viewMode === 'grid' ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
                         {visibleFiles.map(file => (
-                          <div key={file.id} draggable onDragStart={(e) => handleDragStart(e, file, 'file')}
-                            onClick={() => file.status === 'complete' && setPreviewFileId(file.id)}
+                          <div key={file.id} data-selectable-id={file.id} draggable onDragStart={(e) => handleDragStart(e, file, 'file')}
+                            onClick={(e) => handleItemClick(e, file, 'file')}
                             onContextMenu={(e) => file.status === 'complete' && openContextMenu(e, file, 'file')}
-                            className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm hover:shadow-md hover:border-blue-300 transition-all group flex flex-col justify-between cursor-pointer"
+                            className={`p-4 bg-white border rounded-xl shadow-sm transition-all group flex flex-col justify-between cursor-pointer ${
+                              selection.isSelected(file.id)
+                                ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                                : 'border-gray-200 hover:shadow-md hover:border-blue-300'
+                            }`}
                           >
                             <div className="flex items-start mb-4">
                               <div className="relative w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center mr-3 border border-gray-100 flex-shrink-0">
@@ -479,7 +622,7 @@ export default function Dashboard() {
                                 </button>
                               ) : (
                                 <>
-                                  <button onClick={(e) => openContextMenu(e, file, 'file')} className="p-2 text-gray-500 bg-gray-50 border border-gray-100 rounded-lg hover:bg-gray-100 transition-colors">
+                                  <button onClick={(e) => { e.stopPropagation(); openContextMenu(e, file, 'file'); }} className="p-2 text-gray-500 bg-gray-50 border border-gray-100 rounded-lg hover:bg-gray-100 transition-colors">
                                     <MoreVertical size={16} />
                                   </button>
                                   <button onClick={(e) => { e.stopPropagation(); if (!downloadingFiles.has(file.id)) handleDownload(file.id, file.filename); }}
@@ -511,10 +654,12 @@ export default function Dashboard() {
                           </thead>
                           <tbody className="divide-y divide-gray-100">
                             {visibleFiles.map(file => (
-                              <tr key={file.id} draggable onDragStart={(e) => handleDragStart(e, file, 'file')}
-                                onClick={() => file.status === 'complete' && setPreviewFileId(file.id)}
+                              <tr key={file.id} data-selectable-id={file.id} draggable onDragStart={(e) => handleDragStart(e, file, 'file')}
+                                onClick={(e) => handleItemClick(e, file, 'file')}
                                 onContextMenu={(e) => file.status === 'complete' && openContextMenu(e, file, 'file')}
-                                className="hover:bg-gray-50 cursor-pointer transition-colors group"
+                                className={`cursor-pointer transition-colors group ${
+                                  selection.isSelected(file.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
+                                }`}
                               >
                                 <td className="p-3 md:p-4">
                                   <div className="flex items-center gap-3">
@@ -538,7 +683,7 @@ export default function Dashboard() {
                                     <div className="flex justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                                       <button onClick={(e) => { e.stopPropagation(); if (!downloadingFiles.has(file.id)) handleDownload(file.id, file.filename); }}
                                         disabled={downloadingFiles.has(file.id)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50"><Download size={16} /></button>
-                                      <button onClick={(e) => openContextMenu(e, file, 'file')} className="p-1.5 text-gray-500 hover:bg-gray-200 rounded-md transition-opacity"><MoreVertical size={16} /></button>
+                                      <button onClick={(e) => { e.stopPropagation(); openContextMenu(e, file, 'file'); }} className="p-1.5 text-gray-500 hover:bg-gray-200 rounded-md transition-opacity"><MoreVertical size={16} /></button>
                                     </div>
                                   )}
                                 </td>
@@ -561,11 +706,23 @@ export default function Dashboard() {
       {/* Context Menu */}
       {contextMenu.isOpen && contextMenu.item && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} itemType={contextMenu.type}
-          onRename={() => handleOpenDialog('rename')} onMove={() => handleOpenDialog('move')} onShare={() => handleOpenDialog('share')}
+          selectionCount={selection.selectedCount}
+          onRename={() => handleOpenDialog('rename')}
+          onMove={handleContextMenuMove}
+          onShare={() => handleOpenDialog('share')}
           onDetails={() => handleOpenDialog('details')}
-          onDelete={(e) => { contextMenu.type === 'folder' ? handleDeleteFolder(e, contextMenu.item!.id) : handleDeleteFile(e, contextMenu.item!.id); setContextMenu(prev => ({ ...prev, isOpen: false })); }}
+          onDelete={handleContextMenuDelete}
         />
       )}
+
+      {/* Selection Action Bar */}
+      <SelectionActionBar
+        selectedCount={selection.selectedCount}
+        onClear={selection.clearSelection}
+        variant="dashboard"
+        onDelete={handleBatchDelete}
+        onMove={handleBatchMoveOpen}
+      />
 
       {/* Dialogs */}
       <CreateFolderDialog isOpen={showCreateFolder} onClose={() => setShowCreateFolder(false)} onConfirm={handleCreateFolder} />
@@ -577,6 +734,13 @@ export default function Dashboard() {
 
       <MoveDialog isOpen={activeDialog === 'move'} onClose={() => setActiveDialog('none')} itemToMove={dialogItem} itemType={dialogItemType}
         onConfirm={async (destFolderId) => { try { await moveItem(dialogItemType, dialogItem!.id, destFolderId); setActiveDialog('none'); fetchContent(); } catch (error: unknown) { alert(getApiErrorMessage(error, t('dashboard.moveError'))); } }}
+      />
+
+      {/* Batch move dialog — reuses MoveDialog with a dummy item */}
+      <MoveDialog isOpen={activeDialog === 'batchMove'} onClose={() => setActiveDialog('none')}
+        itemToMove={{ id: '__batch__', name: `${selection.selectedCount} items`, parentId: null, userId: '', visibility: 'PRIVATE', shareToken: null, createdAt: '', updatedAt: '' } as FolderRecord}
+        itemType="folder"
+        onConfirm={handleBatchMoveConfirm}
       />
 
       <ShareDialog isOpen={activeDialog === 'share'} onClose={() => setActiveDialog('none')} onSuccess={fetchContent} item={dialogItem} itemType={dialogItemType} />
