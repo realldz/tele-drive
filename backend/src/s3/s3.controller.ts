@@ -36,6 +36,7 @@ import { wrapRequestStream } from './s3-stream.utils';
  *  HEAD   /s3/:bucket                             → HeadBucket (200 if exists, 404 otherwise)
  *  DELETE /s3/:bucket                             → DeleteBucket
  *  GET    /s3/:bucket                             → ListObjectsV2 (or V1)
+ *  POST   /s3/:bucket    (?delete)               → DeleteObjects
  *
  *  PUT    /s3/:bucket/*  (no extra params)        → PutObject
  *  PUT    /s3/:bucket/*  (?partNumber=N&uploadId) → UploadPart
@@ -60,6 +61,7 @@ import { wrapRequestStream } from './s3-stream.utils';
  *   - UploadPart:             MD5 of plaintext part    — stored in FileChunk.etag
  *   - CompleteMultipartUpload: MD5(concat(raw part md5s)) + "-N" — stored in FileRecord.etag
  *   - CopyObject:             inherits source FileRecord.etag
+ *   - DeleteObjects:          N/A (no ETag in response)
  *   - GetObject / HeadObject: return FileRecord.etag if set, else `"<fileId>"`
  *
  * Content-MD5 verification:
@@ -206,6 +208,71 @@ export class S3Controller {
     } catch (err: unknown) {
       this.sendS3Error(res, err);
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // POST /s3/:bucket?delete → DeleteObjects
+  // ---------------------------------------------------------------------------
+
+  @Post(':bucket')
+  async handleBucketPost(
+    @Param('bucket') bucket: string,
+    @Req() req: S3AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const userId = req.s3UserId;
+    const query = req.query as Record<string, string>;
+
+    this.setRequestId(res);
+
+    // --- DeleteObjects ---
+    if ('delete' in query) {
+      const { stream } = wrapRequestStream(req);
+      const bodyBuf = await this.readBody(stream);
+      const bodyStr = bodyBuf.toString('utf8');
+
+      try {
+        const { quiet, keys } = this.s3Service.parseDeleteObjectsXml(bodyStr);
+
+        this.logger.log(
+          `S3 DeleteObjects: ${keys.length} keys in bucket "${bucket}" (quiet=${quiet}, userId: ${userId})`,
+        );
+
+        const deleted: Array<{ key: string }> = [];
+        const errors: Array<{ key: string; code: string; message: string }> = [];
+
+        for (const key of keys) {
+          try {
+            const file = await this.s3Service.findObject(userId, bucket, key);
+            await this.fileService.delete(file.id, userId);
+            deleted.push({ key });
+          } catch (err: unknown) {
+            const status = (err as { status?: number }).status;
+            const message = err instanceof Error ? err.message : String(err);
+
+            // S3 spec: deleting non-existent key is NOT an error
+            if (status === 404 || message === 'NoSuchKey') {
+              deleted.push({ key });
+            } else {
+              errors.push({ key, code: message || 'InternalError', message: message || 'An internal error occurred.' });
+            }
+          }
+        }
+
+        const xml = this.s3Service.buildDeleteResultXml(deleted, errors, quiet);
+        res.setHeader('Content-Type', 'application/xml');
+        res.status(200).send(xml);
+      } catch (err: unknown) {
+        this.sendS3Error(res, err);
+      }
+      return;
+    }
+
+    // Unknown bucket-level POST
+    res
+      .status(400)
+      .setHeader('Content-Type', 'application/xml')
+      .send(this.s3Service.buildErrorXml('InvalidRequest', 'Unknown POST operation on bucket'));
   }
 
   // ---------------------------------------------------------------------------
