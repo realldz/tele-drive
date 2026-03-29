@@ -120,6 +120,15 @@ describe('S3Service', () => {
       await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', '/')).rejects.toThrow(BadRequestException);
       await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', '/')).rejects.toThrow('InvalidArgument');
     });
+
+    it('rejects non-folder keys with InvalidArgument', async () => {
+      await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/file.txt')).rejects.toThrow(
+        BadRequestException,
+      );
+      await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/file.txt')).rejects.toThrow(
+        'InvalidArgument',
+      );
+    });
   });
 
   describe('buildDeleteResultXml', () => {
