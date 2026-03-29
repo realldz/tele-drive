@@ -500,6 +500,12 @@ export class S3Controller {
     );
 
     try {
+      if (key.endsWith('/') && contentLength === 0) {
+        await this.s3Service.resolveKeyAsFolder(userId, bucket, key);
+        this.logger.log(`S3 PutObject folder: s3://${bucket}/${key} (userId: ${userId})`);
+        return res.status(200).end();
+      }
+
       const { folderId } = await this.s3Service.resolveKey(userId, bucket, key, true);
       await (this.fileService as any).checkQuota(userId, contentLength || 0);
 
