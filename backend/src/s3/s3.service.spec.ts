@@ -1,3 +1,4 @@
+import { BadRequestException } from '@nestjs/common';
 import { S3Service } from './s3.service';
 
 describe('S3Service', () => {
@@ -33,11 +34,18 @@ describe('S3Service', () => {
       expect(result.quiet).toBe(false);
     });
 
-    it('should throw on more than 1000 keys', () => {
+    it('should decode XML entities in keys', () => {
+      const xml = `<Delete><Object><Key>a&amp;b.txt</Key></Object></Delete>`;
+      const result = service.parseDeleteObjectsXml(xml);
+      expect(result.keys).toEqual(['a&b.txt']);
+    });
+
+    it('should throw BadRequestException on more than 1000 keys', () => {
       const objects = Array.from({ length: 1001 }, (_, i) =>
         `<Object><Key>file${i}.txt</Key></Object>`
       ).join('');
       const xml = `<Delete>${objects}</Delete>`;
+      expect(() => service.parseDeleteObjectsXml(xml)).toThrow(BadRequestException);
       expect(() => service.parseDeleteObjectsXml(xml)).toThrow('MalformedXML');
     });
 
