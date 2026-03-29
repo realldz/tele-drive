@@ -7,6 +7,7 @@ import { Toaster } from "react-hot-toast";
 import { UploadProvider } from "@/components/upload-context";
 import GlobalDropZone from "@/components/global-drop-zone";
 import UploadPanel from "@/components/upload-panel";
+import StoreProvider from "@/components/store-provider";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -39,12 +40,14 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <I18nProvider>
           <AuthProvider>
-            <UploadProvider>
-              <GlobalDropZone />
-              {children}
-              <UploadPanel />
-              <Toaster />
-            </UploadProvider>
+            <StoreProvider>
+              <UploadProvider>
+                <GlobalDropZone />
+                {children}
+                <UploadPanel />
+                <Toaster />
+              </UploadProvider>
+            </StoreProvider>
           </AuthProvider>
         </I18nProvider>
       </body>
