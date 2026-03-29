@@ -95,6 +95,39 @@ export class S3Service {
     return this.resolveKeyUnderFolder(userId, bucket.id, key, create);
   }
 
+  async resolveKeyAsFolder(userId: string, bucketName: string, key: string): Promise<string> {
+    const parts = key.split('/').filter(Boolean);
+    if (parts.length === 0) throw new BadRequestException('InvalidArgument');
+
+    let bucket = await this.prisma.folder.findFirst({
+      where: { userId, name: bucketName, parentId: null, deletedAt: null },
+    });
+
+    if (!bucket) {
+      bucket = await this.createBucket(userId, bucketName);
+    }
+
+    let currentFolderId = bucket.id;
+
+    for (const part of parts) {
+      const existing = await this.prisma.folder.findFirst({
+        where: { name: part, parentId: currentFolderId, userId, deletedAt: null },
+      });
+
+      if (existing) {
+        currentFolderId = existing.id;
+        continue;
+      }
+
+      const folder = await this.prisma.folder.create({
+        data: { name: part, parentId: currentFolderId, userId },
+      });
+      currentFolderId = folder.id;
+    }
+
+    return currentFolderId;
+  }
+
   private async resolveKeyUnderFolder(
     userId: string,
     rootFolderId: string,
