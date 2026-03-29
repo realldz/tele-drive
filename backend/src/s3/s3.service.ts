@@ -242,15 +242,15 @@ export class S3Service {
   // ---------------------------------------------------------------------------
 
   parseDeleteObjectsXml(body: string): { quiet: boolean; keys: string[] } {
-    const quietMatch = body.match(/<Quiet>([\s\S]*?)<\/Quiet>/i);
-    const quiet = quietMatch ? quietMatch[1].trim().toLowerCase() === 'true' : false;
+    const quietMatch = body.match(/<Quiet>\s*(true|false)\s*<\/Quiet>/i);
+    const quiet = quietMatch ? quietMatch[1].toLowerCase() === 'true' : false;
 
     const keys: string[] = [];
-    const keyRegex = /<Key>([\s\S]*?)<\/Key>/g;
+    const keyRegex = /<Key>([^<]+)<\/Key>/g;
     let match: RegExpExecArray | null;
 
     while ((match = keyRegex.exec(body)) !== null) {
-      keys.push(match[1]);
+      keys.push(this.decodeXmlEntities(match[1]));
     }
 
     if (keys.length === 0 || keys.length > 1000) {
@@ -324,6 +324,25 @@ export class S3Service {
   <Code>${this.escapeXml(code)}</Code>
   <Message>${this.escapeXml(message)}</Message>
 </Error>`;
+  }
+
+  private decodeXmlEntities(str: string): string {
+    return String(str).replace(/&(lt|gt|quot|apos|amp);/g, (entity) => {
+      switch (entity) {
+        case '&lt;':
+          return '<';
+        case '&gt;':
+          return '>';
+        case '&quot;':
+          return '"';
+        case '&apos;':
+          return "'";
+        case '&amp;':
+          return '&';
+        default:
+          return entity;
+      }
+    });
   }
 
   private escapeXml(str: string): string {
