@@ -131,10 +131,21 @@ export function useDragSelect({ containerRef, onSelect, enabled = true }: UseDra
       });
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
       if (isDraggingRef.current && rect) {
         const ids = getIntersectingIds(rect);
         onSelect(ids);
+        
+        // Prevent click event immediately after releasing drag,
+        // so it doesn't trigger the container's onClick handler which clears selection.
+        const captureClick = (clickEvent: MouseEvent) => {
+          clickEvent.stopPropagation();
+          clickEvent.preventDefault();
+        };
+        // Add capturing event
+        window.addEventListener('click', captureClick, true);
+        // Remove it shortly after (enough time to catch the immediate click bubble)
+        setTimeout(() => window.removeEventListener('click', captureClick, true), 50);
       }
       startPointRef.current = null;
       isDraggingRef.current = false;

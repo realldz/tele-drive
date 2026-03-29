@@ -262,11 +262,7 @@ export default function TrashPage() {
         </header>
 
         {/* Scrollable Content */}
-        <div className="flex-1 overflow-y-auto relative" ref={contentRef} style={{ userSelect: isDragging ? 'none' : undefined }} onClick={(e) => {
-          if (e.target === e.currentTarget && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-            selection.clearSelection();
-          }
-        }}>
+        <div className="flex-1 overflow-y-auto relative" ref={contentRef} style={{ userSelect: isDragging ? 'none' : undefined }}>
           <DragSelectOverlay rect={dragRect} />
           {/* Info banner */}
           <div className="bg-amber-50 px-6 py-3 border-b border-amber-200 text-sm text-amber-800 flex items-center gap-2">
