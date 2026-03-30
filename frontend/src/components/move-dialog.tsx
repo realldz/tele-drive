@@ -48,7 +48,7 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
       setCurrentFolderId(null);
       fetchFolders(null);
     }
-  }, [isOpen, fetchFolders]);
+  }, [isOpen]);
 
   // Cập nhật khi currentFolderId thay đổi trong dialog
   useEffect(() => {
@@ -76,10 +76,10 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
             <X size={20} />
           </button>
         </div>
-        
+
         {/* Breadcrumb trong dialog */}
         <div className="bg-gray-50 p-3 border-b flex flex-wrap items-center gap-1 text-sm text-gray-600">
-          <button 
+          <button
             onClick={() => setCurrentFolderId(null)}
             className="hover:text-blue-600 flex items-center transition-colors"
           >
@@ -88,7 +88,7 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
           {breadcrumbs.map((bc) => (
             <React.Fragment key={bc.id}>
               <ChevronRight size={16} className="text-gray-400" />
-              <button 
+              <button
                 onClick={() => setCurrentFolderId(bc.id)}
                 className="hover:text-blue-600 transition-colors truncate max-w-[100px]"
                 title={bc.name}
@@ -107,7 +107,7 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
             <div className="text-center py-8 text-gray-400 italic">{t('move.empty')}</div>
           ) : (
             folders.map(folder => (
-              <div 
+              <div
                 key={folder.id}
                 onClick={() => setCurrentFolderId(folder.id)}
                 className="flex items-center gap-3 p-3 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors"
