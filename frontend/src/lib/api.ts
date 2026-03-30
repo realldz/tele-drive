@@ -157,6 +157,11 @@ export function getShareStreamUrl(shareToken: string): string {
   return `${API_URL}/files/share/stream/${shareToken}`;
 }
 
+/** Build share folder stream URL */
+export function getShareFolderStreamUrl(shareToken: string, fileId: string): string {
+  return `${API_URL}/folders/share/${shareToken}/stream/${fileId}`;
+}
+
 /** @deprecated — dùng requestDownloadToken thay thế */
 export function getDownloadUrl(fileId: string, token: string) {
   return `${API_URL}/files/${fileId}/download?token=${token}`;
