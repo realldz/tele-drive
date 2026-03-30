@@ -142,6 +142,7 @@ function PdfViewer({ url }: { url: string }) {
       <div className="flex-1 overflow-auto flex justify-center p-4 bg-gray-200">
         <Document
           file={url}
+          options={{ withCredentials: true }}
           onLoadSuccess={({ numPages: n }) => setNumPages(n)}
           loading={
             <div className="flex items-center justify-center py-20">
@@ -198,7 +199,7 @@ function CodeViewer({ url, filename }: { url: string; filename: string }) {
   useEffect(() => {
     setIsLoading(true);
     highlightedRef.current = false;
-    axios.get(url, { responseType: 'text', transformResponse: [(data: any) => data] })
+    axios.get(url, { responseType: 'text', withCredentials: true, transformResponse: [(data: any) => data] })
       .then(res => setContent(res.data))
       .catch(() => setContent('Failed to load file content'))
       .finally(() => setIsLoading(false));
@@ -249,6 +250,7 @@ export default function PreviewRenderer({ streamUrl, onDownload, fileInfo, t }: 
         <img
           src={streamUrl}
           alt={filename}
+          crossOrigin="use-credentials"
           className="max-h-full max-w-full rounded-lg object-contain shadow-lg"
         />
       </div>
