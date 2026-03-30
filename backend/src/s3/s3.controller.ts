@@ -25,6 +25,7 @@ import type { Response } from 'express';
 import { Readable, Transform } from 'stream';
 import * as crypto from 'crypto';
 import { wrapRequestStream } from './s3-stream.utils';
+import { SkipThrottle } from '@nestjs/throttler';
 
 /**
  * S3Controller — S3-compatible API Gateway.
@@ -69,6 +70,7 @@ import { wrapRequestStream } from './s3-stream.utils';
  *     the received body's MD5. Mismatch → 400 BadDigest.   [Task 8]
  */
 @Public()
+@SkipThrottle()
 @UseGuards(S3AuthGuard)
 @Controller('s3')
 export class S3Controller {
@@ -81,7 +83,7 @@ export class S3Controller {
     private readonly telegramService: TelegramService,
     private readonly cryptoService: CryptoService,
     private readonly prisma: PrismaService,
-  ) {}
+  ) { }
 
   // ---------------------------------------------------------------------------
   // GET /s3/ → ListBuckets
