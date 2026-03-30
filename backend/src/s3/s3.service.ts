@@ -133,6 +133,89 @@ export class S3Service {
     return currentFolderId;
   }
 
+  async cleanupEmptyFolders(userId: string, folderId: string | null | undefined): Promise<void> {
+    let currentFolderId = folderId;
+
+    while (currentFolderId) {
+      const folder = await this.prisma.folder.findFirst({
+        where: { id: currentFolderId, userId, deletedAt: null },
+        select: { id: true, parentId: true },
+      });
+
+      if (!folder || folder.parentId === null) {
+        return;
+      }
+
+      const [childFolder, file] = await Promise.all([
+        this.prisma.folder.findFirst({
+          where: { parentId: folder.id, userId, deletedAt: null },
+          select: { id: true },
+        }),
+        this.prisma.fileRecord.findFirst({
+          where: { folderId: folder.id, userId, deletedAt: null },
+          select: { id: true },
+        }),
+      ]);
+
+      if (childFolder || file) {
+        return;
+      }
+
+      await this.prisma.folder.update({
+        where: { id: folder.id },
+        data: { deletedAt: new Date() },
+      });
+
+      currentFolderId = folder.parentId;
+    }
+  }
+
+  async deleteFolderMarker(userId: string, bucketName: string, key: string): Promise<boolean> {
+    if (!key.endsWith('/')) return false;
+
+    const parts = key.split('/').filter(Boolean);
+    if (parts.length === 0) return false;
+
+    const bucket = await this.prisma.folder.findFirst({
+      where: { userId, name: bucketName, parentId: null, deletedAt: null },
+      select: { id: true },
+    });
+    if (!bucket) return false;
+
+    let currentFolderId = bucket.id;
+
+    for (const part of parts) {
+      const folder = await this.prisma.folder.findFirst({
+        where: { parentId: currentFolderId, name: part, userId, deletedAt: null },
+        select: { id: true },
+      });
+
+      if (!folder) return false;
+      currentFolderId = folder.id;
+    }
+
+    const [childFolder, file] = await Promise.all([
+      this.prisma.folder.findFirst({
+        where: { parentId: currentFolderId, userId, deletedAt: null },
+        select: { id: true },
+      }),
+      this.prisma.fileRecord.findFirst({
+        where: { folderId: currentFolderId, userId, deletedAt: null },
+        select: { id: true },
+      }),
+    ]);
+
+    if (childFolder || file) return false;
+
+    await this.prisma.folder.update({
+      where: { id: currentFolderId },
+      data: { deletedAt: new Date() },
+    });
+
+    await this.cleanupEmptyFolders(userId, currentFolderId);
+    return true;
+  }
+
   private async resolveKeyUnderFolder(
     userId: string,
     rootFolderId: string,
@@ -255,7 +338,7 @@ export class S3Service {
     // Recurse into subfolders
     const subFolders = await this.prisma.folder.findMany({
       where: { parentId: folderId, userId, deletedAt: null },
-      select: { id: true, name: true },
+      select: { id: true, name: true, updatedAt: true },
     });
 
     for (const folder of subFolders) {
@@ -278,6 +361,33 @@ export class S3Service {
         const delimIdx = rest.indexOf(delimiter);
         if (delimIdx !== -1) {
           commonPrefixes.add(prefix + rest.substring(0, delimIdx + 1));
+          continue;
+        }
+      }
+
+      // No delimiter (recursive mode): check if folder is an empty leaf.
+      // Emit it as a 0-byte virtual object so `aws s3 rm --recursive` can see and delete it.
+      if (!delimiter) {
+        const [hasChild, hasFile] = await Promise.all([
+          this.prisma.folder.findFirst({
+            where: { parentId: folder.id, userId, deletedAt: null },
+            select: { id: true },
+          }),
+          this.prisma.fileRecord.findFirst({
+            where: { folderId: folder.id, userId, deletedAt: null },
+            select: { id: true },
+          }),
+        ]);
+
+        if (!hasChild && !hasFile) {
+          if (!prefix || fullPath.startsWith(prefix)) {
+            objects.push({
+              key: fullPath,
+              size: BigInt(0),
+              lastModified: folder.updatedAt,
+              etag: `"${folder.id}"`,
+            });
+          }
           continue;
         }
       }

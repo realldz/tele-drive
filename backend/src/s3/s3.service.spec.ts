@@ -180,4 +180,57 @@ describe('S3Service', () => {
       expect(xml).toContain('<Message>Oops&lt;&amp;&gt;&quot;&apos;</Message>');
     });
   });
+
+  describe('cleanupEmptyFolders', () => {
+    it('soft-deletes empty ancestors until reaching the bucket root', async () => {
+      const prisma = {
+        folder: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({ id: 'leaf', parentId: 'parent' })
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ id: 'parent', parentId: 'bucket' })
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce({ id: 'bucket', parentId: null }),
+          update: jest.fn().mockResolvedValue({}),
+        },
+        fileRecord: {
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+      } as any;
+      service = new S3Service(prisma);
+
+      await service.cleanupEmptyFolders('user-1', 'leaf');
+
+      expect(prisma.folder.update).toHaveBeenNthCalledWith(1, {
+        where: { id: 'leaf' },
+        data: { deletedAt: expect.any(Date) },
+      });
+      expect(prisma.folder.update).toHaveBeenNthCalledWith(2, {
+        where: { id: 'parent' },
+        data: { deletedAt: expect.any(Date) },
+      });
+      expect(prisma.folder.update).toHaveBeenCalledTimes(2);
+    });
+
+    it('stops when the folder still has active files or child folders', async () => {
+      const prisma = {
+        folder: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({ id: 'leaf', parentId: 'parent' })
+            .mockResolvedValueOnce(null),
+          update: jest.fn(),
+        },
+        fileRecord: {
+          findFirst: jest.fn().mockResolvedValueOnce({ id: 'file-1' }),
+        },
+      } as any;
+      service = new S3Service(prisma);
+
+      await service.cleanupEmptyFolders('user-1', 'leaf');
+
+      expect(prisma.folder.update).not.toHaveBeenCalled();
+    });
+  });
 });
