@@ -242,8 +242,15 @@ export class S3Controller {
 
         for (const key of keys) {
           try {
+            if (key.endsWith('/')) {
+              await this.s3Service.deleteFolderMarker(userId, bucket, key);
+              deleted.push({ key });
+              continue;
+            }
+
             const file = await this.s3Service.findObject(userId, bucket, key);
             await this.fileService.delete(file.id, userId);
+            await this.s3Service.cleanupEmptyFolders(userId, file.folderId);
             deleted.push({ key });
           } catch (err: unknown) {
             const status = (err as { status?: number }).status;
@@ -286,7 +293,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
+    const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
@@ -338,7 +345,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
+    const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
@@ -413,7 +420,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
+    const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
@@ -468,7 +475,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
+    const key = this.getObjectKey(bucket, params, req);
 
     this.logger.log(`S3 HeadObject: s3://${bucket}/${key} (userId: ${userId})`);
     this.setRequestId(res);
@@ -507,7 +514,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    const key = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key']);
+    const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
@@ -527,8 +534,14 @@ export class S3Controller {
     // --- DeleteObject ---
     this.logger.log(`S3 DeleteObject: s3://${bucket}/${key} (userId: ${userId})`);
     try {
+      if (key.endsWith('/')) {
+        await this.s3Service.deleteFolderMarker(userId, bucket, key);
+        return res.status(204).end();
+      }
+
       const file = await this.s3Service.findObject(userId, bucket, key);
       await this.fileService.delete(file.id, userId);
+      await this.s3Service.cleanupEmptyFolders(userId, file.folderId);
       res.status(204).end();
     } catch (err: unknown) {
       // S3 spec: DeleteObject returns 204 even if key doesn't exist
@@ -821,6 +834,23 @@ export class S3Controller {
   private setRequestId(res: Response) {
     res.setHeader('x-amz-request-id', crypto.randomBytes(8).toString('hex').toUpperCase());
     res.setHeader('x-amz-id-2', crypto.randomBytes(16).toString('base64'));
+  }
+
+  private getObjectKey(
+    bucket: string,
+    params: Record<string, string>,
+    req: S3AuthenticatedRequest,
+  ): string {
+    const fromParams = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key'] || '');
+
+    const path = req.path || '';
+    const base = `/s3/${bucket}/`;
+    if (path.startsWith(base)) {
+      const rawKey = path.substring(base.length);
+      if (rawKey.length > 0) return decodeURIComponent(rawKey);
+    }
+
+    return fromParams;
   }
 
   private sendS3Error(res: Response, err: unknown) {
