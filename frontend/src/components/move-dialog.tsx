@@ -10,9 +10,10 @@ interface MoveDialogProps {
   onConfirm: (destinationFolderId: string | null) => Promise<void> | void;
   itemToMove: FileRecord | FolderRecord | null;
   itemType: 'file' | 'folder';
+  excludeIds?: string[];
 }
 
-export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, itemType }: MoveDialogProps) {
+export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, itemType, excludeIds = [] }: MoveDialogProps) {
   const { t } = useI18n();
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
   const [folders, setFolders] = useState<FolderRecord[]>([]);
@@ -20,13 +21,20 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // Tập hợp tất cả ID cần loại trừ: item đang move (nếu là folder) + excludeIds
+  const allExcludeIds = React.useMemo(() => {
+    const ids = new Set(excludeIds);
+    if (itemType === 'folder' && itemToMove?.id) {
+      ids.add(itemToMove.id);
+    }
+    return ids;
+  }, [excludeIds, itemType, itemToMove?.id]);
+
   const fetchFolders = useCallback(async (parentId: string | null) => {
     setIsLoading(true);
     try {
       const data = await fetchFolderContent(parentId || undefined);
-      const visibleFolders = data.folders.filter((f) =>
-        itemType !== 'folder' || f.id !== itemToMove?.id
-      );
+      const visibleFolders = data.folders.filter((f) => !allExcludeIds.has(f.id));
       setFolders(visibleFolders);
 
       if (parentId) {
@@ -40,13 +48,12 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
     } finally {
       setIsLoading(false);
     }
-  }, [itemType, itemToMove]);
+  }, [allExcludeIds]);
 
   useEffect(() => {
     if (isOpen) {
       // Reset về thư mục gốc mỗi khi mở dialog
       setCurrentFolderId(null);
-      fetchFolders(null);
     }
   }, [isOpen]);
 

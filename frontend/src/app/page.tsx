@@ -736,10 +736,11 @@ export default function Dashboard() {
         onConfirm={async (destFolderId) => { try { await moveItem(dialogItemType, dialogItem!.id, destFolderId); setActiveDialog('none'); fetchContent(); } catch (error: unknown) { alert(getApiErrorMessage(error, t('dashboard.moveError'))); } }}
       />
 
-      {/* Batch move dialog — reuses MoveDialog with a dummy item */}
+      {/* Batch move dialog */}
       <MoveDialog isOpen={activeDialog === 'batchMove'} onClose={() => setActiveDialog('none')}
         itemToMove={{ id: '__batch__', name: `${selection.selectedCount} items`, parentId: null, userId: '', visibility: 'PRIVATE', shareToken: null, createdAt: '', updatedAt: '' } as FolderRecord}
         itemType="folder"
+        excludeIds={folders.filter(folder => selection.selectedIds.has(folder.id)).map(folder => folder.id)}
         onConfirm={handleBatchMoveConfirm}
       />
 
