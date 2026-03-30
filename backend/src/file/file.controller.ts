@@ -11,12 +11,14 @@ import { InitUploadDto } from './dto/init-upload.dto';
 import { getClientIp } from '../common/utils/get-client-ip';
 import type { AuthenticatedRequest } from '../common/types/request';
 import type { Response, Request } from 'express';
+import { SkipThrottle } from '@nestjs/throttler';
 
 const multerOptions = {
   storage: memoryStorage(),
   limits: { fileSize: MAX_CHUNK_SIZE + 1024 * 1024 },
 };
 
+@SkipThrottle()
 @Controller('files')
 export class FileController {
   private readonly logger = new Logger(FileController.name);
@@ -24,7 +26,7 @@ export class FileController {
   constructor(
     private readonly fileService: FileService,
     private readonly cryptoService: CryptoService,
-  ) {}
+  ) { }
 
   @Public()
   @Get('config')
