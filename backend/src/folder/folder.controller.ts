@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Delete, Patch, Body, Param, Query, Req, Res, UseInterceptors } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Patch, Body, Param, Query, Req, Res, UseInterceptors, UnauthorizedException } from '@nestjs/common';
 import { FolderService } from './folder.service';
 import { FileService } from '../file/file.service';
+import { CryptoService } from '../crypto/crypto.service';
 import { Public } from '../auth/public.decorator';
 import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
 import { CreateFolderDto } from './dto/create-folder.dto';
@@ -12,6 +13,7 @@ export class FolderController {
   constructor(
     private readonly folderService: FolderService,
     private readonly fileService: FileService,
+    private readonly cryptoService: CryptoService,
   ) {}
 
   @Post()
@@ -97,5 +99,27 @@ export class FolderController {
   ) {
     const downloadInfo = await this.folderService.getSharedFileDownloadInfo(token, fileId);
     return this.fileService.processDownload(downloadInfo, res, req.headers.range);
+  }
+
+  @Public()
+  @UseInterceptors(BandwidthInterceptor)
+  @Get('share/:token/stream/:fileId')
+  async streamSharedFolderFile(
+    @Param('token') token: string,
+    @Param('fileId') fileId: string,
+    @Req() req: Request,
+    @Res() res: Response
+  ) {
+    this.verifyStreamCookie(req);
+    const downloadInfo = await this.folderService.getSharedFileDownloadInfo(token, fileId);
+    return this.fileService.processStream(downloadInfo, req.headers.range as string | undefined, res);
+  }
+
+  private verifyStreamCookie(req: Request): { sub: string; exp: number } {
+    const streamToken = req.cookies?.stream_token;
+    if (!streamToken) throw new UnauthorizedException('Stream cookie required');
+    const payload = this.cryptoService.verifyStreamCookieToken(streamToken);
+    if (!payload) throw new UnauthorizedException('Invalid or expired stream cookie');
+    return payload;
   }
 }

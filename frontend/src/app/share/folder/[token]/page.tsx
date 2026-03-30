@@ -10,6 +10,8 @@ import toast from 'react-hot-toast';
 
 import { API_URL, formatBandwidthResetTime, formatSize, requestShareFolderDownloadToken } from '@/lib/api';
 import type { SharedFolderRoot, FolderRecord, FileRecord, BreadcrumbItem } from '@/lib/types';
+import SharedFolderPreviewModal from './shared-folder-preview-modal';
+import { getFileIcon } from '@/lib/file-icon';
 
 export default function SharedFolderPage() {
   const params = useParams();
@@ -24,17 +26,18 @@ export default function SharedFolderPage() {
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [previewFile, setPreviewFile] = useState<FileRecord | null>(null);
 
   const fetchContent = useCallback(async () => {
     if (!token) return;
     setIsLoading(true);
     setError(null);
     try {
-      const url = currentFolderId 
+      const url = currentFolderId
         ? `${API_URL}/folders/share/${token}?folderId=${currentFolderId}`
         : `${API_URL}/folders/share/${token}`;
       const res = await axios.get(url);
-      
+
       setRootFolder(res.data.rootFolder);
       setFolders(res.data.folders || []);
       setFiles(res.data.files || []);
@@ -44,7 +47,7 @@ export default function SharedFolderPage() {
     } finally {
       setIsLoading(false);
     }
-  }, [token, currentFolderId]);
+  }, [token, currentFolderId, t]);
 
   useEffect(() => {
     fetchContent();
@@ -106,13 +109,13 @@ export default function SharedFolderPage() {
         <div className="p-6">
           {/* Breadcrumbs */}
           <div className="flex items-center text-sm text-gray-600 mb-6 bg-gray-50 px-4 py-3 rounded-xl overflow-x-auto">
-            <button 
+            <button
               onClick={() => setCurrentFolderId(undefined)}
               className="hover:text-blue-600 transition-colors flex items-center gap-1 font-medium whitespace-nowrap"
             >
               <Home size={16} /> {t('shareFolder.shareHome')}
             </button>
-            
+
             {breadcrumbs.map((crumb, index) => (
               <div key={crumb.id} className="flex items-center whitespace-nowrap">
                 <ChevronRight size={16} className="mx-1 text-gray-400" />
@@ -139,8 +142,8 @@ export default function SharedFolderPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {/* Folders */}
               {folders.map(folder => (
-                <div 
-                  key={folder.id} 
+                <div
+                  key={folder.id}
                   onClick={() => setCurrentFolderId(folder.id)}
                   className="bg-white border border-gray-100 p-4 rounded-xl flex items-center hover:shadow-md hover:border-blue-100 transition-all cursor-pointer group"
                 >
@@ -155,13 +158,16 @@ export default function SharedFolderPage() {
 
               {/* Files */}
               {files.map(file => (
-                <div 
-                  key={file.id} 
-                  className="bg-white border border-gray-100 p-4 rounded-xl flex items-start hover:shadow-md transition-all group"
+                <div
+                  key={file.id}
+                  onClick={() => setPreviewFile(file)}
+                  className="bg-white border border-gray-100 p-4 rounded-xl flex items-start hover:shadow-md hover:border-blue-100 transition-all cursor-pointer group"
                 >
                   <div className="flex-1 overflow-hidden pr-2">
                     <div className="flex items-start mb-2">
-                      <FileText className="w-8 h-8 text-gray-400 mr-2 flex-shrink-0" />
+                      <div className="w-8 h-8 mr-2 flex-shrink-0 flex items-center justify-center bg-gray-50 rounded-lg border border-gray-100">
+                        {getFileIcon(file.mimeType, 'w-5 h-5')}
+                      </div>
                       <div className="overflow-hidden">
                         <span className="font-medium text-gray-800 text-sm break-all line-clamp-2" title={file.filename}>
                           {file.filename}
@@ -171,7 +177,7 @@ export default function SharedFolderPage() {
                     </div>
                   </div>
                   <button
-                    onClick={() => handleDownload(file)}
+                    onClick={(e) => { e.stopPropagation(); handleDownload(file); }}
                     disabled={downloadingId === file.id}
                     className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-600 hover:text-white rounded-lg transition-colors flex-shrink-0 disabled:opacity-50"
                     title={t('shareFolder.download')}
@@ -184,6 +190,12 @@ export default function SharedFolderPage() {
           )}
         </div>
       </div>
+
+      <SharedFolderPreviewModal
+        shareToken={token}
+        file={previewFile}
+        onClose={() => setPreviewFile(null)}
+      />
     </div>
   );
 }
