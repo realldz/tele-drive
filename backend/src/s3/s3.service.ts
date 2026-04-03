@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { escapeXml, decodeXmlEntities } from '../common/utils/xml';
 
 /**
  * S3Service — Path resolution, folder auto-creation, XML response builder.
@@ -409,7 +410,7 @@ export class S3Service {
     let match: RegExpExecArray | null;
 
     while ((match = keyRegex.exec(body)) !== null) {
-      keys.push(this.decodeXmlEntities(match[1]));
+      keys.push(decodeXmlEntities(match[1]));
     }
 
     if (keys.length === 0 || keys.length > 1000) {
@@ -426,12 +427,12 @@ export class S3Service {
   ): string {
     const deletedXml = quiet
       ? ''
-      : deleted.map((item) => `<Deleted><Key>${this.escapeXml(item.key)}</Key></Deleted>`).join('');
+      : deleted.map((item) => `<Deleted><Key>${escapeXml(item.key)}</Key></Deleted>`).join('');
 
     const errorsXml = errors
       .map(
         (item) =>
-          `<Error><Key>${this.escapeXml(item.key)}</Key><Code>${this.escapeXml(item.code)}</Code><Message>${this.escapeXml(item.message)}</Message></Error>`,
+          `<Error><Key>${escapeXml(item.key)}</Key><Code>${escapeXml(item.code)}</Code><Message>${escapeXml(item.message)}</Message></Error>`,
       )
       .join('');
 
@@ -443,7 +444,7 @@ export class S3Service {
       .map(
         (b) => `
     <Bucket>
-      <Name>${this.escapeXml(b.name)}</Name>
+      <Name>${escapeXml(b.name)}</Name>
       <CreationDate>${b.createdAt.toISOString()}</CreationDate>
     </Bucket>`,
       )
@@ -452,8 +453,8 @@ export class S3Service {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <ListAllMyBucketsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Owner>
-    <ID>${this.escapeXml(owner)}</ID>
-    <DisplayName>${this.escapeXml(owner)}</DisplayName>
+    <ID>${escapeXml(owner)}</ID>
+    <DisplayName>${escapeXml(owner)}</DisplayName>
   </Owner>
   <Buckets>${bucketsXml}
   </Buckets>
@@ -473,9 +474,9 @@ export class S3Service {
       .map(
         (o) => `
   <Contents>
-    <Key>${this.escapeXml(o.key)}</Key>
+    <Key>${escapeXml(o.key)}</Key>
     <LastModified>${o.lastModified.toISOString()}</LastModified>
-    <ETag>${this.escapeXml(o.etag)}</ETag>
+    <ETag>${escapeXml(o.etag)}</ETag>
     <Size>${o.size}</Size>
     <StorageClass>STANDARD</StorageClass>
   </Contents>`,
@@ -483,14 +484,14 @@ export class S3Service {
       .join('');
 
     const prefixesXml = commonPrefixes
-      .map((p) => `\n  <CommonPrefixes><Prefix>${this.escapeXml(p)}</Prefix></CommonPrefixes>`)
+      .map((p) => `\n  <CommonPrefixes><Prefix>${escapeXml(p)}</Prefix></CommonPrefixes>`)
       .join('');
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-  <Name>${this.escapeXml(bucketName)}</Name>
-  <Prefix>${this.escapeXml(prefix)}</Prefix>
-  <Delimiter>${this.escapeXml(delimiter)}</Delimiter>
+  <Name>${escapeXml(bucketName)}</Name>
+  <Prefix>${escapeXml(prefix)}</Prefix>
+  <Delimiter>${escapeXml(delimiter)}</Delimiter>
   <MaxKeys>${maxKeys}</MaxKeys>
   <IsTruncated>${isTruncated}</IsTruncated>${objectsXml}${prefixesXml}
 </ListBucketResult>`;
@@ -499,36 +500,8 @@ export class S3Service {
   buildErrorXml(code: string, message: string): string {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <Error>
-  <Code>${this.escapeXml(code)}</Code>
-  <Message>${this.escapeXml(message)}</Message>
+  <Code>${escapeXml(code)}</Code>
+  <Message>${escapeXml(message)}</Message>
 </Error>`;
-  }
-
-  private decodeXmlEntities(str: string): string {
-    return String(str).replace(/&(lt|gt|quot|apos|amp);/g, (entity) => {
-      switch (entity) {
-        case '&lt;':
-          return '<';
-        case '&gt;':
-          return '>';
-        case '&quot;':
-          return '"';
-        case '&apos;':
-          return "'";
-        case '&amp;':
-          return '&';
-        default:
-          return entity;
-      }
-    });
-  }
-
-  private escapeXml(str: string): string {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
   }
 }

@@ -198,7 +198,6 @@ export class S3Controller {
         delimiter || undefined,
         maxKeys,
       );
-
       const isTruncated = objects.length >= maxKeys;
       const xml = this.s3Service.buildListObjectsV2Xml(
         bucket,
@@ -301,7 +300,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    this.logger.debug(`S3 handlePut: ${userId}, ${bucket}, ${params}`);
+    this.logger.debug(`S3 handlePut: ${userId}, ${bucket}, ${JSON.stringify(params)}`);
     const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
@@ -354,7 +353,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    this.logger.debug(`S3 handlePost: ${userId}, ${bucket}, ${params}`);
+    this.logger.debug(`S3 handlePost: ${userId}, ${bucket}, ${JSON.stringify(params)}`);
     const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
@@ -432,7 +431,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    this.logger.debug(`S3 handleGet: ${userId}, ${bucket}, ${params}`);
+    this.logger.debug(`S3 handleGet: ${userId}, ${bucket}, ${JSON.stringify(params)}`);
     const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
@@ -490,7 +489,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    this.logger.debug(`S3 HeadObject: ${userId}, ${bucket}, ${params}`);
+    this.logger.debug(`S3 HeadObject: ${userId}, ${bucket}, ${JSON.stringify(params)}`);
     const key = this.getObjectKey(bucket, params, req);
 
     this.logger.log(`S3 HeadObject: s3://${bucket}/${key} (userId: ${userId})`);
@@ -530,7 +529,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    this.logger.debug(`S3 handleDelete: ${userId}, ${bucket}, ${params}`);
+    this.logger.debug(`S3 handleDelete: ${userId}, ${bucket}, ${JSON.stringify(params)}`);
     const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 

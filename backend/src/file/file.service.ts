@@ -7,6 +7,7 @@ import Busboy from 'busboy';
 import * as crypto from 'crypto';
 import type { Response } from 'express';
 import { CryptoService } from '../crypto/crypto.service';
+import { SettingsService } from '../settings/settings.service';
 import { MAX_CHUNK_SIZE } from '../config/upload.config';
 import type { DownloadInfo } from '../common/types/download';
 
@@ -27,22 +28,6 @@ class ByteCounter extends Transform {
 export class FileService {
   private readonly logger = new Logger(FileService.name);
 
-  /** Cached multi-thread download setting */
-  private multiThreadEnabled: boolean | null = null;
-  private multiThreadEnabledAt = 0;
-
-  /** Cached max concurrent chunks setting */
-  private _maxConcurrentChunks: number | null = null;
-  private _maxConcurrentChunksAt = 0;
-
-  /** Cached download URL TTL */
-  private _downloadTtl: number | null = null;
-  private _downloadTtlAt = 0;
-
-  /** Cached stream cookie TTL */
-  private _streamTtl: number | null = null;
-  private _streamTtlAt = 0;
-
   /** Track active chunk uploads per user for concurrency enforcement */
   private readonly activeUploads = new Map<string, number>();
 
@@ -53,6 +38,7 @@ export class FileService {
     private readonly prisma: PrismaService,
     private readonly telegram: TelegramService,
     private readonly cryptoService: CryptoService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   /**
@@ -74,63 +60,31 @@ export class FileService {
   }
 
   /**
-   * Kiểm tra setting ENABLE_MULTI_THREAD_DOWNLOAD (cache 30 giây)
+   * Kiểm tra setting ENABLE_MULTI_THREAD_DOWNLOAD (cached 30s via SettingsService)
    */
   async isMultiThreadEnabled(): Promise<boolean> {
-    if (this.multiThreadEnabled !== null && Date.now() - this.multiThreadEnabledAt < 30_000) {
-      return this.multiThreadEnabled;
-    }
-    const setting = await this.prisma.systemSetting.findUnique({
-      where: { key: 'ENABLE_MULTI_THREAD_DOWNLOAD' },
-    });
-    this.multiThreadEnabled = setting?.value !== 'false';
-    this.multiThreadEnabledAt = Date.now();
-    return this.multiThreadEnabled;
+    return this.settingsService.getCachedSetting('ENABLE_MULTI_THREAD_DOWNLOAD', true, (v) => v !== 'false');
   }
 
   /**
-   * Kiểm tra setting MAX_CONCURRENT_CHUNKS (cache 30 giây)
+   * Kiểm tra setting MAX_CONCURRENT_CHUNKS (cached 30s via SettingsService)
    */
   async getMaxConcurrentChunks(): Promise<number> {
-    if (this._maxConcurrentChunks !== null && Date.now() - this._maxConcurrentChunksAt < 30_000) {
-      return this._maxConcurrentChunks;
-    }
-    const setting = await this.prisma.systemSetting.findUnique({
-      where: { key: 'MAX_CONCURRENT_CHUNKS' },
-    });
-    this._maxConcurrentChunks = setting ? parseInt(setting.value, 10) || 3 : 3;
-    this._maxConcurrentChunksAt = Date.now();
-    return this._maxConcurrentChunks;
+    return this.settingsService.getCachedSetting('MAX_CONCURRENT_CHUNKS', 3, (v) => parseInt(v, 10));
   }
 
   /**
-   * Lấy TTL cho signed download URL (cache 30 giây)
+   * Lấy TTL cho signed download URL (cached 30s via SettingsService)
    */
   async getDownloadTtl(): Promise<number> {
-    if (this._downloadTtl !== null && Date.now() - this._downloadTtlAt < 30_000) {
-      return this._downloadTtl;
-    }
-    const setting = await this.prisma.systemSetting.findUnique({
-      where: { key: 'DOWNLOAD_URL_TTL_SECONDS' },
-    });
-    this._downloadTtl = setting ? parseInt(setting.value, 10) || 300 : 300;
-    this._downloadTtlAt = Date.now();
-    return this._downloadTtl;
+    return this.settingsService.getCachedSetting('DOWNLOAD_URL_TTL_SECONDS', 300, (v) => parseInt(v, 10));
   }
 
   /**
-   * Lấy TTL cho stream cookie (cache 30 giây)
+   * Lấy TTL cho stream cookie (cached 30s via SettingsService)
    */
   async getStreamTtl(): Promise<number> {
-    if (this._streamTtl !== null && Date.now() - this._streamTtlAt < 30_000) {
-      return this._streamTtl;
-    }
-    const setting = await this.prisma.systemSetting.findUnique({
-      where: { key: 'STREAM_COOKIE_TTL_SECONDS' },
-    });
-    this._streamTtl = setting ? parseInt(setting.value, 10) || 3600 : 3600;
-    this._streamTtlAt = Date.now();
-    return this._streamTtl;
+    return this.settingsService.getCachedSetting('STREAM_COOKIE_TTL_SECONDS', 3600, (v) => parseInt(v, 10));
   }
 
   // ── Signed Download Token ──────────────────────────────────────────────
@@ -1005,6 +959,30 @@ export class FileService {
    * Resolve chunk URLs lazily — chỉ resolve cho các chunks overlap với Range
    */
   async processStream(downloadInfo: DownloadInfo, rangeHeader: string | undefined, res: Response) {
+    return this.processRangeRequest(downloadInfo, rangeHeader, res, 'inline');
+  }
+
+  /**
+   * Download với Range header (cho multi-thread download managers như IDM)
+   * Giống processStream nhưng giữ Content-Disposition: attachment
+   */
+  private async processRangeDownload(downloadInfo: DownloadInfo, rangeHeader: string, res: Response) {
+    return this.processRangeRequest(downloadInfo, rangeHeader, res, 'attachment');
+  }
+
+  /**
+   * Unified range/stream handler — merges the previously duplicated processStream
+   * and processRangeDownload methods.
+   *
+   * disposition = 'inline'     → streaming (video/audio player)
+   * disposition = 'attachment' → file download (IDM multi-thread)
+   */
+  private async processRangeRequest(
+    downloadInfo: DownloadInfo,
+    rangeHeader: string | undefined,
+    res: Response,
+    disposition: 'inline' | 'attachment',
+  ) {
     const fileSize = Number(downloadInfo.size);
     let start = 0;
     let end = fileSize - 1;
@@ -1036,7 +1014,11 @@ export class FileService {
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Content-Length', contentLength.toString());
     res.setHeader('Content-Type', downloadInfo.mimeType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', 'inline');
+    if (disposition === 'attachment') {
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadInfo.filename)}"`);
+    } else {
+      res.setHeader('Content-Disposition', 'inline');
+    }
 
     if (!downloadInfo.isChunked) {
       const url = await this.resolveFileLink(
@@ -1047,7 +1029,7 @@ export class FileService {
         headers: { Range: `bytes=${start}-${end}` }
       });
       if (!fetchRes.ok || !fetchRes.body) {
-        this.logger.error(`Failed to fetch stream from Telegram: "${downloadInfo.filename}"`);
+        this.logger.error(`Failed to fetch from Telegram: "${downloadInfo.filename}"`);
         return res.status(500).end();
       }
 
@@ -1060,9 +1042,9 @@ export class FileService {
         });
       } catch (err: unknown) {
         if (this.isClientDisconnect(err)) {
-          this.logger.debug(`Client disconnected during stream: "${downloadInfo.filename}"`);
+          this.logger.debug(`Client disconnected during ${disposition}: "${downloadInfo.filename}"`);
         } else {
-          this.logger.error(`Stream failed: "${downloadInfo.filename}"`, err instanceof Error ? err.message : String(err));
+          this.logger.error(`${disposition} failed: "${downloadInfo.filename}"`, err instanceof Error ? err.message : String(err));
           if (!res.headersSent) res.status(500).end();
           else if (!res.destroyed) res.end();
         }
@@ -1124,138 +1106,9 @@ export class FileService {
         res.end();
       } catch (err: unknown) {
         if (this.isClientDisconnect(err)) {
-          this.logger.debug(`Client disconnected during stream: "${downloadInfo.filename}"`);
+          this.logger.debug(`Client disconnected during ${disposition}: "${downloadInfo.filename}"`);
         } else {
-          this.logger.error('Stream error', err);
-        }
-        if (!res.headersSent) res.status(500).end();
-        else if (!res.destroyed) res.end();
-      }
-    }
-  }
-
-  /**
-   * Download với Range header (cho multi-thread download managers như IDM)
-   * Giống processStream nhưng giữ Content-Disposition: attachment
-   */
-  private async processRangeDownload(downloadInfo: DownloadInfo, rangeHeader: string, res: Response) {
-    const fileSize = Number(downloadInfo.size);
-    let start = 0;
-    let end = fileSize - 1;
-
-    const match = rangeHeader.match(/bytes=(\d+)-(\d*)/);
-    if (match) {
-      start = parseInt(match[1], 10);
-      if (match[2]) {
-        end = parseInt(match[2], 10);
-      }
-    }
-
-    if (start >= fileSize) {
-      res.status(416).setHeader('Content-Range', `bytes */${fileSize}`);
-      return res.end();
-    }
-
-    end = Math.min(end, fileSize - 1);
-    const contentLength = end - start + 1;
-
-    res.status(206);
-    res.setHeader('Content-Range', `bytes ${start}-${end}/${fileSize}`);
-    res.setHeader('Accept-Ranges', 'bytes');
-    res.setHeader('Content-Length', contentLength.toString());
-    res.setHeader('Content-Type', downloadInfo.mimeType || 'application/octet-stream');
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadInfo.filename)}"`);
-
-    if (!downloadInfo.isChunked) {
-      const url = await this.resolveFileLink(
-        downloadInfo.telegramFileId, downloadInfo.botId,
-        downloadInfo.telegramMessageId, null,
-      );
-      const fetchRes = await fetchWithRetry(url, {
-        headers: { Range: `bytes=${start}-${end}` },
-      });
-
-      if (!fetchRes.ok || !fetchRes.body) {
-        this.logger.error(`Failed to fetch range from Telegram: "${downloadInfo.filename}"`);
-        return res.status(500).end();
-      }
-
-      try {
-        await this.pipeStreamToResponse(fetchRes.body, res, {
-          decrypt: (downloadInfo.isEncrypted && downloadInfo.dek && downloadInfo.iv)
-            ? { dek: downloadInfo.dek, iv: downloadInfo.iv, offset: start }
-            : undefined,
-          endResponse: true,
-        });
-      } catch (err: unknown) {
-        if (this.isClientDisconnect(err)) {
-          this.logger.debug(`Client disconnected during range download: "${downloadInfo.filename}"`);
-        } else {
-          this.logger.error(`Range download failed: "${downloadInfo.filename}"`, err instanceof Error ? err.message : String(err));
-          if (!res.headersSent) res.status(500).end();
-          else if (!res.destroyed) res.end();
-        }
-      }
-    } else {
-      let currentOffset = 0;
-      const chunksToFetch: { telegramFileId: string; botId: bigint; telegramMessageId: number | null; id: string | null; iv: Buffer | null; size: number; fetchStart: number; fetchEnd: number; byteOffsetInChunk: number }[] = [];
-
-      for (const chunk of downloadInfo.chunks) {
-        const chunkStart = currentOffset;
-        const chunkEnd = currentOffset + chunk.size - 1;
-
-        if (start <= chunkEnd && end >= chunkStart) {
-          const fetchStart = Math.max(start, chunkStart) - chunkStart;
-          const fetchEnd = Math.min(end, chunkEnd) - chunkStart;
-
-          chunksToFetch.push({
-            telegramFileId: chunk.telegramFileId,
-            botId: chunk.botId,
-            telegramMessageId: chunk.telegramMessageId,
-            id: chunk.id,
-            iv: chunk.iv,
-            size: chunk.size,
-            fetchStart,
-            fetchEnd,
-            byteOffsetInChunk: fetchStart,
-          });
-        }
-        currentOffset += chunk.size;
-      }
-
-      try {
-        for (let i = 0; i < chunksToFetch.length; i++) {
-          const chunkReq = chunksToFetch[i];
-
-          for (let p = i + 1; p < Math.min(i + 1 + this.PREFETCH_AHEAD, chunksToFetch.length); p++) {
-            this.resolveFileLink(
-              chunksToFetch[p].telegramFileId, chunksToFetch[p].botId,
-              chunksToFetch[p].telegramMessageId, chunksToFetch[p].id,
-            );
-          }
-
-          const url = await this.resolveFileLink(
-            chunkReq.telegramFileId, chunkReq.botId,
-            chunkReq.telegramMessageId, chunkReq.id,
-          );
-          const fetchRes = await fetchWithRetry(url, {
-            headers: { Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}` },
-          });
-
-          if (!fetchRes.ok || !fetchRes.body) throw new Error('Fetch chunk error');
-
-          await this.pipeStreamToResponse(fetchRes.body, res, {
-            decrypt: downloadInfo.isEncrypted && downloadInfo.dek && chunkReq.iv
-              ? { dek: downloadInfo.dek, iv: chunkReq.iv, offset: chunkReq.byteOffsetInChunk }
-              : undefined,
-          });
-        }
-        res.end();
-      } catch (err: unknown) {
-        if (this.isClientDisconnect(err)) {
-          this.logger.debug(`Client disconnected during range download: "${downloadInfo.filename}"`);
-        } else {
-          this.logger.error(`Range download error: "${downloadInfo.filename}"`, err instanceof Error ? err.message : String(err));
+          this.logger.error(`${disposition} error: "${downloadInfo.filename}"`, err instanceof Error ? err.message : String(err));
         }
         if (!res.headersSent) res.status(500).end();
         else if (!res.destroyed) res.end();
@@ -1387,15 +1240,7 @@ export class FileService {
     });
     if (!fileRecord) return;
 
-    if (fileRecord.telegramMessageId) {
-      await this.telegram.deleteMessage(fileRecord.telegramMessageId);
-    }
-
-    for (const chunk of fileRecord.chunks) {
-      if (chunk.telegramMessageId) {
-        await this.telegram.deleteMessage(chunk.telegramMessageId);
-      }
-    }
+    await this.purgeFilesFromTelegram([fileRecord]);
 
     // Transaction: xoá FileRecord + trừ usedSpace (chỉ nếu file đã complete)
     await this.prisma.$transaction(async (tx) => {
@@ -1460,15 +1305,7 @@ export class FileService {
       });
       if (!fileRecord) throw new NotFoundException('File not found in trash');
 
-      // Xoá trên Telegram
-      if (fileRecord.telegramMessageId) {
-        await this.telegram.deleteMessage(fileRecord.telegramMessageId).catch(() => {});
-      }
-      for (const chunk of fileRecord.chunks) {
-        if (chunk.telegramMessageId) {
-          await this.telegram.deleteMessage(chunk.telegramMessageId).catch(() => {});
-        }
-      }
+      await this.purgeFilesFromTelegram([fileRecord]);
 
       // Transaction: xoá DB + trừ usedSpace
       await this.prisma.$transaction(async (tx) => {
@@ -1504,28 +1341,13 @@ export class FileService {
       if (files.length === 0) return 0n;
 
       let freedSize = BigInt(0);
-      const deleteMessageIds: number[] = [];
-
       for (const file of files) {
         if (file.status === 'complete') {
           freedSize += file.size;
         }
-        if (file.telegramMessageId) deleteMessageIds.push(file.telegramMessageId);
-        for (const chunk of file.chunks) {
-          if (chunk.telegramMessageId) deleteMessageIds.push(chunk.telegramMessageId);
-        }
       }
 
-      // Xóa từ Telegram một cách an toàn (tránh ngắt quãng nếu 1 file lỗi)
-      for (const msgId of deleteMessageIds) {
-        try {
-          await this.telegram.deleteMessage(msgId);
-          // Delay nhỏ để tránh rate-limit nếu số lượng quá lớn
-          await new Promise(res => setTimeout(res, 50));
-        } catch (err) {
-          this.logger.warn(`Failed to delete message ${msgId} during bulk delete: ${err}`);
-        }
-      }
+      await this.purgeFilesFromTelegram(files);
 
       await this.prisma.$transaction(async (tx) => {
         await tx.fileRecord.deleteMany({
@@ -1568,27 +1390,14 @@ export class FileService {
       }
 
       let freedSize = BigInt(0);
-      const deleteMessageIds: number[] = [];
       const fileIds = files.map(f => f.id);
       const folderIds = folders.map(f => f.id);
 
       for (const file of files) {
         if (file.status === 'complete') freedSize += file.size;
-        if (file.telegramMessageId) deleteMessageIds.push(file.telegramMessageId);
-        for (const chunk of file.chunks) {
-          if (chunk.telegramMessageId) deleteMessageIds.push(chunk.telegramMessageId);
-        }
       }
 
-      // Xoá batch trên Telegram
-      for (const msgId of deleteMessageIds) {
-        try {
-          await this.telegram.deleteMessage(msgId);
-          await new Promise(res => setTimeout(res, 50));
-        } catch (err) {
-          this.logger.warn(`Failed to delete message ${msgId} during empty trash: ${err}`);
-        }
-      }
+      await this.purgeFilesFromTelegram(files);
 
       await this.prisma.$transaction(async (tx) => {
         if (fileIds.length > 0) {
@@ -1615,6 +1424,297 @@ export class FileService {
       return { success: true, count: files.length + folders.length, freedSize: freedSize.toString() };
     } finally {
       releaseLock();
+    }
+  }
+
+  // ── Telegram Cleanup Helper ────────────────────────────────────────────
+
+  /**
+   * Xoá tất cả Telegram messages liên quan đến danh sách files.
+   * Dùng chung bởi delete(), permanentDelete(), bulkPermanentDeleteFiles(), emptyTrash().
+   * Tránh lặp code pattern: xoá main message + chunks messages.
+   */
+  async purgeFilesFromTelegram(
+    files: Array<{ telegramMessageId: number | null; chunks: Array<{ telegramMessageId: number | null }> }>,
+  ): Promise<void> {
+    const messageIds: number[] = [];
+    for (const file of files) {
+      if (file.telegramMessageId) messageIds.push(file.telegramMessageId);
+      for (const chunk of file.chunks) {
+        if (chunk.telegramMessageId) messageIds.push(chunk.telegramMessageId);
+      }
+    }
+
+    for (const msgId of messageIds) {
+      try {
+        await this.telegram.deleteMessage(msgId);
+        // Delay nhỏ để tránh rate-limit nếu số lượng lớn
+        if (messageIds.length > 5) {
+          await new Promise(res => setTimeout(res, 50));
+        }
+      } catch (err) {
+        this.logger.warn(`Failed to delete Telegram message ${msgId}: ${err}`);
+      }
+    }
+  }
+
+  // ── Upload From Buffer / Stream (cho S3 và các module khác) ────────────
+
+  /**
+   * Upload file từ Buffer — encrypt + upload Telegram + tạo/update FileRecord + cộng usedSpace.
+   * Dùng bởi S3Controller.doPutObject() để tránh trùng lặp logic upload.
+   *
+   * @param existingFileId Nếu có, update record hiện tại (overwrite). Nếu null, tạo mới.
+   */
+  async uploadFromBuffer(params: {
+    buffer: Buffer;
+    filename: string;
+    mimeType: string;
+    userId: string;
+    folderId?: string | null;
+    existingFileId?: string;
+    signal?: AbortSignal;
+  }) {
+    const { buffer, filename, mimeType, userId, folderId, existingFileId, signal } = params;
+
+    await this.checkQuota(userId, buffer.length);
+
+    const dek = this.cryptoService.generateFileKey();
+    const iv = this.cryptoService.generateIv();
+    const encryptedKey = this.cryptoService.encryptKey(dek);
+
+    // Encrypt buffer
+    const cipher = this.cryptoService.createEncryptStream(dek, iv);
+    const encryptedBuffer = Buffer.concat([cipher.update(buffer), cipher.final()]);
+
+    if (existingFileId) {
+      // Update existing file (S3 overwrite)
+      const oldRecord = await this.prisma.fileRecord.findUnique({
+        where: { id: existingFileId },
+        include: { chunks: true },
+      });
+
+      // Upload to Telegram
+      const { fileId: telegramFileId, messageId: telegramMessageId, botId } = await this.telegram.uploadFile(encryptedBuffer, existingFileId, signal);
+
+      // Delete old Telegram messages
+      if (oldRecord) {
+        await this.purgeFilesFromTelegram([oldRecord]);
+      }
+
+      // Transaction: update record + adjust usedSpace
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const oldSize = oldRecord?.size ?? 0n;
+        const newSize = BigInt(buffer.length);
+        const sizeDiff = newSize - oldSize;
+
+        const record = await tx.fileRecord.update({
+          where: { id: existingFileId },
+          data: {
+            filename,
+            mimeType,
+            size: newSize,
+            telegramFileId,
+            telegramMessageId,
+            botId,
+            isChunked: false,
+            totalChunks: 1,
+            status: 'complete',
+            isEncrypted: true,
+            encryptionAlgo: 'aes-256-ctr',
+            encryptionIv: iv.toString('hex'),
+            encryptedKey,
+          },
+        });
+
+        if (sizeDiff !== 0n) {
+          await tx.user.update({
+            where: { id: userId },
+            data: { usedSpace: { increment: sizeDiff } },
+          });
+        }
+
+        return record;
+      });
+
+      this.logger.log(`File overwritten via uploadFromBuffer: "${filename}" (${buffer.length} bytes, userId: ${userId})`);
+      return updated;
+    } else {
+      // Create new record
+      const record = await this.prisma.fileRecord.create({
+        data: {
+          filename,
+          size: buffer.length,
+          mimeType,
+          telegramFileId: null,
+          telegramMessageId: null,
+          isChunked: false,
+          totalChunks: 1,
+          status: 'uploading',
+          isEncrypted: true,
+          encryptionAlgo: 'aes-256-ctr',
+          encryptionIv: iv.toString('hex'),
+          encryptedKey,
+          folderId: folderId || null,
+          userId,
+        },
+      });
+
+      try {
+        const { fileId: telegramFileId, messageId: telegramMessageId, botId } = await this.telegram.uploadFile(encryptedBuffer, record.id, signal);
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+          const fileRecord = await tx.fileRecord.update({
+            where: { id: record.id },
+            data: {
+              telegramFileId,
+              telegramMessageId,
+              botId,
+              status: 'complete',
+            },
+          });
+
+          await tx.user.update({
+            where: { id: userId },
+            data: { usedSpace: { increment: buffer.length } },
+          });
+
+          return fileRecord;
+        });
+
+        this.logger.log(`File uploaded via uploadFromBuffer: "${filename}" (${buffer.length} bytes, userId: ${userId})`);
+        return updated;
+      } catch (err) {
+        await this.prisma.fileRecord.delete({ where: { id: record.id } });
+        throw err;
+      }
+    }
+  }
+
+  /**
+   * Upload file từ Readable stream — encrypt + upload Telegram + tạo/update FileRecord + cộng usedSpace.
+   * Dùng bởi S3Controller cho large files.
+   *
+   * @param existingFileId Nếu có, update record hiện tại (overwrite). Nếu null, tạo mới.
+   */
+  async uploadFromStream(params: {
+    stream: Readable;
+    filename: string;
+    mimeType: string;
+    size: number;
+    userId: string;
+    folderId?: string | null;
+    existingFileId?: string;
+    signal?: AbortSignal;
+  }) {
+    const { stream, filename, mimeType, size, userId, folderId, existingFileId, signal } = params;
+
+    await this.checkQuota(userId, size);
+
+    const dek = this.cryptoService.generateFileKey();
+    const iv = this.cryptoService.generateIv();
+    const encryptedKey = this.cryptoService.encryptKey(dek);
+
+    // Pipe through encryption
+    const cipher = this.cryptoService.createEncryptStream(dek, iv);
+    const encryptedStream = stream.pipe(cipher);
+
+    if (existingFileId) {
+      const oldRecord = await this.prisma.fileRecord.findUnique({
+        where: { id: existingFileId },
+        include: { chunks: true },
+      });
+
+      const { fileId: telegramFileId, messageId: telegramMessageId, botId } = await this.telegram.uploadStream(encryptedStream, existingFileId, signal);
+
+      if (oldRecord) {
+        await this.purgeFilesFromTelegram([oldRecord]);
+      }
+
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const oldSize = oldRecord?.size ?? 0n;
+        const newSize = BigInt(size);
+        const sizeDiff = newSize - oldSize;
+
+        const record = await tx.fileRecord.update({
+          where: { id: existingFileId },
+          data: {
+            filename,
+            mimeType,
+            size: newSize,
+            telegramFileId,
+            telegramMessageId,
+            botId,
+            isChunked: false,
+            totalChunks: 1,
+            status: 'complete',
+            isEncrypted: true,
+            encryptionAlgo: 'aes-256-ctr',
+            encryptionIv: iv.toString('hex'),
+            encryptedKey,
+          },
+        });
+
+        if (sizeDiff !== 0n) {
+          await tx.user.update({
+            where: { id: userId },
+            data: { usedSpace: { increment: sizeDiff } },
+          });
+        }
+
+        return record;
+      });
+
+      this.logger.log(`File overwritten via uploadFromStream: "${filename}" (${size} bytes, userId: ${userId})`);
+      return updated;
+    } else {
+      const record = await this.prisma.fileRecord.create({
+        data: {
+          filename,
+          size,
+          mimeType,
+          telegramFileId: null,
+          telegramMessageId: null,
+          isChunked: false,
+          totalChunks: 1,
+          status: 'uploading',
+          isEncrypted: true,
+          encryptionAlgo: 'aes-256-ctr',
+          encryptionIv: iv.toString('hex'),
+          encryptedKey,
+          folderId: folderId || null,
+          userId,
+        },
+      });
+
+      try {
+        const { fileId: telegramFileId, messageId: telegramMessageId, botId } = await this.telegram.uploadStream(encryptedStream, record.id, signal);
+
+        const updated = await this.prisma.$transaction(async (tx) => {
+          const fileRecord = await tx.fileRecord.update({
+            where: { id: record.id },
+            data: {
+              telegramFileId,
+              telegramMessageId,
+              botId,
+              status: 'complete',
+            },
+          });
+
+          await tx.user.update({
+            where: { id: userId },
+            data: { usedSpace: { increment: size } },
+          });
+
+          return fileRecord;
+        });
+
+        this.logger.log(`File uploaded via uploadFromStream: "${filename}" (${size} bytes, userId: ${userId})`);
+        return updated;
+      } catch (err) {
+        await this.prisma.fileRecord.delete({ where: { id: record.id } });
+        throw err;
+      }
     }
   }
 

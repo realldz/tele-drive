@@ -17,6 +17,10 @@ const DEFAULT_SETTINGS: Record<string, string> = {
 export class SettingsService implements OnModuleInit {
   private readonly logger = new Logger(SettingsService.name);
 
+  /** In-memory cache for getCachedSetting() */
+  private readonly settingsCache = new Map<string, { value: unknown; expiry: number }>();
+  private readonly DEFAULT_CACHE_TTL_MS = 30_000; // 30 seconds
+
   constructor(private readonly prisma: PrismaService) {}
 
   /**
@@ -63,6 +67,56 @@ export class SettingsService implements OnModuleInit {
     });
 
     this.logger.log(`Setting updated: "${key}" = "${value}"`);
+
+    // Invalidate cache on update
+    this.settingsCache.delete(key);
+
     return result;
+  }
+
+  /**
+   * Generic cached system setting accessor.
+   *
+   * Reads once from DB, caches for `cacheTtlMs` (default 30s).
+   * Use `parser` to convert the raw string value to the desired type.
+   *
+   * Example:
+   *   const ttl = await settingsService.getCachedSetting('DOWNLOAD_URL_TTL_SECONDS', 300, parseInt);
+   *   const enabled = await settingsService.getCachedSetting('FEATURE_FLAG', true, v => v !== 'false');
+   */
+  async getCachedSetting<T>(
+    key: string,
+    defaultValue: T,
+    parser?: (value: string) => T,
+    cacheTtlMs?: number,
+  ): Promise<T> {
+    const cached = this.settingsCache.get(key);
+    if (cached && cached.expiry > Date.now()) {
+      return cached.value as T;
+    }
+
+    const setting = await this.prisma.systemSetting.findUnique({ where: { key } });
+    let value: T;
+    if (setting) {
+      value = parser ? parser(setting.value) : (setting.value as unknown as T);
+      // If parser returns NaN or null/undefined, fall back to default
+      if (value === null || value === undefined || (typeof value === 'number' && isNaN(value))) {
+        value = defaultValue;
+      }
+    } else {
+      value = defaultValue;
+    }
+
+    this.settingsCache.set(key, {
+      value,
+      expiry: Date.now() + (cacheTtlMs ?? this.DEFAULT_CACHE_TTL_MS),
+    });
+
+    return value;
+  }
+
+  /** Invalidate a specific cached setting (e.g., after admin update). */
+  invalidateCache(key: string): void {
+    this.settingsCache.delete(key);
   }
 }
