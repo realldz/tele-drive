@@ -92,6 +92,7 @@ export class S3Controller {
   @Get()
   async listBuckets(@Req() req: S3AuthenticatedRequest, @Res() res: Response) {
     const userId = req.s3UserId;
+    this.logger.debug(`S3 ListBuckets: ${userId}`);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { username: true },
@@ -120,6 +121,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
+    this.logger.debug(`S3 CreateBucket: ${userId}, ${bucket}`);
     await this.s3Service.createBucket(userId, bucket);
     this.setRequestId(res);
     res.setHeader('Location', `/${bucket}`);
@@ -138,6 +140,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
+    this.logger.debug(`S3 HeadBucket: ${userId}, ${bucket}`);
     const exists = await this.prisma.folder.findFirst({
       where: { userId, name: bucket, parentId: null, deletedAt: null },
       select: { id: true },
@@ -154,6 +157,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
+    this.logger.debug(`S3 DeleteBucket: ${userId}, ${bucket}`);
     this.setRequestId(res);
     try {
       await this.s3Service.deleteBucket(userId, bucket);
@@ -179,6 +183,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
+    this.logger.debug(`S3 ListObjects: ${userId}, ${bucket}`);
     const query = req.query as Record<string, string>;
     const prefix = query['prefix'] || '';
     const delimiter = query['delimiter'] || '';
@@ -223,6 +228,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
+    this.logger.debug(`S3 handleBucketPost: ${userId}, ${bucket}`);
     const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
@@ -295,6 +301,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
+    this.logger.debug(`S3 handlePut: ${userId}, ${bucket}, ${params}`);
     const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
@@ -324,7 +331,7 @@ export class S3Controller {
         res.setHeader('ETag', etag);
         res.status(200).end();
       } catch (err: unknown) {
-        this.logger.error(`S3 UploadPart error: ${err instanceof Error ? err.message : err}`, err instanceof Error ? err.stack : undefined);
+        this.logger.error(`S3 UploadPart error: ${uploadId}, ${partNumber}, ${err instanceof Error ? err.message : err}`, err instanceof Error ? err.stack : undefined);
         this.sendS3Error(res, err);
       }
       return;
@@ -347,6 +354,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
+    this.logger.debug(`S3 handlePost: ${userId}, ${bucket}, ${params}`);
     const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
@@ -357,6 +365,7 @@ export class S3Controller {
       const contentType =
         (req.headers['content-type'] as string) || 'application/octet-stream';
       try {
+        this.logger.debug(`S3 CreateMultipartUpload: ${userId}, ${bucket}, ${key}, ${contentType}`);
         const { uploadId } = await this.s3Multipart.createMultipartUpload(
           userId,
           bucket,
@@ -367,7 +376,7 @@ export class S3Controller {
         res.setHeader('Content-Type', 'application/xml');
         res.status(200).send(xml);
       } catch (err: unknown) {
-        this.logger.error(`S3 CreateMultipartUpload error: ${err instanceof Error ? err.message : err}`, err instanceof Error ? err.stack : undefined);
+        this.logger.error(`S3 CreateMultipartUpload error: ${bucket}, ${key}, ${err instanceof Error ? err.message : err}`, err instanceof Error ? err.stack : undefined);
         this.sendS3Error(res, err);
       }
       return;
@@ -377,6 +386,7 @@ export class S3Controller {
     const uploadId = query['uploadId'];
     if (uploadId) {
       try {
+        this.logger.debug(`S3 CompleteMultipartUpload: ${userId}, ${bucket}, ${key}, ${uploadId}`);
         const { stream: bodyStream } = wrapRequestStream(req);
         const bodyBuf = await this.readBody(bodyStream);
         const bodyStr = bodyBuf.toString('utf8');
@@ -422,6 +432,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
+    this.logger.debug(`S3 handleGet: ${userId}, ${bucket}, ${params}`);
     const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
@@ -431,6 +442,7 @@ export class S3Controller {
     const uploadId = query['uploadId'];
     if (uploadId) {
       try {
+        this.logger.debug(`S3 ListParts: ${userId}, ${bucket}, ${key}, ${uploadId}`);
         const parts = await this.s3Multipart.listParts(uploadId, userId);
         const xml = this.s3Multipart.buildListPartsXml(bucket, key, uploadId, parts);
         res.setHeader('Content-Type', 'application/xml');
@@ -444,6 +456,7 @@ export class S3Controller {
     // --- GetObject ---
     this.logger.log(`S3 GetObject: s3://${bucket}/${key} (userId: ${userId})`);
     try {
+      this.logger.debug(`S3 GetObject: ${userId}, ${bucket}, ${key}`);
       const file = await this.s3Service.findObject(userId, bucket, key);
       const downloadInfo = this.fileService.getDownloadMetadata(file);
 
@@ -477,6 +490,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
+    this.logger.debug(`S3 HeadObject: ${userId}, ${bucket}, ${params}`);
     const key = this.getObjectKey(bucket, params, req);
 
     this.logger.log(`S3 HeadObject: s3://${bucket}/${key} (userId: ${userId})`);
@@ -516,6 +530,7 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
+    this.logger.debug(`S3 handleDelete: ${userId}, ${bucket}, ${params}`);
     const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
