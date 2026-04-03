@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
-import { TelegramService } from '../telegram/telegram.service';
+import { FileService } from '../file/file.service';
 
 /**
  * TrashCleanupService — Cron job dọn dẹp thùng rác tự động.
@@ -9,6 +9,9 @@ import { TelegramService } from '../telegram/telegram.service';
  * Chạy mỗi ngày lúc 2:00 AM:
  *   - Tìm tất cả FileRecord và Folder có deletedAt < (now - 7 ngày)
  *   - Thực hiện permanent delete (xoá trên Telegram + DB + hoàn trả usedSpace)
+ *
+ * Delegates Telegram cleanup to FileService.purgeFilesFromTelegram() to avoid
+ * duplicating the delete-message-with-retry logic.
  */
 @Injectable()
 export class TrashCleanupService {
@@ -16,7 +19,7 @@ export class TrashCleanupService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly telegram: TelegramService,
+    private readonly fileService: FileService,
   ) {}
 
   @Cron('0 2 * * *') // Mỗi ngày lúc 2:00 AM
@@ -37,15 +40,8 @@ export class TrashCleanupService {
     let filesDeleted = 0;
     for (const file of expiredFiles) {
       try {
-        // Xoá trên Telegram
-        if (file.telegramMessageId) {
-          await this.telegram.deleteMessage(file.telegramMessageId);
-        }
-        for (const chunk of file.chunks) {
-          if (chunk.telegramMessageId) {
-            await this.telegram.deleteMessage(chunk.telegramMessageId);
-          }
-        }
+        // Xoá trên Telegram (delegate sang FileService)
+        await this.fileService.purgeFilesFromTelegram([file]);
 
         // Transaction: xoá DB + trừ usedSpace
         await this.prisma.$transaction(async (tx) => {

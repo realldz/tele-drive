@@ -5,6 +5,7 @@ import { FileService } from './file.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { MAX_CHUNK_SIZE } from '../config/upload.config';
 import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
+import { StreamCookieGuard } from '../common/guards/stream-cookie.guard';
 import { Public } from '../auth/public.decorator';
 import { AdminGuard } from '../auth/admin.guard';
 import { InitUploadDto } from './dto/init-upload.dto';
@@ -169,11 +170,11 @@ export class FileController {
   }
 
   @Public()
+  @UseGuards(StreamCookieGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('stream/:id')
-  async streamByCookie(@Param('id') id: string, @Req() req: Request, @Res() res: Response) {
-    const cookiePayload = this.verifyStreamCookie(req);
-    const sub = cookiePayload.sub;
+  async streamByCookie(@Param('id') id: string, @Req() req: Request & { streamUser?: { sub: string; exp: number } }, @Res() res: Response) {
+    const sub = req.streamUser!.sub;
 
     // User stream: verify ownership. Guest stream: allow if subject starts with 'guest:'
     const downloadInfo = sub.startsWith('guest:')
@@ -184,10 +185,10 @@ export class FileController {
   }
 
   @Public()
+  @UseGuards(StreamCookieGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('share/stream/:shareToken')
   async streamSharedByCookie(@Param('shareToken') shareToken: string, @Req() req: Request, @Res() res: Response) {
-    this.verifyStreamCookie(req);
     const downloadInfo = await this.fileService.getShareStreamInfo(shareToken);
     return this.fileService.processStream(downloadInfo, req.headers.range as string | undefined, res);
   }
@@ -288,16 +289,6 @@ export class FileController {
   @Post('admin/reindex-bots')
   async reindexBots() {
     return this.fileService.reindexUnavailableBots();
-  }
-
-  // ── Helpers ────────────────────────────────────────────────────────────
-
-  private verifyStreamCookie(req: Request): { sub: string; exp: number } {
-    const token = req.cookies?.stream_token;
-    if (!token) throw new UnauthorizedException('Stream cookie required');
-    const payload = this.cryptoService.verifyStreamCookieToken(token);
-    if (!payload) throw new UnauthorizedException('Invalid or expired stream cookie');
-    return payload;
   }
 
 }

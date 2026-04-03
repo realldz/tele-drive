@@ -10,6 +10,7 @@ import { CryptoService } from '../crypto/crypto.service';
 import { S3Service } from './s3.service';
 import { Transform, Readable } from 'stream';
 import * as crypto from 'crypto';
+import { escapeXml } from '../common/utils/xml';
 
 /**
  * S3MultipartService — maps S3 Multipart Upload API to Tele-Drive chunked upload.
@@ -370,9 +371,9 @@ export class S3MultipartService {
   buildInitiateMultipartUploadXml(bucket: string, key: string, uploadId: string): string {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-  <Bucket>${this.escapeXml(bucket)}</Bucket>
-  <Key>${this.escapeXml(key)}</Key>
-  <UploadId>${this.escapeXml(uploadId)}</UploadId>
+  <Bucket>${escapeXml(bucket)}</Bucket>
+  <Key>${escapeXml(key)}</Key>
+  <UploadId>${escapeXml(uploadId)}</UploadId>
 </InitiateMultipartUploadResult>`;
   }
 
@@ -384,10 +385,10 @@ export class S3MultipartService {
   ): string {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <CompleteMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-  <Location>${this.escapeXml(location)}</Location>
-  <Bucket>${this.escapeXml(bucket)}</Bucket>
-  <Key>${this.escapeXml(key)}</Key>
-  <ETag>${this.escapeXml(etag)}</ETag>
+  <Location>${escapeXml(location)}</Location>
+  <Bucket>${escapeXml(bucket)}</Bucket>
+  <Key>${escapeXml(key)}</Key>
+  <ETag>${escapeXml(etag)}</ETag>
 </CompleteMultipartUploadResult>`;
   }
 
@@ -403,16 +404,16 @@ export class S3MultipartService {
   <Part>
     <PartNumber>${p.partNumber}</PartNumber>
     <Size>${p.size}</Size>
-    <ETag>${this.escapeXml(p.etag)}</ETag>
+    <ETag>${escapeXml(p.etag)}</ETag>
   </Part>`,
       )
       .join('');
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <ListPartsResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
-  <Bucket>${this.escapeXml(bucket)}</Bucket>
-  <Key>${this.escapeXml(key)}</Key>
-  <UploadId>${this.escapeXml(uploadId)}</UploadId>
+  <Bucket>${escapeXml(bucket)}</Bucket>
+  <Key>${escapeXml(key)}</Key>
+  <UploadId>${escapeXml(uploadId)}</UploadId>
   <IsTruncated>false</IsTruncated>${partsXml}
 </ListPartsResult>`;
   }
@@ -430,12 +431,4 @@ export class S3MultipartService {
     return matches ? matches.length : 0;
   }
 
-  private escapeXml(str: string): string {
-    return String(str)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&apos;');
-  }
 }
