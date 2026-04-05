@@ -1,57 +1,41 @@
 'use client';
 
 import { useState } from 'react';
-import { Users, HardDrive, ArrowLeft, Trash2, Edit2, Loader2, Search, Info, X } from 'lucide-react';
+import { ArrowLeft, Trash2, Loader2, Search, Info, AlertCircle, RefreshCw } from 'lucide-react';
 import { LOCALE_DATE_MAP } from '@/components/i18n-context';
-import { formatSize } from '@/lib/api';
+import { formatBytes } from '@/lib/api';
 import { getFileIcon } from '@/lib/file-icon';
 import { useLazyLoad } from '@/hooks/use-lazy-load';
 import FileDetailsDialog from '@/components/file-details-dialog';
-import type { FileRecord } from '@/lib/types';
-
-interface User {
-  id: string;
-  username: string;
-  role: 'ADMIN' | 'USER';
-  quota: string;
-  usedSpace: string;
-  dailyBandwidthLimit: string | null;
-  dailyBandwidthUsed: string;
-  createdAt: string;
-}
-
-interface UserFile {
-  id: string;
-  filename: string;
-  size: string;
-  mimeType: string;
-  createdAt: string;
-  isEncrypted: boolean;
-}
+import type { FileRecord, AdminUser, AdminUserFile } from '@/lib/types';
 
 interface UserManagementProps {
-  users: User[];
-  selectedUser: User | null;
+  users: AdminUser[];
+  selectedUser: AdminUser | null;
   currentUserId: string | undefined;
   locale: string;
   t: (key: string, params?: Record<string, string | number>) => string;
-  formatBytes: (bytes: string | number) => string;
-  onSelectUser: (user: User) => void;
+  loading: boolean;
+  error: string | null;
+  filesLoading: boolean;
+  onSelectUser: (user: AdminUser) => void;
   onBack: () => void;
-  onEditUser: (user: User) => void;
-  onResetPassword: (user: User) => void;
+  onEditUser: (user: AdminUser) => void;
+  onResetPassword: (user: AdminUser) => void;
   onDeleteUser: (id: string, username: string) => void;
-  userFiles: UserFile[];
+  userFiles: AdminUserFile[];
   onDeleteUserFile: (fileId: string) => void;
+  onRetry: () => void;
 }
 
 export default function UserManagement({
-  users, selectedUser, currentUserId, locale, t, formatBytes,
+  users, selectedUser, currentUserId, locale, t,
+  loading, error, filesLoading,
   onSelectUser, onBack, onEditUser, onResetPassword, onDeleteUser,
-  userFiles, onDeleteUserFile,
+  userFiles, onDeleteUserFile, onRetry,
 }: UserManagementProps) {
   const [fileSearch, setFileSearch] = useState('');
-  const [detailFile, setDetailFile] = useState<UserFile | null>(null);
+  const [detailFile, setDetailFile] = useState<AdminUserFile | null>(null);
 
   const filteredFiles = userFiles.filter(f =>
     f.filename.toLowerCase().includes(fileSearch.toLowerCase())
@@ -60,7 +44,6 @@ export default function UserManagement({
   const { visibleCount: usersVisible, hasMore: usersHasMore, loadMoreRef: usersLoadMoreRef } = useLazyLoad(users.length);
   const { visibleCount: filesVisible, hasMore: filesHasMore, loadMoreRef: filesLoadMoreRef } = useLazyLoad(filteredFiles.length);
 
-  // Adapt UserFile to FileRecord shape for FileDetailsDialog
   const detailFileAsRecord: FileRecord | null = detailFile ? {
     id: detailFile.id,
     filename: detailFile.filename,
@@ -89,7 +72,6 @@ export default function UserManagement({
           </div>
         </div>
 
-        {/* Search */}
         <div className="relative mb-4 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
           <input type="text" placeholder={t('admin.searchFiles')} value={fileSearch} onChange={(e) => setFileSearch(e.target.value)}
@@ -119,16 +101,19 @@ export default function UserManagement({
                   <td className="p-4 text-sm text-gray-500">{file.mimeType}</td>
                   <td className="p-4 text-sm text-gray-500">{new Date(file.createdAt).toLocaleString(LOCALE_DATE_MAP[locale as keyof typeof LOCALE_DATE_MAP] || 'en-US')}</td>
                   <td className="p-4 text-right whitespace-nowrap">
-                    <button onClick={() => setDetailFile(file)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors inline-block mr-1" title={t('admin.fileDetails')}>
+                    <button onClick={() => setDetailFile(file)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors inline-block mr-1" title={t('admin.fileDetails')} aria-label={t('admin.fileDetails')}>
                       <Info size={18} />
                     </button>
-                    <button onClick={() => onDeleteUserFile(file.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors inline-block" title={t('admin.deletePermanent')}>
+                    <button onClick={() => onDeleteUserFile(file.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors inline-block" title={t('admin.deletePermanent')} aria-label={t('admin.deletePermanent')}>
                       <Trash2 size={18} />
                     </button>
                   </td>
                 </tr>
               ))}
-              {filteredFiles.length === 0 && (
+              {filesLoading && (
+                <tr><td colSpan={5} className="p-8 text-center"><Loader2 className="animate-spin text-blue-500 mx-auto" size={24} /></td></tr>
+              )}
+              {!filesLoading && filteredFiles.length === 0 && (
                 <tr><td colSpan={5} className="p-8 text-center text-gray-500 italic">{t('admin.noFiles')}</td></tr>
               )}
             </tbody>
@@ -141,7 +126,21 @@ export default function UserManagement({
     );
   }
 
-  // Users list
+  if (error) {
+    return (
+      <div className="max-w-6xl mx-auto">
+        <h2 className="text-2xl font-bold mb-6 text-gray-800">{t('admin.userList')}</h2>
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+          <AlertCircle className="text-red-500 mx-auto mb-3" size={48} />
+          <p className="text-gray-600 mb-4">{error}</p>
+          <button onClick={onRetry} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium">
+            <RefreshCw size={16} className="inline mr-2" /> {t('dashboard.download')}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-6xl mx-auto">
       <h2 className="text-2xl font-bold mb-6 text-gray-800">{t('admin.userList')}</h2>
@@ -183,8 +182,11 @@ export default function UserManagement({
                 </td>
               </tr>
             ))}
-            {users.length === 0 && (
-              <tr><td colSpan={6} className="p-8 text-center text-gray-500"><Loader2 className="animate-spin text-blue-500 mx-auto" size={24} /> {t('admin.loadingUsers')}</td></tr>
+            {loading && (
+              <tr><td colSpan={6} className="p-8 text-center"><Loader2 className="animate-spin text-blue-500 mx-auto" size={24} /></td></tr>
+            )}
+            {!loading && users.length === 0 && (
+              <tr><td colSpan={6} className="p-8 text-center text-gray-500">{t('admin.loadingUsers')}</td></tr>
             )}
           </tbody>
         </table>
