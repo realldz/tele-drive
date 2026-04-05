@@ -2,7 +2,7 @@ import React, { useCallback } from 'react';
 import { Folder, Download, Trash2, MoreVertical, Loader2, Globe, ChevronUp, ChevronDown } from 'lucide-react';
 import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
 import { getFileIcon } from '@/lib/file-icon';
-import { formatSize } from '@/lib/api';
+import { formatBytes } from '@/lib/api';
 import type { FileRecord, FolderRecord } from '@/lib/types';
 
 type SortField = 'name' | 'createdAt';
@@ -210,7 +210,7 @@ export default function DashboardContent({
                       <span className="text-xs text-gray-500 mt-1">
                         {file.status === 'uploading' ? (
                           <span className="text-blue-500 font-medium flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> {t('dashboard.processing')}</span>
-                        ) : formatSize(Number(file.size))}
+                        ) : formatBytes(Number(file.size))}
                       </span>
                     </div>
                   </div>
@@ -269,11 +269,11 @@ export default function DashboardContent({
                           <div>
                             <span className="font-medium text-gray-800 block truncate max-w-[150px] sm:max-w-xs md:max-w-sm">{file.filename}</span>
                             {file.status === 'uploading' && (<span className="text-blue-500 text-xs font-medium flex items-center gap-1 mt-0.5"><Loader2 size={12} className="animate-spin" /> {t('dashboard.listProcessing')}</span>)}
-                            <span className="text-xs text-gray-500 sm:hidden block mt-0.5">{formatSize(Number(file.size))}</span>
+                            <span className="text-xs text-gray-500 sm:hidden block mt-0.5">{formatBytes(Number(file.size))}</span>
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 md:p-4 text-sm text-gray-600 hidden sm:table-cell">{file.status === 'complete' ? formatSize(Number(file.size)) : '-'}</td>
+                      <td className="p-3 md:p-4 text-sm text-gray-600 hidden sm:table-cell">{file.status === 'complete' ? formatBytes(Number(file.size)) : '-'}</td>
                       <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">{formatDate(file.createdAt)}</td>
                       <td className="p-3 md:p-4 text-right whitespace-nowrap">
                         {file.status === 'uploading' ? (

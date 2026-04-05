@@ -68,8 +68,8 @@ function PlyrVideo({ src }: { src: string }) {
   }, []);
 
   return (
-    <div className="flex h-full items-center justify-center bg-black plyr-container">
-      <video ref={videoRef} src={src} crossOrigin="use-credentials" playsInline />
+    <div className="flex h-full w-full items-center justify-center bg-black plyr-container">
+      <video ref={videoRef} src={src} crossOrigin="use-credentials" playsInline className="max-h-full max-w-full object-contain" />
     </div>
   );
 }

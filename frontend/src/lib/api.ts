@@ -1,5 +1,5 @@
 import axios from 'axios';
-import type { FileRecord, FolderRecord, BreadcrumbItem, TrashedFile, TrashedFolder } from './types';
+import type { FileRecord, FolderRecord, BreadcrumbItem, TrashedFile, TrashedFolder, AdminUser, AdminSetting, AdminUserFile } from './types';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -19,12 +19,18 @@ const api = axios;
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-export function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(2)} MB`;
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`;
+export function formatBytes(bytes: string | number): string {
+  const size = typeof bytes === 'string' ? Number(bytes) : bytes;
+  if (!Number.isFinite(size) || size <= 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB', 'PB'];
+  const i = Math.floor(Math.log(size) / Math.log(k));
+  const safeIndex = Math.min(i, sizes.length - 1);
+  return parseFloat((size / Math.pow(k, safeIndex)).toFixed(2)) + ' ' + sizes[safeIndex];
 }
+
+/** @deprecated Use formatBytes instead */
+export const formatSize = formatBytes;
 
 // ── User / Quota ─────────────────────────────────────────────────────────────
 
@@ -195,7 +201,7 @@ export async function emptyTrash() {
 
 // ── Admin ────────────────────────────────────────────────────────────────────
 
-export async function fetchUsers() {
+export async function fetchUsers(): Promise<AdminUser[]> {
   const res = await api.get(`${API_URL}/users`);
   return res.data;
 }
@@ -210,7 +216,7 @@ export async function adminResetPassword(userId: string, newPassword: string) {
   return api.patch(`${API_URL}/users/${userId}/password`, { newPassword });
 }
 
-export async function fetchSettings() {
+export async function fetchSettings(): Promise<AdminSetting[]> {
   const res = await api.get(`${API_URL}/settings`);
   return res.data;
 }
@@ -235,7 +241,7 @@ export async function deleteUser(userId: string) {
   return api.delete(`${API_URL}/users/${userId}`);
 }
 
-export async function fetchUserFiles(userId: string) {
+export async function fetchUserFiles(userId: string): Promise<AdminUserFile[]> {
   const res = await api.get(`${API_URL}/users/${userId}/files`);
   return res.data;
 }

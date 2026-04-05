@@ -3,7 +3,7 @@
 import React from 'react';
 import { X } from 'lucide-react';
 import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
-import { formatSize } from '@/lib/api';
+import { formatBytes } from '@/lib/api';
 import { getFileIcon } from '@/lib/file-icon';
 import type { FileRecord, FolderRecord } from '@/lib/types';
 
@@ -33,7 +33,7 @@ export default function FileDetailsDialog({ isOpen, onClose, item, itemType }: F
 
   if (isFile) {
     rows.push(
-      { label: t('details.size'), value: formatSize(Number(item.size)) },
+      { label: t('details.size'), value: formatBytes(Number(item.size)) },
       { label: t('details.type'), value: <span className="flex items-center gap-2">{getFileIcon(item.mimeType, 'w-4 h-4')}{item.mimeType}</span> },
       { label: t('details.chunks'), value: String(item.totalChunks) },
     );

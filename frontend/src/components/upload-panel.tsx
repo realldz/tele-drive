@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { X, ChevronDown, ChevronUp, RotateCcw, CheckCircle2, AlertCircle, Loader2, Ban } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import { useUpload } from '@/components/upload-context';
-import { formatSize } from '@/lib/api';
+import { formatBytes } from '@/lib/api';
 
 export default function UploadPanel() {
   const { t } = useI18n();
@@ -115,7 +115,7 @@ export default function UploadPanel() {
 
               <div className="flex justify-between mt-1">
                 <span className="text-xs text-gray-500">
-                  {item.status === 'uploading' && `${formatSize(item.uploadedBytes)} / ${formatSize(item.totalBytes)}`}
+                  {item.status === 'uploading' && `${formatBytes(item.uploadedBytes)} / ${formatBytes(item.totalBytes)}`}
                   {item.status === 'pending' && t('upload.pending')}
                   {item.status === 'complete' && t('upload.complete')}
                   {item.status === 'error' && (item.errorMessage || t('upload.errorItem'))}

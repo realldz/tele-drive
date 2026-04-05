@@ -38,6 +38,39 @@ export interface TrashedFile extends FileRecord {
   deletedAt: string;
 }
 
+export type UserRole = 'ADMIN' | 'USER';
+
+export interface AuthUser {
+  id: string;
+  username: string;
+  role: UserRole;
+}
+
+export interface AdminUser extends AuthUser {
+  id: string;
+  username: string;
+  role: UserRole;
+  quota: string;
+  usedSpace: string;
+  dailyBandwidthLimit: string | null;
+  dailyBandwidthUsed: string;
+  createdAt: string;
+}
+
+export interface AdminSetting {
+  key: string;
+  value: string;
+}
+
+export interface AdminUserFile {
+  id: string;
+  filename: string;
+  size: string;
+  mimeType: string;
+  createdAt: string;
+  isEncrypted: boolean;
+}
+
 /** Shared file info from /files/share/:token */
 export interface SharedFileInfo {
   id: string;

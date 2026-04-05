@@ -6,7 +6,7 @@ import { Home, Trash2, KeyRound, ShieldAlert, LogOut, User, HardDrive, Menu, X, 
 import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/i18n-context';
 import LanguageSwitcher from '@/components/language-switcher';
-import { formatSize, changePassword, getApiErrorMessage } from '@/lib/api';
+import { formatBytes, changePassword, getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
 
 interface SidebarProps {
@@ -105,7 +105,7 @@ export default function Sidebar({ children }: SidebarProps) {
                 onClick={() => { router.push('/admin'); setIsMobileOpen(false); }}
                 className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${pathname === '/admin' ? 'bg-white/10 text-amber-400' : 'hover:bg-white/5 text-amber-400'}`}
               >
-                <ShieldAlert size={20} /> Admin Panel
+                <ShieldAlert size={20} /> {t('sidebar.adminPanel')}
               </button>
             </>
           )}
@@ -144,7 +144,7 @@ export default function Sidebar({ children }: SidebarProps) {
                 />
               </div>
               <div className="text-[10px] text-slate-400 text-center font-medium">
-                {formatSize(quotaInfo.usedSpace)} / {formatSize(quotaInfo.quota)}
+                {formatBytes(quotaInfo.usedSpace)} / {formatBytes(quotaInfo.quota)}
               </div>
             </div>
           )}
