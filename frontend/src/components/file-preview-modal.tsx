@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 import { X, Download, Loader2, FileIcon } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
-import { useAuth } from '@/components/auth-context';
-import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
-import { API_URL, requestDownloadToken, requestStreamCookie, clearStreamCookie, getStreamUrl, getApiErrorMessage, formatBandwidthResetTime } from '@/lib/api';
+import { useI18n } from '@/components/i18n-context';
+import { API_URL, requestDownloadToken, getStreamUrl, getApiErrorMessage, parseBandwidthError } from '@/lib/api';
+import { useStream } from '@/hooks/use-stream';
 import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
 
@@ -25,83 +25,36 @@ interface FilePreviewModalProps {
 }
 
 export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalProps) {
-  const { token } = useAuth();
-  const { t, locale } = useI18n();
+  const { t } = useI18n();
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  /** Đợi browser xử lý Set-Cookie header trước khi render player */
-  const waitForCookieCommit = (): Promise<void> =>
-    new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-
-  // Request stream cookie khi modal mở
-  const setupStream = useCallback(async (fId: string) => {
-    try {
-      const cookieRes = await requestStreamCookie();
-      // Đợi browser commit cookie vào cookie jar trước khi render player
-      await waitForCookieCommit();
-      setStreamUrl(getStreamUrl(fId));
-
-      // Auto-refresh cookie ở 80% TTL
-      const refreshMs = cookieRes.ttl * 800; // 80% of TTL in ms
-      refreshTimerRef.current = setTimeout(function refresh() {
-        requestStreamCookie()
-          .then((res) => {
-            refreshTimerRef.current = setTimeout(refresh, res.ttl * 800);
-          })
-          .catch(() => { /* cookie refresh failed, stream may break */ });
-      }, refreshMs);
-    } catch (err: unknown) {
-      // Fallback: dùng legacy URL nếu signed URL fail
-      setStreamUrl(`${API_URL}/files/${fId}/stream?token=${token}`);
-
-      if (axios.isAxiosError(err) && err.response?.status === 429) {
-        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset'], LOCALE_DATE_MAP[locale]);
-        toast.error(resetTime
-          ? t('dashboard.bandwidthExceededAt', { time: resetTime })
-          : t('dashboard.bandwidthExceeded'));
-      } else {
-        const msg = getApiErrorMessage(err, '');
-        if (msg) toast.error(msg);
-      }
-    }
-  }, [token, locale, t]);
+  const { streamUrl, isLoading: isStreamLoading, setupStream, teardownStream } = useStream();
 
   useEffect(() => {
     if (!fileId) {
       setFileInfo(null);
       setError(null);
-      setStreamUrl(null);
-      // Cleanup cookie + timer
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-      clearStreamCookie().catch(() => { });
+      teardownStream();
       return;
     }
 
     setIsLoading(true);
     setError(null);
     setFileInfo(null);
-    setStreamUrl(null);
 
     axios
       .get(`${API_URL}/files/${fileId}/info`)
       .then(async (res) => {
         setFileInfo(res.data);
-        await setupStream(fileId);
+        await setupStream(getStreamUrl(fileId));
       })
       .catch((err: unknown) => {
         const message = axios.isAxiosError(err) ? err.response?.data?.message : undefined;
         setError(message || 'Failed to load file');
       })
       .finally(() => setIsLoading(false));
-
-    return () => {
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    };
-  }, [fileId, setupStream]);
+  }, [fileId, setupStream, teardownStream]);
 
   // ESC key handler
   useEffect(() => {
@@ -118,7 +71,7 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
     return () => { document.body.style.overflow = ''; };
   }, [fileId]);
 
-  const handleDownload = useCallback(async () => {
+  async function handleDownload() {
     if (!fileInfo) return;
     try {
       const { url } = await requestDownloadToken(fileInfo.id);
@@ -130,16 +83,18 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
       link.click();
       link.remove();
     } catch (err: unknown) {
-      if (axios.isAxiosError(err) && err.response?.status === 429) {
-        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset'], LOCALE_DATE_MAP[locale]);
-        toast.error(resetTime
-          ? t('dashboard.bandwidthExceededAt', { time: resetTime })
-          : t('dashboard.bandwidthExceeded'));
+      const bw = parseBandwidthError(err);
+      if (bw) {
+        toast.error(
+          bw.resetTime
+            ? t('dashboard.bandwidthExceededAt', { time: bw.resetTime })
+            : t('dashboard.bandwidthExceeded'),
+        );
       } else {
         toast.error(getApiErrorMessage(err, t('dashboard.downloadError')));
       }
     }
-  }, [fileInfo, locale, t]);
+  }
 
   if (!fileId) return null;
 
@@ -182,13 +137,13 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
 
       {/* Content */}
       <main className="flex-1 relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        {isLoading && (
+        {(isLoading || isStreamLoading) && (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
           </div>
         )}
 
-        {error && (
+        {error && !isStreamLoading && (
           <div className="flex h-full flex-col items-center justify-center p-4">
             <div className="rounded-lg bg-white p-8 text-center shadow-md">
               <FileIcon className="mx-auto mb-4 h-16 w-16 text-red-400" />
@@ -198,7 +153,7 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
           </div>
         )}
 
-        {fileInfo && !isLoading && !error && streamUrl && (
+        {fileInfo && !isStreamLoading && !error && streamUrl && (
           <PreviewRenderer
             streamUrl={streamUrl}
             onDownload={handleDownload}

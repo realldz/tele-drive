@@ -42,7 +42,7 @@ export class BandwidthInterceptor implements NestInterceptor {
     const isCheckOnly = this.reflector.get<boolean>('BANDWIDTH_CHECK_ONLY', context.getHandler()) || false;
     const req = context.switchToHttp().getRequest();
     const res = context.switchToHttp().getResponse();
-    let fileId = req.params?.id;
+    let fileId: string | undefined = req.params?.id ?? req.params?.fileId;
     let userId = req.user?.userId;
 
     // Try to extract userId from stream_token cookie (for /stream/:id routes)
@@ -59,6 +59,21 @@ export class BandwidthInterceptor implements NestInterceptor {
       if (payload) {
         fileId = payload.fid;
         if (payload.uid) userId = payload.uid;
+      }
+    }
+
+    // Share stream route (/files/share/stream/:shareToken, /files/share/:token/stream)
+    // Share tokens là plain DB string, không phải HMAC-signed — resolve file trực tiếp từ share token
+    if (!fileId) {
+      const shareToken = req.params?.shareToken ?? req.params?.token;
+      if (shareToken) {
+        const file = await this.prisma.fileRecord.findUnique({
+          where: { shareToken },
+          select: { id: true },
+        });
+        if (file) {
+          fileId = file.id;
+        }
       }
     }
 
@@ -85,7 +100,6 @@ export class BandwidthInterceptor implements NestInterceptor {
     } else {
       await this.checkAndIncrementGuestBandwidth(res, req, fileSize, isCheckOnly);
     }
-
     return next.handle();
   }
 

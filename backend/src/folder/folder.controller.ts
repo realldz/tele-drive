@@ -2,6 +2,7 @@ import { Controller, Get, Post, Delete, Patch, Body, Param, Query, Req, Res, Use
 import { FolderService } from './folder.service';
 import { FileService } from '../file/file.service';
 import { Public } from '../auth/public.decorator';
+import { OptionalJwtGuard } from '../auth/optional-jwt.guard';
 import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
 import { StreamCookieGuard } from '../common/guards/stream-cookie.guard';
 import { CreateFolderDto } from './dto/create-folder.dto';
@@ -13,7 +14,7 @@ export class FolderController {
   constructor(
     private readonly folderService: FolderService,
     private readonly fileService: FileService,
-  ) {}
+  ) { }
 
   @Post()
   create(@Body() body: CreateFolderDto, @Req() req: AuthenticatedRequest) {
@@ -76,18 +77,21 @@ export class FolderController {
   }
 
   @Public()
+  @UseGuards(OptionalJwtGuard)
   @Get('share/:token')
   getSharedContent(@Param('token') token: string, @Query('folderId') folderId?: string) {
     return this.folderService.getSharedContent(token, folderId);
   }
 
   @Public()
+  @UseGuards(OptionalJwtGuard)
   @Post('share/:token/download-token/:fileId')
   generateShareFolderDownloadToken(@Param('token') token: string, @Param('fileId') fileId: string) {
     return this.folderService.generateShareFolderDownloadToken(token, fileId);
   }
 
   @Public()
+  @UseGuards(OptionalJwtGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('share/:token/download/:fileId')
   async downloadSharedFile(
@@ -101,6 +105,7 @@ export class FolderController {
   }
 
   @Public()
+  @UseGuards(OptionalJwtGuard)
   @UseGuards(StreamCookieGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('share/:token/stream/:fileId')

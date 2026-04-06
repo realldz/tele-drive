@@ -1,15 +1,17 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import axios from 'axios';
-import { Download, FileText, AlertCircle, Loader2 } from 'lucide-react';
+import { Download, FileText, AlertCircle, Loader2, UserCircle2 } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
+import { useAuth } from '@/components/auth-context';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
 
-import { API_URL, formatBandwidthResetTime, formatSize, requestShareDownloadToken, requestGuestStreamCookie, clearStreamCookie, getShareStreamUrl } from '@/lib/api';
+import { API_URL, formatSize, requestShareDownloadToken, parseBandwidthError, getShareStreamUrl } from '@/lib/api';
+import { useGuestStream } from '@/hooks/use-stream';
 import type { SharedFileInfo } from '@/lib/types';
 
 const PreviewRenderer = dynamic(() => import('@/components/preview-renderer'), { ssr: false });
@@ -29,34 +31,13 @@ export default function SharePage() {
   const params = useParams();
   const token = params.token as string;
   const { t } = useI18n();
+  const { user } = useAuth();
 
   const [fileInfo, setFileInfo] = useState<SharedFileInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const waitForCookieCommit = (): Promise<void> =>
-    new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-
-  const setupStream = useCallback(async () => {
-    try {
-      const cookieRes = await requestGuestStreamCookie();
-      await waitForCookieCommit();
-      setStreamUrl(getShareStreamUrl(token));
-
-      const refreshMs = cookieRes.ttl * 800;
-      refreshTimerRef.current = setTimeout(function refresh() {
-        requestGuestStreamCookie()
-          .then((res) => { refreshTimerRef.current = setTimeout(refresh, res.ttl * 800); })
-          .catch(() => { });
-      }, refreshMs);
-    } catch {
-      // Fallback
-      setStreamUrl(`${API_URL}/files/share/stream/${token}`);
-    }
-  }, [token]);
+  const { streamUrl, isLoading: isStreamLoading, setupStream, teardownStream } = useGuestStream();
 
   useEffect(() => {
     if (!token) return;
@@ -66,7 +47,7 @@ export default function SharePage() {
         const info = res.data;
         setFileInfo(info);
         if (isPreviewable(info.mimeType)) {
-          await setupStream();
+          await setupStream(getShareStreamUrl(token));
         }
       } catch (err: unknown) {
         setError(axios.isAxiosError(err) ? err.response?.data?.message || t('sharePage.fileNotFound') : t('sharePage.fileNotFound'));
@@ -75,10 +56,9 @@ export default function SharePage() {
     fetchFileInfo();
 
     return () => {
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-      clearStreamCookie().catch(() => { });
+      teardownStream();
     };
-  }, [token, setupStream, t]);
+  }, [token, setupStream, teardownStream, t]);
 
   const handleDownload = async () => {
     if (!fileInfo) return;
@@ -93,10 +73,10 @@ export default function SharePage() {
       link.click();
       link.remove();
     } catch (err: unknown) {
-      if (axios.isAxiosError(err) && err.response?.status === 429) {
-        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset']);
-        toast.error(resetTime
-          ? t('sharePage.bandwidthExceededAt', { time: resetTime })
+      const bw = parseBandwidthError(err);
+      if (bw) {
+        toast.error(bw.resetTime
+          ? t('sharePage.bandwidthExceededAt', { time: bw.resetTime })
           : t('sharePage.bandwidthExceeded'));
       } else {
         toast.error(t('sharePage.downloadError'));
@@ -112,9 +92,19 @@ export default function SharePage() {
     <div className="min-h-screen bg-gray-50 flex flex-col items-center justify-center p-4">
       <GuestLanguageSwitcher />
       <div className={`w-full ${showPreview ? 'max-w-4xl' : 'max-w-md'} bg-white shadow-xl rounded-2xl overflow-hidden transition-all duration-300`}>
-        <div className="bg-slate-900 text-white p-6 text-center">
-          <h1 className="text-2xl font-bold tracking-tight">Tele-Drive</h1>
-          <p className="text-slate-400 text-sm mt-1">{t('sharePage.publicFile')}</p>
+        <div className="bg-slate-900 text-white p-6">
+          <div className="flex items-center justify-between">
+            <div className="text-center flex-1">
+              <h1 className="text-2xl font-bold tracking-tight">Tele-Drive</h1>
+              <p className="text-slate-400 text-sm mt-1">{t('sharePage.publicFile')}</p>
+            </div>
+            {user && (
+              <div className="flex items-center gap-2 text-slate-300 text-sm bg-slate-800 px-3 py-2 rounded-lg">
+                <UserCircle2 size={16} />
+                <span className="font-medium">{user.username}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         {error ? (
@@ -133,9 +123,13 @@ export default function SharePage() {
         ) : (
           <div className={showPreview ? "flex flex-col md:flex-row" : "p-8 flex flex-col items-center text-center"}>
 
-            {showPreview && (
+              {showPreview && (
               <div className="w-full md:w-2/3 h-[50vh] md:h-[60vh] bg-gray-100 border-b md:border-b-0 md:border-r border-gray-200 relative overflow-hidden">
-                {streamUrl ? (
+                {isStreamLoading ? (
+                  <div className="flex h-full items-center justify-center">
+                    <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                  </div>
+                ) : streamUrl ? (
                   <PreviewRenderer
                     streamUrl={streamUrl}
                     onDownload={handleDownload}
