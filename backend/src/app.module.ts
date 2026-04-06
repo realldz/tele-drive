@@ -17,6 +17,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { TrashCleanupService } from './common/trash-cleanup.service';
 import { StaleUploadCleanupService } from './common/stale-upload-cleanup.service';
+import { BandwidthModule } from './common/bandwidth.module';
 import { S3Module } from './s3/s3.module';
 
 @Module({
@@ -30,7 +31,9 @@ import { S3Module } from './s3/s3.module';
         token: configService.get<string>('TELEGRAM_BOT_TOKEN') || '',
         options: {
           telegram: {
-            apiRoot: configService.get<string>('TELEGRAM_API_ROOT') || 'https://api.telegram.org',
+            apiRoot:
+              configService.get<string>('TELEGRAM_API_ROOT') ||
+              'https://api.telegram.org',
           },
         },
       }),
@@ -44,6 +47,7 @@ import { S3Module } from './s3/s3.module';
     UserModule,
     SettingsModule,
     CryptoModule,
+    BandwidthModule,
     S3Module,
   ],
   controllers: [AppController],
