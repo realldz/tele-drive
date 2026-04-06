@@ -1,13 +1,14 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
+import { useI18n } from '@/components/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import axios from 'axios';
 import { FileIcon, Download, ArrowLeft, Loader2 } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
-import { API_URL, requestDownloadToken, requestStreamCookie, clearStreamCookie, getStreamUrl, getApiErrorMessage, formatBandwidthResetTime } from '@/lib/api';
+import { API_URL, requestDownloadToken, parseBandwidthError, getStreamUrl, getApiErrorMessage } from '@/lib/api';
+import { useStream } from '@/hooks/use-stream';
 import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
 
@@ -24,47 +25,24 @@ export default function FilePreviewPage() {
   const params = useParams();
   const fileId = params.id as string;
   const router = useRouter();
-  const { isReady, token } = useRequireAuth();
-  const { t, locale } = useI18n();
+  const { isReady } = useRequireAuth();
+  const { t } = useI18n();
 
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  /** Đợi browser xử lý Set-Cookie header trước khi render player */
-  const waitForCookieCommit = (): Promise<void> =>
-    new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-
-  const setupStream = useCallback(async (fId: string) => {
-    try {
-      const cookieRes = await requestStreamCookie();
-      await waitForCookieCommit();
-      setStreamUrl(getStreamUrl(fId));
-
-      const refreshMs = cookieRes.ttl * 800;
-      refreshTimerRef.current = setTimeout(function refresh() {
-        requestStreamCookie()
-          .then((res) => { refreshTimerRef.current = setTimeout(refresh, res.ttl * 800); })
-          .catch(() => { });
-      }, refreshMs);
-    } catch {
-      // Fallback: legacy URL
-      setStreamUrl(`${API_URL}/files/${fId}/stream?token=${token}`);
-    }
-  }, [token]);
+  const { streamUrl, isLoading: isStreamLoading, setupStream, teardownStream } = useStream();
 
   useEffect(() => {
     if (!isReady) return;
 
     setIsLoading(true);
-    setStreamUrl(null);
+    setError(null);
 
     axios.get(`${API_URL}/files/${fileId}/info`)
       .then(async (res) => {
         setFileInfo(res.data);
-        await setupStream(fileId);
+        await setupStream(getStreamUrl(fileId));
       })
       .catch((err: unknown) => {
         setError(getApiErrorMessage(err, 'Failed to load file information'));
@@ -72,12 +50,11 @@ export default function FilePreviewPage() {
       .finally(() => setIsLoading(false));
 
     return () => {
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-      clearStreamCookie().catch(() => { });
+      teardownStream();
     };
-  }, [fileId, isReady, setupStream]);
+  }, [fileId, isReady, setupStream, teardownStream]);
 
-  const handleDownload = useCallback(async () => {
+  async function handleDownload() {
     if (!fileInfo) return;
     try {
       const { url } = await requestDownloadToken(fileInfo.id);
@@ -89,16 +66,18 @@ export default function FilePreviewPage() {
       link.click();
       link.remove();
     } catch (err: unknown) {
-      if (axios.isAxiosError(err) && err.response?.status === 429) {
-        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset'], LOCALE_DATE_MAP[locale]);
-        toast.error(resetTime
-          ? t('dashboard.bandwidthExceededAt', { time: resetTime })
-          : t('dashboard.bandwidthExceeded'));
+      const bw = parseBandwidthError(err);
+      if (bw) {
+        toast.error(
+          bw.resetTime
+            ? t('dashboard.bandwidthExceededAt', { time: bw.resetTime })
+            : t('dashboard.bandwidthExceeded'),
+        );
       } else {
         toast.error(getApiErrorMessage(err, t('dashboard.downloadError')));
       }
     }
-  }, [fileInfo, locale, t]);
+  }
 
   if (isLoading || !isReady) {
     return (
@@ -128,7 +107,6 @@ export default function FilePreviewPage() {
 
   return (
     <div className="flex h-screen flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden">
-      {/* Top Navigation Bar */}
       <header className="flex h-16 items-center justify-between border-b bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-950 flex-none z-10">
         <div className="flex items-center gap-4 min-w-0">
           <button
@@ -161,9 +139,12 @@ export default function FilePreviewPage() {
         </div>
       </header>
 
-      {/* Main Preview Area */}
       <main className="flex-1 relative overflow-hidden bg-gray-100 dark:bg-gray-900">
-        {streamUrl ? (
+        {isStreamLoading ? (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+          </div>
+        ) : streamUrl ? (
           <PreviewRenderer
             streamUrl={streamUrl}
             onDownload={handleDownload}

@@ -1,11 +1,11 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
-import axios from 'axios';
-import { X, Download, Loader2, FileIcon } from 'lucide-react';
+import { useEffect, useCallback } from 'react';
+import { X, Download, Loader2 } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
-import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
-import { API_URL, requestShareFolderDownloadToken, requestGuestStreamCookie, clearStreamCookie, getShareFolderStreamUrl, formatBandwidthResetTime } from '@/lib/api';
+import { useI18n } from '@/components/i18n-context';
+import { API_URL, requestShareFolderDownloadToken, parseBandwidthError, getShareFolderStreamUrl } from '@/lib/api';
+import { useGuestStream } from '@/hooks/use-stream';
 import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
 import type { FileRecord } from '@/lib/types';
@@ -19,51 +19,17 @@ interface SharedFolderPreviewModalProps {
 }
 
 export default function SharedFolderPreviewModal({ shareToken, file, onClose }: SharedFolderPreviewModalProps) {
-  const { t, locale } = useI18n();
-  const [streamUrl, setStreamUrl] = useState<string | null>(null);
-  const [isSettingUp, setIsSettingUp] = useState(false);
-  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const waitForCookieCommit = (): Promise<void> =>
-    new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
-
-  const setupStream = useCallback(async (fId: string) => {
-    setIsSettingUp(true);
-    try {
-      const cookieRes = await requestGuestStreamCookie();
-      await waitForCookieCommit();
-      setStreamUrl(getShareFolderStreamUrl(shareToken, fId));
-
-      const refreshMs = cookieRes.ttl * 800;
-      refreshTimerRef.current = setTimeout(function refresh() {
-        requestGuestStreamCookie()
-          .then((res) => {
-            refreshTimerRef.current = setTimeout(refresh, res.ttl * 800);
-          })
-          .catch(() => { });
-      }, refreshMs);
-    } catch {
-      // Fallback
-      setStreamUrl(`${API_URL}/folders/share/${shareToken}/stream/${fId}`);
-    } finally {
-      setIsSettingUp(false);
-    }
-  }, [shareToken]);
+  const { t } = useI18n();
+  const { streamUrl, isLoading: isSettingUp, setupStream, teardownStream } = useGuestStream();
 
   useEffect(() => {
     if (!file) {
-      setStreamUrl(null);
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-      clearStreamCookie().catch(() => { });
+      teardownStream();
       return;
     }
 
-    setupStream(file.id);
-
-    return () => {
-      if (refreshTimerRef.current) clearTimeout(refreshTimerRef.current);
-    };
-  }, [file, setupStream]);
+    setupStream(getShareFolderStreamUrl(shareToken, file.id));
+  }, [file, shareToken, setupStream, teardownStream]);
 
   // ESC key handler
   useEffect(() => {
@@ -93,16 +59,16 @@ export default function SharedFolderPreviewModal({ shareToken, file, onClose }: 
       link.click();
       link.remove();
     } catch (err: unknown) {
-      if (axios.isAxiosError(err) && err.response?.status === 429) {
-        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset'], LOCALE_DATE_MAP[locale]);
-        toast.error(resetTime
-          ? t('dashboard.bandwidthExceededAt', { time: resetTime })
+      const bw = parseBandwidthError(err);
+      if (bw) {
+        toast.error(bw.resetTime
+          ? t('dashboard.bandwidthExceededAt', { time: bw.resetTime })
           : t('dashboard.bandwidthExceeded'));
       } else {
         toast.error(t('dashboard.downloadError'));
       }
     }
-  }, [file, shareToken, locale, t]);
+  }, [file, shareToken, t]);
 
   if (!file) return null;
 

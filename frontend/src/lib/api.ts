@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { FileRecord, FolderRecord, BreadcrumbItem, TrashedFile, TrashedFolder, AdminUser, AdminSetting, AdminUserFile } from './types';
+import toast from 'react-hot-toast';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -292,4 +293,18 @@ export function formatBandwidthResetTime(resetAt: string | null | undefined, loc
   const date = new Date(resetAt);
   if (isNaN(date.getTime())) return '';
   return date.toLocaleString(locale);
+}
+
+// ── Bandwidth Error Handler ──────────────────────────────────────────────────
+
+/** Parse thông tin lỗi 429 từ axios error. Trả null nếu không phải 429. */
+export function parseBandwidthError(error: unknown): { resetTime: string } | null {
+  if (!axios.isAxiosError(error) || error.response?.status !== 429) return null;
+  const resetTime = formatBandwidthResetTime(error.response.headers?.['x-bandwidth-reset']);
+  return { resetTime };
+}
+
+/** Kiểm tra lỗi 429 — trả { resetTime } hoặc null. Caller hiển thị toast với i18n. */
+export function handleBandwidthError(error: unknown): { resetTime: string } | null {
+  return parseBandwidthError(error);
 }

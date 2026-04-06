@@ -3,12 +3,13 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams } from 'next/navigation';
 import axios from 'axios';
-import { Download, FileText, AlertCircle, Folder, ChevronRight, Home } from 'lucide-react';
+import { Download, AlertCircle, Folder, ChevronRight, Home, UserCircle2 } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
+import { useAuth } from '@/components/auth-context';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import toast from 'react-hot-toast';
 
-import { API_URL, formatBandwidthResetTime, formatSize, requestShareFolderDownloadToken } from '@/lib/api';
+import { API_URL, formatSize, requestShareFolderDownloadToken, parseBandwidthError } from '@/lib/api';
 import type { SharedFolderRoot, FolderRecord, FileRecord, BreadcrumbItem } from '@/lib/types';
 import SharedFolderPreviewModal from './shared-folder-preview-modal';
 import { getFileIcon } from '@/lib/file-icon';
@@ -17,6 +18,7 @@ export default function SharedFolderPage() {
   const params = useParams();
   const token = params.token as string;
   const { t } = useI18n();
+  const { user } = useAuth();
 
   const [rootFolder, setRootFolder] = useState<SharedFolderRoot | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
@@ -65,10 +67,10 @@ export default function SharedFolderPage() {
       link.click();
       link.remove();
     } catch (err: unknown) {
-      if (axios.isAxiosError(err) && err.response?.status === 429) {
-        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset']);
-        toast.error(resetTime
-          ? t('shareFolder.bandwidthExceededAt', { time: resetTime })
+      const bw = parseBandwidthError(err);
+      if (bw) {
+        toast.error(bw.resetTime
+          ? t('shareFolder.bandwidthExceededAt', { time: bw.resetTime })
           : t('shareFolder.bandwidthExceeded'));
       } else {
         toast.error(t('shareFolder.downloadError'));
@@ -104,6 +106,12 @@ export default function SharedFolderPage() {
               {t('shareFolder.sharedBy')}: <span className="text-slate-200">{rootFolder?.user?.username || t('shareFolder.user')}</span>
             </p>
           </div>
+          {user && (
+            <div className="flex items-center gap-2 text-slate-300 text-sm bg-slate-800 px-3 py-2 rounded-lg">
+              <UserCircle2 size={16} />
+              <span className="font-medium">{user.username}</span>
+            </div>
+          )}
         </div>
 
         <div className="p-6">

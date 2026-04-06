@@ -7,6 +7,7 @@ import { MAX_CHUNK_SIZE } from '../config/upload.config';
 import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
 import { StreamCookieGuard } from '../common/guards/stream-cookie.guard';
 import { Public } from '../auth/public.decorator';
+import { OptionalJwtGuard } from '../auth/optional-jwt.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { InitUploadDto } from './dto/init-upload.dto';
 import { getClientIp } from '../common/utils/get-client-ip';
@@ -102,6 +103,7 @@ export class FileController {
   }
 
   @Public()
+  @UseGuards(OptionalJwtGuard)
   @Post('share/:token/download-token')
   @UseInterceptors(BandwidthInterceptor)
   @SetMetadata('BANDWIDTH_CHECK_ONLY', true)
@@ -110,6 +112,7 @@ export class FileController {
   }
 
   @Public()
+  @UseGuards(OptionalJwtGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('d/:token')
   async downloadBySigned(@Param('token') token: string, @Req() req: Request, @Res() res: Response) {
@@ -145,20 +148,22 @@ export class FileController {
   }
 
   @Public()
+  @UseGuards(OptionalJwtGuard)
   @Post('stream-cookie/guest')
   @UseInterceptors(BandwidthInterceptor)
   @SetMetadata('BANDWIDTH_CHECK_ONLY', true)
   async issueGuestStreamCookie(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const ip = getClientIp(req);
+    const typedReq = req as unknown as AuthenticatedRequest;
     const ttl = await this.fileService.getStreamTtl();
-    const token = this.cryptoService.createStreamCookieToken(`guest:${ip}`, ttl);
+    const subject = typedReq.user?.userId ?? `guest:${getClientIp(req)}`;
+    const token = this.cryptoService.createStreamCookieToken(subject, ttl);
     res.cookie('stream_token', token, {
       httpOnly: true,
       sameSite: 'strict',
       path: '/',
       maxAge: ttl * 1000,
     });
-    this.logger.debug(`Guest stream cookie issued for ip ${ip}, ttl=${ttl}s`);
+    this.logger.debug(`Stream cookie issued for ${subject}, ttl=${ttl}s`);
     return { expiresAt: new Date(Date.now() + ttl * 1000).toISOString(), ttl };
   }
 
@@ -185,6 +190,7 @@ export class FileController {
   }
 
   @Public()
+  @UseGuards(OptionalJwtGuard)
   @UseGuards(StreamCookieGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('share/stream/:shareToken')
@@ -217,6 +223,7 @@ export class FileController {
   }
 
   @Public()
+  @UseGuards(OptionalJwtGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('share/:token/download')
   async downloadSharedFile(@Param('token') token: string, @Req() req: Request, @Res() res: Response) {
@@ -225,6 +232,7 @@ export class FileController {
   }
 
   @Public()
+  @UseGuards(OptionalJwtGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('share/:token/stream')
   async streamSharedMedia(@Param('token') token: string, @Req() req: Request, @Res() res: Response) {
@@ -255,8 +263,9 @@ export class FileController {
   }
 
   @Public()
+  @UseGuards(OptionalJwtGuard)
   @Get('share/:token')
-  getSharedFile(@Param('token') token: string) {
+  getSharedFile(@Param('token') token: string, @Req() req: Request) {
     return this.fileService.getSharedFileInfo(token);
   }
 
