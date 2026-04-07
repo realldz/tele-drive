@@ -2,8 +2,8 @@
 
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
-import { Download, Loader2, FileIcon, Music } from 'lucide-react';
-import 'plyr/dist/plyr.css';
+import { Download, Loader2, FileIcon, AudioLines } from 'lucide-react';
+// import 'plyr/dist/plyr.css';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
@@ -25,6 +25,10 @@ import csharp from 'highlight.js/lib/languages/csharp';
 import cpp from 'highlight.js/lib/languages/cpp';
 import php from 'highlight.js/lib/languages/php';
 import 'highlight.js/styles/github.css';
+import Player from 'xgplayer';
+import 'xgplayer/dist/index.min.css';
+import MusicPreset, { Analyze } from 'xgplayer-music';
+import 'xgplayer-music/dist/index.min.css';
 
 // Register highlight.js languages
 hljs.registerLanguage('javascript', javascript);
@@ -50,52 +54,93 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 // --- Sub-components ---
 
 function PlyrVideo({ src }: { src: string }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const playerRef = useRef<any>(null);
 
   useEffect(() => {
-    if (!videoRef.current) return;
-    let destroyed = false;
-    import('plyr').then(({ default: Plyr }) => {
-      if (destroyed || !videoRef.current) return;
-      playerRef.current = new Plyr(videoRef.current, {
-        controls: ['play-large', 'play', 'progress', 'current-time', 'duration',
-          'mute', 'volume', 'settings', 'pip', 'fullscreen'],
-        settings: ['speed'],
-      });
+    if (!containerRef.current) return;
+
+    playerRef.current = new Player({
+      el: containerRef.current,
+      url: src,
+      height: '100%',
+      width: '100%',
+      videoAttributes: {
+        crossOrigin: 'use-credentials',
+        playsInline: true,
+      },
     });
-    return () => { destroyed = true; playerRef.current?.destroy(); };
-  }, []);
+
+    return () => {
+      if (playerRef.current) {
+        playerRef.current.destroy();
+      }
+    };
+  }, [src]);
 
   return (
-    <div className="flex h-full w-full items-center justify-center bg-black plyr-container">
-      <video ref={videoRef} src={src} crossOrigin="use-credentials" playsInline className="max-h-full max-w-full object-contain" />
-    </div>
+    <div ref={containerRef} className="flex h-full w-full items-center justify-center bg-black" />
   );
 }
 
 function PlyrAudio({ src }: { src: string }) {
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const playerRef = useRef<any>(null);
+  const analyzeRef = useRef<any>(null);
 
   useEffect(() => {
-    if (!audioRef.current) return;
-    let destroyed = false;
-    import('plyr').then(({ default: Plyr }) => {
-      if (destroyed || !audioRef.current) return;
-      playerRef.current = new Plyr(audioRef.current, {
-        controls: ['play', 'progress', 'current-time', 'duration', 'mute', 'volume', 'settings'],
-        settings: ['speed'],
-      });
+    if (!containerRef.current) return;
+
+    playerRef.current = new Player({
+      el: containerRef.current,
+      url: src,
+      height: 60,
+      width: '100%',
+      mediaType: 'audio',
+      videoAttributes: {
+        crossOrigin: 'use-credentials',
+        playsInline: true,
+      },
+      ignores: ['playbackrate'],
+      controls: {
+        mode: 'flex',
+        initShow: true
+      },
+      marginControls: true,
+      presets: ['default', MusicPreset],
+      music: {
+        list: [{
+          url: src,
+          vid: src,
+        }]
+      }
     });
-    return () => { destroyed = true; playerRef.current?.destroy(); };
-  }, []);
+
+    if (canvasRef.current) {
+      analyzeRef.current = new Analyze(playerRef.current, canvasRef.current, {
+        mode: 'bars',
+        stroke: 2,
+        colors: ['#3b82f6', '#3b82f6', '#60a5fa'],
+        bgColor: 'transparent'
+      });
+    }
+
+    return () => {
+      if (analyzeRef.current) {
+        analyzeRef.current.destroy();
+      }
+      if (playerRef.current) {
+        playerRef.current.destroy();
+      }
+    };
+  }, [src]);
 
   return (
     <div className="flex h-full flex-col items-center justify-center p-4 bg-gray-100">
-      <Music className="mb-8 h-32 w-32 text-gray-400" />
+      <canvas ref={canvasRef} className="h-32 w-full max-w-xl" />
       <div className="w-full max-w-xl">
-        <audio ref={audioRef} src={src} crossOrigin="use-credentials" />
+        <div ref={containerRef} />
       </div>
     </div>
   );

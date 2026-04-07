@@ -7,7 +7,7 @@ Cloud storage powered by Telegram. Store, manage, and share files using Telegram
 - **Unlimited storage** — files are stored as encrypted chunks on Telegram
 - **AES-256-CTR encryption** — per-chunk encryption with master secret key management
 - **Chunked upload/download** — support for large files with multi-bot parallel uploads
-- **File preview** — built-in viewers for images, video (Plyr), audio, PDF (react-pdf), and code (highlight.js)
+- **File preview** — built-in viewers for images, video & audio (Xgplayer), PDF (react-pdf), and code (highlight.js)
 - **Folder management** — create, rename, move, and organize files into folders
 - **Sharing** — generate public share links for files and folders
 - **Trash bin** — soft delete with 7-day auto-cleanup
@@ -229,7 +229,7 @@ Admins can change `MAX_CONCURRENT_CHUNKS` in the **Admin Dashboard → System Se
 ## Tech Stack
 
 - **Backend**: [NestJS](https://nestjs.com/) + [Prisma](https://prisma.io/) + PostgreSQL + [Telegraf](https://telegraf.js.org/)
-- **Frontend**: [Next.js 16](https://nextjs.org/) + [Tailwind CSS](https://tailwindcss.com/) + [Plyr](https://plyr.io/) + [react-pdf](https://github.com/wojtekmaj/react-pdf)
+- **Frontend**: [Next.js 16](https://nextjs.org/) + [Tailwind CSS](https://tailwindcss.com/) + [Xgplayer](https://h5player.bytedance.com/) + [react-pdf](https://github.com/wojtekmaj/react-pdf)
 - **Infrastructure**: Docker + nginx + [Telegram Local Bot API](https://github.com/aiogram/telegram-bot-api) + optional [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/)
 
 ## License
