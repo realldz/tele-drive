@@ -21,14 +21,17 @@ export default function MoveDialog({ isOpen, onClose, onConfirm, itemToMove, ite
   const [isLoading, setIsLoading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const excludeIdsStr = JSON.stringify(excludeIds);
+  const itemToMoveId = itemToMove?.id;
+
   // Tập hợp tất cả ID cần loại trừ: item đang move (nếu là folder) + excludeIds
   const allExcludeIds = React.useMemo(() => {
-    const ids = new Set(excludeIds);
-    if (itemType === 'folder' && itemToMove?.id) {
-      ids.add(itemToMove.id);
+    const ids = new Set<string>(JSON.parse(excludeIdsStr));
+    if (itemType === 'folder' && itemToMoveId) {
+      ids.add(itemToMoveId);
     }
     return ids;
-  }, [excludeIds, itemType, itemToMove?.id]);
+  }, [excludeIdsStr, itemType, itemToMoveId]);
 
   const fetchFolders = useCallback(async (parentId: string | null) => {
     setIsLoading(true);
