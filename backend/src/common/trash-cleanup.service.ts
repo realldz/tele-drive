@@ -8,6 +8,12 @@ interface CleanupResult {
   expiresAt: number;
 }
 
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error
+    ? (err.stack ?? err.message)
+    : String(err);
+}
+
 @Injectable()
 export class TrashCleanupService {
   private readonly logger = new Logger(TrashCleanupService.name);
@@ -33,9 +39,11 @@ export class TrashCleanupService {
   /**
    * Get cleanup status for a user including pending trash counts.
    */
-  async getCleanupStatus(
-    userId: string,
-  ): Promise<{ isCleaning: boolean; totalCount: number; deletedCount: number }> {
+  async getCleanupStatus(userId: string): Promise<{
+    isCleaning: boolean;
+    totalCount: number;
+    deletedCount: number;
+  }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { isCleaningTrash: true },
@@ -104,7 +112,9 @@ export class TrashCleanupService {
 
     // Run cleanup in background (fire-and-forget)
     this._runUserCleanup(userId).catch((err) => {
-      this.logger.error(`Background cleanup failed for user ${userId}: ${err}`);
+      this.logger.error(
+        `Background cleanup failed for user ${userId}: ${getErrorMessage(err)}`,
+      );
     });
 
     return { accepted: true };
@@ -139,7 +149,7 @@ export class TrashCleanupService {
           filesDeleted++;
         } catch (err) {
           this.logger.error(
-            `Failed to permanently delete file ${file.id}: ${err}`,
+            `Failed to permanently delete file ${file.id}: ${getErrorMessage(err)}`,
           );
         }
       }
@@ -156,7 +166,7 @@ export class TrashCleanupService {
           foldersDeleted++;
         } catch (err) {
           this.logger.error(
-            `Failed to permanently delete folder ${folder.id}: ${err}`,
+            `Failed to permanently delete folder ${folder.id}: ${getErrorMessage(err)}`,
           );
         }
       }
@@ -230,7 +240,7 @@ export class TrashCleanupService {
           );
         } catch (err) {
           this.logger.error(
-            `Failed to permanently delete file ${file.id}: ${err}`,
+            `Failed to permanently delete file ${file.id}: ${getErrorMessage(err)}`,
           );
         }
       }
@@ -273,7 +283,7 @@ export class TrashCleanupService {
           );
         } catch (err) {
           this.logger.error(
-            `Failed to permanently delete folder ${folder.id}: ${err}`,
+            `Failed to permanently delete folder ${folder.id}: ${getErrorMessage(err)}`,
           );
         }
       }
@@ -282,8 +292,7 @@ export class TrashCleanupService {
       const now = Date.now();
       for (const uid of userIds) {
         const totalDeleted =
-          (fileCountsByUser.get(uid) ?? 0) +
-          (folderCountsByUser.get(uid) ?? 0);
+          (fileCountsByUser.get(uid) ?? 0) + (folderCountsByUser.get(uid) ?? 0);
         this.cleanupResults.set(uid, {
           deletedCount: totalDeleted,
           expiresAt: now + this.CACHE_TTL_MS,

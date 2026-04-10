@@ -11,6 +11,7 @@ import {
   Res,
   UseInterceptors,
   UseGuards,
+  Logger,
 } from '@nestjs/common';
 import { FolderService } from './folder.service';
 import { FileService } from '../file/file.service';
@@ -25,23 +26,29 @@ import type { ConflictAction } from '../common/name-conflict.service';
 
 @Controller('folders')
 export class FolderController {
+  private readonly logger = new Logger(FolderController.name);
+
   constructor(
     private readonly folderService: FolderService,
     private readonly fileService: FileService,
   ) {}
 
   @Post()
-  create(
+  async create(
     @Body() body: CreateFolderDto,
     @Query('onConflict') onConflict: 'merge' | 'error' | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.folderService.create(
+    const result = await this.folderService.create(
       body.name,
       req.user.userId,
       body.parentId || undefined,
       onConflict as ConflictAction | undefined,
     );
+    this.logger.log(
+      `Folder created: name="${body.name}", userId=${req.user.userId}, parentId=${body.parentId || 'root'}, conflict=${onConflict || 'error'}`,
+    );
+    return result;
   }
 
   @Get('content')
@@ -71,47 +78,80 @@ export class FolderController {
   }
 
   @Patch(':id/rename')
-  rename(
+  async rename(
     @Param('id') id: string,
     @Body('name') name: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.folderService.rename(id, name, req.user.userId);
+    const result = await this.folderService.rename(id, name, req.user.userId);
+    this.logger.log(
+      `Folder renamed: id=${id}, userId=${req.user.userId}, name="${name}"`,
+    );
+    return result;
   }
 
   @Patch(':id/move')
-  move(
+  async move(
     @Param('id') id: string,
     @Body('parentId') parentId: string | null,
     @Body('conflictAction') conflictAction: ConflictAction | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.folderService.move(id, parentId, req.user.userId, conflictAction);
+    const result = await this.folderService.move(
+      id,
+      parentId,
+      req.user.userId,
+      conflictAction,
+    );
+    this.logger.log(
+      `Folder moved: id=${id}, userId=${req.user.userId}, parentId=${parentId || 'root'}, conflictAction=${conflictAction || 'error'}`,
+    );
+    return result;
   }
 
   @Delete(':id')
-  softDelete(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.folderService.softDelete(id, req.user.userId);
+  async softDelete(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const result = await this.folderService.softDelete(id, req.user.userId);
+    this.logger.log(
+      `Folder soft-deleted: id=${id}, userId=${req.user.userId}`,
+    );
+    return result;
   }
 
   @Patch(':id/restore')
-  restore(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.folderService.restore(id, req.user.userId);
+  async restore(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const result = await this.folderService.restore(id, req.user.userId);
+    this.logger.log(`Folder restored: id=${id}, userId=${req.user.userId}`);
+    return result;
   }
 
   @Delete(':id/permanent')
-  permanentDelete(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.folderService.permanentDelete(id, req.user.userId);
+  async permanentDelete(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const result = await this.folderService.permanentDelete(
+      id,
+      req.user.userId,
+    );
+    this.logger.log(
+      `Folder permanently deleted: id=${id}, userId=${req.user.userId}`,
+    );
+    return result;
   }
 
   @Post(':id/share')
-  share(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.folderService.share(id, req.user.userId);
+  async share(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const result = await this.folderService.share(id, req.user.userId);
+    this.logger.log(`Folder shared: id=${id}, userId=${req.user.userId}`);
+    return result;
   }
 
   @Post(':id/unshare')
-  unshare(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.folderService.unshare(id, req.user.userId);
+  async unshare(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const result = await this.folderService.unshare(id, req.user.userId);
+    this.logger.log(`Folder unshared: id=${id}, userId=${req.user.userId}`);
+    return result;
   }
 
   @Public()

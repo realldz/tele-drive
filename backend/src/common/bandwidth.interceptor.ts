@@ -27,6 +27,7 @@ type ExpressRequest = {
   user?: Record<string, unknown>;
   cookies?: Record<string, string>;
   headers: Record<string, string | undefined>;
+  requestId?: string;
 };
 
 type ExpressResponse = {
@@ -75,6 +76,14 @@ function parseRangeSize(
 
 function formatResetAt(lastReset: Date): string {
   return new Date(lastReset.getTime() + 86_400_000).toISOString();
+}
+
+function formatBytes(bytes: bigint): string {
+  const num = Number(bytes);
+  if (num >= 1_073_741_824) return `${(num / 1_073_741_824).toFixed(2)} GB`;
+  if (num >= 1_048_576) return `${(num / 1_048_576).toFixed(2)} MB`;
+  if (num >= 1_024) return `${(num / 1_024).toFixed(2)} KB`;
+  return `${num} B`;
 }
 
 /**
@@ -129,7 +138,16 @@ export class BandwidthInterceptor implements NestInterceptor {
     if (!file) return next.handle();
 
     // Per-file quota check
-    this.checkFileQuota(file, isCheckOnly, fileId, res);
+    try {
+      this.checkFileQuota(file, isCheckOnly, fileId, res);
+    } catch (err) {
+      if (err instanceof HttpException) {
+        this.logger.warn(
+          `[${req.requestId || 'unknown'}] Per-file quota exceeded: fileId=${fileId}, userId=${userId || 'guest'}, code=${err.message}`,
+        );
+      }
+      throw err;
+    }
 
     if (isCheckOnly) return next.handle();
 
@@ -143,17 +161,27 @@ export class BandwidthInterceptor implements NestInterceptor {
         estimatedSize,
         ip,
       );
-      this.attachReconcileListener(res, {
-        fileId,
-        userId: userId ?? null,
-        estimatedSize,
-        requiresReset,
-        ip,
-      });
+      this.logger.debug(
+        `[${req.requestId || 'unknown'}] Bandwidth locked: userId=${userId || 'guest'}, ip=${ip}, locked=${formatBytes(estimatedSize)}, fileId=${fileId}`,
+      );
+      this.attachReconcileListener(
+        res,
+        {
+          fileId,
+          userId: userId ?? null,
+          estimatedSize,
+          requiresReset,
+          ip,
+        },
+        req.requestId,
+      );
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes('BANDWIDTH_LIMIT')) {
         const [code, resetAt] = err.message.split(':');
         res.setHeader('X-Bandwidth-Reset', resetAt);
+        this.logger.warn(
+          `[${req.requestId || 'unknown'}] Bandwidth limit exceeded: userId=${userId || 'guest'}, ip=${ip}, estimated=${formatBytes(estimatedSize)}`,
+        );
         throw new HttpException(
           { code, resetAt },
           HttpStatus.TOO_MANY_REQUESTS,
@@ -263,6 +291,7 @@ export class BandwidthInterceptor implements NestInterceptor {
   private attachReconcileListener(
     res: ExpressResponse,
     data: BandwidthReconcileData,
+    requestId?: string,
   ): void {
     res.on('close', () => {
       if (res._bwReconciled) return;
@@ -283,6 +312,9 @@ export class BandwidthInterceptor implements NestInterceptor {
           },
           refund,
           data.requiresReset,
+        );
+        this.logger.debug(
+          `[${requestId || 'unknown'}] Bandwidth reconciled: userId=${data.userId || 'guest'}, refunded=${formatBytes(refund)}, actual=${formatBytes(actualBytes)}, locked=${formatBytes(data.estimatedSize)}`,
         );
       }
       void this.lockService.reconcilePerFileCounters(

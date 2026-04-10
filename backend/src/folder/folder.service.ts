@@ -22,7 +22,7 @@ export class FolderService {
     private readonly fileService: FileService,
     private readonly cryptoService: CryptoService,
     private readonly nameConflictService: NameConflictService,
-  ) { }
+  ) {}
 
   /**
    * Tạo folder mới — userId lấy từ JWT
@@ -176,8 +176,9 @@ export class FolderService {
     );
     if (conflict) {
       throw new ConflictException({
-        message: 'A file or folder with this name already exists in the current folder',
-        type: 'folder' as const
+        message:
+          'A file or folder with this name already exists in the current folder',
+        type: 'folder' as const,
       });
     }
 

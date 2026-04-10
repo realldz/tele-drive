@@ -1,9 +1,12 @@
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { ValidationPipe } from '@nestjs/common';
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import { AppModule } from './app.module';
 import helmet from 'helmet';
 import * as bodyParser from 'body-parser';
 import cookieParser from 'cookie-parser';
+import { requestIdMiddleware } from './common/middleware/request-id.middleware';
+import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 
 async function bootstrap() {
   const isProduction = process.env.NODE_ENV === 'production';
@@ -18,10 +21,18 @@ async function bootstrap() {
   // We re-apply body parsing only for non-S3 routes via middleware below.
   const app = await NestFactory.create(AppModule, {
     bodyParser: false,
-    logger: isProduction
-      ? ['error', 'warn', 'log']
-      : ['error', 'warn', 'log', 'debug', 'verbose'],
+    bufferLogs: true,
   });
+
+  // Replace NestJS default logger with Winston
+  const winstonLogger = app.get(WINSTON_MODULE_NEST_PROVIDER);
+  app.useLogger(winstonLogger);
+
+  // Register request ID middleware — must run before routes
+  app.use(requestIdMiddleware);
+
+  // Register global exception filter — catch all unhandled exceptions
+  app.useGlobalFilters(new GlobalExceptionFilter());
 
   // Apply body parsers only to non-S3 routes.
   // S3 routes stream the raw body themselves (PutObject, UploadPart, etc.)
@@ -76,15 +87,15 @@ async function bootstrap() {
     origin: corsOrigin || true,
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
-    exposedHeaders: ['X-Bandwidth-Reset'],
+    exposedHeaders: ['X-Bandwidth-Reset', 'X-Request-ID'],
   });
 
   const port = process.env.PORT ?? 3001;
   await app.listen(port);
 
-  const logger = new Logger('Bootstrap');
-  logger.log(
+  winstonLogger.log(
     `Application started on port ${port} [${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}]`,
+    'Bootstrap',
   );
 }
 bootstrap();
