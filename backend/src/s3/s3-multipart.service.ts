@@ -67,7 +67,12 @@ export class S3MultipartService {
     const filename = key.split('/').pop() || key;
 
     // Resolve / auto-create folder path under the bucket
-    const { folderId } = await this.s3Service.resolveKey(userId, bucket, key, true);
+    const { folderId } = await this.s3Service.resolveKey(
+      userId,
+      bucket,
+      key,
+      true,
+    );
 
     // Generate encryption material upfront (same DEK used for all chunks)
     const dek = this.cryptoService.generateFileKey();
@@ -144,7 +149,8 @@ export class S3MultipartService {
       // Drain the stream
       req.resume();
       // Return stored etag if available, otherwise derive a stable one
-      const storedEtag = (existing as any).etag ||
+      const storedEtag =
+        (existing as any).etag ||
         `"${crypto.createHash('md5').update(String(chunkIndex)).digest('hex')}"`;
       return { etag: storedEtag, size: existing.size };
     }
@@ -175,8 +181,11 @@ export class S3MultipartService {
     const cipherStream = this.cryptoService.createEncryptStream(dek, chunkIv);
     const uploadStream = req.pipe(counterTransform).pipe(cipherStream);
 
-    const { fileId: telegramFileId, messageId: telegramMessageId, botId } =
-      await this.telegramService.uploadStream(uploadStream, chunkFilename);
+    const {
+      fileId: telegramFileId,
+      messageId: telegramMessageId,
+      botId,
+    } = await this.telegramService.uploadStream(uploadStream, chunkFilename);
 
     // Persist the chunk record — store MD5 etag for multipart ETag computation later
     const partMd5Hex = md5.digest('hex');
@@ -226,7 +235,8 @@ export class S3MultipartService {
       where: { id: uploadId, userId },
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
     });
-    if (!fileRecord) throw new NotFoundException(`Upload not found: uploadId=${uploadId}`);
+    if (!fileRecord)
+      throw new NotFoundException(`Upload not found: uploadId=${uploadId}`);
     if (fileRecord.status === 'complete') {
       // Idempotent — return stored etag
       const storedEtag = (fileRecord as any).etag || `"${uploadId}"`;
@@ -353,13 +363,15 @@ export class S3MultipartService {
       where: { id: uploadId, userId },
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
     });
-    if (!fileRecord) throw new NotFoundException(`Upload not found: uploadId=${uploadId}`);
+    if (!fileRecord)
+      throw new NotFoundException(`Upload not found: uploadId=${uploadId}`);
 
     return fileRecord.chunks.map((c) => ({
       partNumber: c.chunkIndex + 1, // Convert back to 1-based
       size: c.size,
       // Return stored etag if available, otherwise derive a stable placeholder
-      etag: (c as any).etag ||
+      etag:
+        (c as any).etag ||
         `"${crypto.createHash('md5').update(String(c.chunkIndex)).digest('hex')}"`,
     }));
   }
@@ -368,7 +380,11 @@ export class S3MultipartService {
   // XML Helpers for Multipart responses
   // ---------------------------------------------------------------------------
 
-  buildInitiateMultipartUploadXml(bucket: string, key: string, uploadId: string): string {
+  buildInitiateMultipartUploadXml(
+    bucket: string,
+    key: string,
+    uploadId: string,
+  ): string {
     return `<?xml version="1.0" encoding="UTF-8"?>
 <InitiateMultipartUploadResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Bucket>${escapeXml(bucket)}</Bucket>
@@ -430,5 +446,4 @@ export class S3MultipartService {
     const matches = body.match(/<PartNumber>/g);
     return matches ? matches.length : 0;
   }
-
 }

@@ -15,7 +15,6 @@ import { CryptoModule } from './crypto/crypto.module';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { ScheduleModule } from '@nestjs/schedule';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { TrashCleanupService } from './common/trash-cleanup.service';
 import { StaleUploadCleanupService } from './common/stale-upload-cleanup.service';
 import { BandwidthModule } from './common/bandwidth.module';
 import { S3Module } from './s3/s3.module';
@@ -61,7 +60,6 @@ import { S3Module } from './s3/s3.module';
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
     },
-    TrashCleanupService,
     StaleUploadCleanupService,
   ],
 })

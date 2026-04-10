@@ -51,7 +51,11 @@ export class AesCtrOffsetStream extends Transform {
     this.decipher.on('error', (err) => this.emit('error', err));
   }
 
-  _transform(chunk: Buffer, _encoding: BufferEncoding, callback: TransformCallback) {
+  _transform(
+    chunk: Buffer,
+    _encoding: BufferEncoding,
+    callback: TransformCallback,
+  ) {
     // On the first chunk, inject `bytesToDrop` zero-padding bytes into the decipher
     // so the keystream advances past the partial block before real ciphertext arrives.
     // The decrypted output of these padding bytes will be dropped by the `data` handler above.
@@ -89,14 +93,19 @@ export class CryptoService {
   private readonly ALGO = 'aes-256-ctr';
 
   constructor() {
-    this.MASTER_SECRET = process.env.MASTER_SECRET || 'default_secret_key_32_bytes_long.';
+    this.MASTER_SECRET =
+      process.env.MASTER_SECRET || 'default_secret_key_32_bytes_long.';
 
     // Ensure MASTER_SECRET is exactly 32 bytes for aes-256
     if (Buffer.from(this.MASTER_SECRET).length !== 32) {
       if (process.env.NODE_ENV === 'production') {
-        throw new Error('MASTER_SECRET must be exactly 32 bytes long for aes-256-ctr');
+        throw new Error(
+          'MASTER_SECRET must be exactly 32 bytes long for aes-256-ctr',
+        );
       }
-      this.logger.warn('MASTER_SECRET is not 32 bytes! Padding/truncating for development.');
+      this.logger.warn(
+        'MASTER_SECRET is not 32 bytes! Padding/truncating for development.',
+      );
       this.MASTER_SECRET = this.MASTER_SECRET.padEnd(32, '0').slice(0, 32);
     }
   }
@@ -121,7 +130,11 @@ export class CryptoService {
    */
   encryptKey(dek: Buffer): string {
     const iv = crypto.randomBytes(16);
-    const cipher = crypto.createCipheriv(this.ALGO, Buffer.from(this.MASTER_SECRET), iv);
+    const cipher = crypto.createCipheriv(
+      this.ALGO,
+      Buffer.from(this.MASTER_SECRET),
+      iv,
+    );
     const encrypted = Buffer.concat([cipher.update(dek), cipher.final()]);
     return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
   }
@@ -133,7 +146,11 @@ export class CryptoService {
     const [ivHex, encryptedHex] = encryptedDekHex.split(':');
     const iv = Buffer.from(ivHex, 'hex');
     const encrypted = Buffer.from(encryptedHex, 'hex');
-    const decipher = crypto.createDecipheriv(this.ALGO, Buffer.from(this.MASTER_SECRET), iv);
+    const decipher = crypto.createDecipheriv(
+      this.ALGO,
+      Buffer.from(this.MASTER_SECRET),
+      iv,
+    );
     return Buffer.concat([decipher.update(encrypted), decipher.final()]);
   }
 
@@ -154,7 +171,11 @@ export class CryptoService {
   /**
    * Creates a DecipherStream suitable for random access streaming (Range Requests)
    */
-  createOffsetDecryptStream(dek: Buffer, iv: Buffer, byteOffset: number): Transform {
+  createOffsetDecryptStream(
+    dek: Buffer,
+    iv: Buffer,
+    byteOffset: number,
+  ): Transform {
     if (byteOffset === 0) {
       return this.createDecryptStream(dek, iv);
     }
@@ -164,15 +185,25 @@ export class CryptoService {
   // ── Signed Download Token ────────────────────────────────────────────────
 
   private hmacSign(data: string): string {
-    return crypto.createHmac('sha256', this.MASTER_SECRET).update(data).digest('hex');
+    return crypto
+      .createHmac('sha256', this.MASTER_SECRET)
+      .update(data)
+      .digest('hex');
   }
 
   /**
    * Tạo signed download token (base64url-encoded JSON)
    */
-  createSignedToken(fileId: string, type: 'u' | 's' | 'sf', ttlSeconds: number, userId?: string): string {
+  createSignedToken(
+    fileId: string,
+    type: 'u' | 's' | 'sf',
+    ttlSeconds: number,
+    userId?: string,
+  ): string {
     const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
-    const sigStr = userId ? `${fileId}:${exp}:${type}:${userId}` : `${fileId}:${exp}:${type}`;
+    const sigStr = userId
+      ? `${fileId}:${exp}:${type}:${userId}`
+      : `${fileId}:${exp}:${type}`;
     const sig = this.hmacSign(sigStr);
     const payloadObj: any = { fid: fileId, exp, t: type, sig };
     if (userId) payloadObj.uid = userId;
@@ -190,7 +221,13 @@ export class CryptoService {
       if (!fid || !exp || !t || !sig) return null;
       const sigStr = uid ? `${fid}:${exp}:${t}:${uid}` : `${fid}:${exp}:${t}`;
       const expectedSig = this.hmacSign(sigStr);
-      if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expectedSig, 'hex'))) return null;
+      if (
+        !crypto.timingSafeEqual(
+          Buffer.from(sig, 'hex'),
+          Buffer.from(expectedSig, 'hex'),
+        )
+      )
+        return null;
       if (Math.floor(Date.now() / 1000) > exp) return null;
       return { fid, exp, t, uid };
     } catch {
@@ -219,7 +256,13 @@ export class CryptoService {
       const { sub, exp, sig } = JSON.parse(json);
       if (!sub || !exp || !sig) return null;
       const expectedSig = this.hmacSign(`stream:${sub}:${exp}`);
-      if (!crypto.timingSafeEqual(Buffer.from(sig, 'hex'), Buffer.from(expectedSig, 'hex'))) return null;
+      if (
+        !crypto.timingSafeEqual(
+          Buffer.from(sig, 'hex'),
+          Buffer.from(expectedSig, 'hex'),
+        )
+      )
+        return null;
       if (Math.floor(Date.now() / 1000) > exp) return null;
       return { sub, exp };
     } catch {

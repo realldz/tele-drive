@@ -16,7 +16,9 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         ExtractJwt.fromUrlQueryParameter('token'),
       ]),
       ignoreExpiration: false,
-      secretOrKey: configService.get<string>('JWT_SECRET') || 'default-jwt-secret-change-me',
+      secretOrKey:
+        configService.get<string>('JWT_SECRET') ||
+        'default-jwt-secret-change-me',
     });
   }
 

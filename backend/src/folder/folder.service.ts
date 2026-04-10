@@ -1,8 +1,17 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FileService } from '../file/file.service';
 import { CryptoService } from '../crypto/crypto.service';
+import { NameConflictService } from '../common/name-conflict.service';
+import type { ConflictAction } from '../common/name-conflict.service';
 import * as crypto from 'crypto';
+import { message } from 'telegraf/filters';
 
 @Injectable()
 export class FolderService {
@@ -12,18 +21,56 @@ export class FolderService {
     private readonly prisma: PrismaService,
     private readonly fileService: FileService,
     private readonly cryptoService: CryptoService,
+    private readonly nameConflictService: NameConflictService,
   ) { }
 
   /**
    * Tạo folder mới — userId lấy từ JWT
    */
-  async create(name: string, userId: string, parentId?: string) {
+  async create(
+    name: string,
+    userId: string,
+    parentId?: string,
+    conflictAction?: ConflictAction,
+  ) {
     // Nếu có parentId, kiểm tra folder cha thuộc về user
     if (parentId) {
       const parentFolder = await this.prisma.folder.findFirst({
         where: { id: parentId, userId, deletedAt: null },
       });
       if (!parentFolder) throw new NotFoundException('Parent folder not found');
+    }
+
+    // Check name conflict at parent
+    const conflict = await this.nameConflictService.checkFolderConflict(
+      parentId || null,
+      name,
+      userId,
+    );
+
+    if (conflict) {
+      if (!conflictAction || conflictAction === 'skip') {
+        throw new ConflictException({
+          message:
+            'A file or folder with this name already exists in the current folder',
+          type: 'folder' as const,
+          id: conflict.id,
+          name: conflict.name,
+        });
+      }
+
+      if (conflictAction === 'merge') {
+        // Trộn nội dung vào folder có sẵn (dùng create folder làm source rỗng,
+        // thực tế là upload files mới vào folder conflict — nhưng vì create chỉ tạo folder,
+        // ta coi như "merge" nghĩa là không tạo folder mới, trả về folder cũ).
+        // Tuy nhiên, nếu caller muốn tạo folder mới để chứa files upload kèm →
+        // ta auto-rename folder mới.
+        // Theo design: merge = dùng folder cũ, không tạo mới.
+        this.logger.log(
+          `Folder create merged into existing: "${name}" into "${conflict.name}" (id: ${conflict.id})`,
+        );
+        return conflict;
+      }
     }
 
     const folder = await this.prisma.folder.create({
@@ -34,7 +81,9 @@ export class FolderService {
       },
     });
 
-    this.logger.log(`Folder created: "${name}" (id: ${folder.id}, parentId: ${parentId || 'root'}, userId: ${userId})`);
+    this.logger.log(
+      `Folder created: "${name}" (id: ${folder.id}, parentId: ${parentId || 'root'}, userId: ${userId})`,
+    );
     return folder;
   }
 
@@ -88,7 +137,7 @@ export class FolderService {
         folderId: folderId || null,
         userId,
         status: { in: ['complete', 'uploading'] },
-        deletedAt: null
+        deletedAt: null,
       },
       orderBy: { createdAt: 'desc' },
       select: {
@@ -115,24 +164,46 @@ export class FolderService {
   async rename(id: string, newName: string, userId: string) {
     const folder = await this.prisma.folder.findFirst({
       where: { id, userId, deletedAt: null },
+      select: { id: true, name: true, parentId: true },
     });
     if (!folder) throw new NotFoundException('Folder not found');
+
+    const conflict = await this.nameConflictService.checkFolderConflict(
+      folder.parentId,
+      newName,
+      userId,
+      id,
+    );
+    if (conflict) {
+      throw new ConflictException({
+        message: 'A file or folder with this name already exists in the current folder',
+        type: 'folder' as const
+      });
+    }
 
     const updated = await this.prisma.folder.update({
       where: { id },
       data: { name: newName },
     });
 
-    this.logger.log(`Folder renamed: "${folder.name}" to "${newName}" (id: ${id})`);
+    this.logger.log(
+      `Folder renamed: "${folder.name}" to "${newName}" (id: ${id})`,
+    );
     return updated;
   }
 
   /**
    * Di chuyển folder (chống circular reference)
    */
-  async move(id: string, newParentId: string | null, userId: string) {
+  async move(
+    id: string,
+    newParentId: string | null,
+    userId: string,
+    conflictAction?: ConflictAction,
+  ) {
     const folder = await this.prisma.folder.findFirst({
       where: { id, userId, deletedAt: null },
+      select: { id: true, name: true, parentId: true },
     });
     if (!folder) throw new NotFoundException('Folder not found');
 
@@ -146,20 +217,64 @@ export class FolderService {
       let currentParentId: string | null = newParentId;
       while (currentParentId) {
         if (currentParentId === id) {
-          throw new BadRequestException('Cannot move folder into a subfolder of itself');
+          throw new BadRequestException(
+            'Cannot move folder into a subfolder of itself',
+          );
         }
-        const parentFolder: { parentId: string | null } | null = await this.prisma.folder.findUnique({
-          where: { id: currentParentId as string },
-          select: { parentId: true },
-        });
+        const parentFolder: { parentId: string | null } | null =
+          await this.prisma.folder.findUnique({
+            where: { id: currentParentId },
+            select: { parentId: true },
+          });
         currentParentId = parentFolder?.parentId || null;
       }
 
       // 3. Dest folder phải tồn tại và thuộc về user
       const newParent = await this.prisma.folder.findFirst({
         where: { id: newParentId, userId, deletedAt: null },
+        select: { id: true },
       });
-      if (!newParent) throw new NotFoundException('Destination folder not found');
+      if (!newParent)
+        throw new NotFoundException('Destination folder not found');
+    }
+
+    // Check conflict at destination
+    const conflict = await this.nameConflictService.checkFolderConflict(
+      newParentId,
+      folder.name,
+      userId,
+      id,
+    );
+
+    if (conflict) {
+      if (!conflictAction || conflictAction === 'skip') {
+        throw new ConflictException({
+          message:
+            'A file or folder with this name already exists in the destination folder',
+          type: 'folder' as const,
+          id: conflict.id,
+          name: conflict.name,
+        });
+      }
+
+      if (conflictAction === 'merge') {
+        // Merge nội dung source vào target, sau đó xoá source
+        await this.nameConflictService.mergeFolderContents(
+          id,
+          conflict.id,
+          userId,
+        );
+        // Xoá folder nguồn (sau khi đã merge hết nội dung)
+        await this.prisma.folder.delete({ where: { id } });
+        this.logger.log(
+          `Folder merged during move: "${folder.name}" (id: ${id}) into "${conflict.name}" (id: ${conflict.id})`,
+        );
+        // Return target folder info
+        const updated = await this.prisma.folder.findUnique({
+          where: { id: conflict.id },
+        });
+        return updated;
+      }
     }
 
     const updated = await this.prisma.folder.update({
@@ -167,7 +282,9 @@ export class FolderService {
       data: { parentId: newParentId },
     });
 
-    this.logger.log(`Folder moved: "${folder.name}" (id: ${id}) to parent: ${newParentId || 'root'}`);
+    this.logger.log(
+      `Folder moved: "${folder.name}" (id: ${id}) to parent: ${newParentId || 'root'}`,
+    );
     return updated;
   }
 
@@ -179,11 +296,14 @@ export class FolderService {
     let currentId: string | null = folderId;
 
     while (currentId) {
-      const folderData: { id: string; name: string; parentId: string | null } | null =
-        await this.prisma.folder.findFirst({
-          where: { id: currentId, userId, deletedAt: null },
-          select: { id: true, name: true, parentId: true },
-        });
+      const folderData: {
+        id: string;
+        name: string;
+        parentId: string | null;
+      } | null = await this.prisma.folder.findFirst({
+        where: { id: currentId, userId, deletedAt: null },
+        select: { id: true, name: true, parentId: true },
+      });
       if (!folderData) break;
       breadcrumbs.unshift({ id: folderData.id, name: folderData.name });
       currentId = folderData.parentId;
@@ -201,7 +321,8 @@ export class FolderService {
     });
     if (!folder) throw new NotFoundException('Folder not found');
 
-    const shareToken = folder.shareToken || crypto.randomBytes(16).toString('hex');
+    const shareToken =
+      folder.shareToken || crypto.randomBytes(16).toString('hex');
 
     const updated = await this.prisma.folder.update({
       where: { id },
@@ -211,7 +332,9 @@ export class FolderService {
       },
     });
 
-    this.logger.log(`Folder shared: "${folder.name}" (folderId: ${id}, token: ${shareToken})`);
+    this.logger.log(
+      `Folder shared: "${folder.name}" (folderId: ${id}, token: ${shareToken})`,
+    );
     return updated;
   }
 
@@ -245,14 +368,19 @@ export class FolderService {
       where: { shareToken: token },
       include: { user: { select: { username: true } } },
     });
-    if (!rootSharedFolder || rootSharedFolder.deletedAt) throw new NotFoundException('Shared folder not found');
+    if (!rootSharedFolder || rootSharedFolder.deletedAt)
+      throw new NotFoundException('Shared folder not found');
 
-    let currentFolderId = targetFolderId || rootSharedFolder.id;
+    const currentFolderId = targetFolderId || rootSharedFolder.id;
 
     // Verify currentFolderId is a descendant of rootSharedFolder
-    const isChild = await this.isDescendantOf(currentFolderId, rootSharedFolder.id);
+    const isChild = await this.isDescendantOf(
+      currentFolderId,
+      rootSharedFolder.id,
+    );
 
-    if (!isChild) throw new BadRequestException('Folder is not part of this shared link');
+    if (!isChild)
+      throw new BadRequestException('Folder is not part of this shared link');
 
     // Fetch content of currentFolderId
     const folders = await this.prisma.folder.findMany({
@@ -268,18 +396,28 @@ export class FolderService {
     const breadcrumbs = [];
     let bcId: string | null = currentFolderId;
     while (bcId && bcId !== rootSharedFolder.id) {
-       const f: { id: string; name: string; parentId: string | null } | null = await this.prisma.folder.findUnique({
-         where: { id: bcId },
-         select: { id: true, name: true, parentId: true },
-       });
-       if (!f) break;
-       breadcrumbs.unshift({ id: f.id, name: f.name });
-       bcId = f.parentId;
+      const f: { id: string; name: string; parentId: string | null } | null =
+        await this.prisma.folder.findUnique({
+          where: { id: bcId },
+          select: { id: true, name: true, parentId: true },
+        });
+      if (!f) break;
+      breadcrumbs.unshift({ id: f.id, name: f.name });
+      bcId = f.parentId;
     }
     // Always add the root folder as the first breadcrumb
-    breadcrumbs.unshift({ id: rootSharedFolder.id, name: rootSharedFolder.name });
+    breadcrumbs.unshift({
+      id: rootSharedFolder.id,
+      name: rootSharedFolder.name,
+    });
 
-    return { rootFolder: rootSharedFolder, currentFolderId, folders, files, breadcrumbs };
+    return {
+      rootFolder: rootSharedFolder,
+      currentFolderId,
+      folders,
+      files,
+      breadcrumbs,
+    };
   }
 
   /**
@@ -289,20 +427,27 @@ export class FolderService {
     const rootSharedFolder = await this.prisma.folder.findUnique({
       where: { shareToken: token },
     });
-    if (!rootSharedFolder || rootSharedFolder.deletedAt) throw new NotFoundException('Shared folder not found');
+    if (!rootSharedFolder || rootSharedFolder.deletedAt)
+      throw new NotFoundException('Shared folder not found');
 
     const fileRecord = await this.prisma.fileRecord.findFirst({
       where: { id: fileId, deletedAt: null },
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
     });
     if (!fileRecord) throw new NotFoundException('File not found');
-    if (fileRecord.status !== 'complete') throw new BadRequestException('File upload not completed yet');
+    if (fileRecord.status !== 'complete')
+      throw new BadRequestException('File upload not completed yet');
 
     // Verify file is a descendant of rootSharedFolder
-    if (!fileRecord.folderId) throw new BadRequestException('File is not part of this shared link');
-    const isChild = await this.isDescendantOf(fileRecord.folderId, rootSharedFolder.id);
+    if (!fileRecord.folderId)
+      throw new BadRequestException('File is not part of this shared link');
+    const isChild = await this.isDescendantOf(
+      fileRecord.folderId,
+      rootSharedFolder.id,
+    );
 
-    if (!isChild) throw new BadRequestException('File is not part of this shared link');
+    if (!isChild)
+      throw new BadRequestException('File is not part of this shared link');
 
     return this.fileService.getDownloadMetadata(fileRecord);
   }
@@ -311,14 +456,26 @@ export class FolderService {
    * Xoá thư mục — đệ quy xoá tất cả nội dung bên trong.
    */
   async delete(id: string, userId: string) {
-    return this.hardDeleteFolder(id, userId, { deletedAt: null }, 'Thư mục không tồn tại', 'Folder deleted');
+    return this.hardDeleteFolder(
+      id,
+      userId,
+      { deletedAt: null },
+      'Thư mục không tồn tại',
+      'Folder deleted',
+    );
   }
 
   /**
    * Xoá vĩnh viễn folder từ thùng rác — đệ quy xoá tất cả nội dung bên trong.
    */
   async permanentDelete(id: string, userId: string) {
-    return this.hardDeleteFolder(id, userId, { deletedAt: { not: null } }, 'Thư mục không tồn tại trong thùng rác', 'Folder permanently deleted from trash');
+    return this.hardDeleteFolder(
+      id,
+      userId,
+      { deletedAt: { not: null } },
+      'Thư mục không tồn tại trong thùng rác',
+      'Folder permanently deleted from trash',
+    );
   }
 
   /**
@@ -344,7 +501,9 @@ export class FolderService {
 
     await this.prisma.folder.delete({ where: { id } });
 
-    this.logger.log(`${logPrefix}: "${folder.name}" (id: ${id}, files cleaned: ${allFileIds.length})`);
+    this.logger.log(
+      `${logPrefix}: "${folder.name}" (id: ${id}, files cleaned: ${allFileIds.length})`,
+    );
     return folder;
   }
 
@@ -361,14 +520,19 @@ export class FolderService {
     const now = new Date();
     await this.softDeleteRecursive(id, now);
 
-    this.logger.log(`Folder soft-deleted: "${folder.name}" (id: ${id}, userId: ${userId})`);
+    this.logger.log(
+      `Folder soft-deleted: "${folder.name}" (id: ${id}, userId: ${userId})`,
+    );
     return folder;
   }
 
   /**
    * Đệ quy soft-delete folder và tất cả nội dung bên trong.
    */
-  private async softDeleteRecursive(folderId: string, deletedAt: Date): Promise<void> {
+  private async softDeleteRecursive(
+    folderId: string,
+    deletedAt: Date,
+  ): Promise<void> {
     // Soft-delete tất cả files trong folder
     await this.prisma.fileRecord.updateMany({
       where: { folderId, deletedAt: null },
@@ -395,24 +559,70 @@ export class FolderService {
 
   /**
    * Khôi phục folder từ thùng rác — đệ quy khôi phục nội dung.
+   * Nếu tên bị chiếm tại vị trí cũ → auto-rename + trả về suggested name.
    */
-  async restore(id: string, userId: string) {
+  async restore(
+    id: string,
+    userId: string,
+  ): Promise<{ folder: { id: string; name: string }; autoRenamed: boolean }> {
     const folder = await this.prisma.folder.findFirst({
       where: { id, userId, deletedAt: { not: null } },
     });
     if (!folder) throw new NotFoundException('Folder not found in trash');
 
+    // Check nếu tên folder bị chiếm tại vị trí cũ (parentId)
+    const conflict = await this.nameConflictService.checkFolderConflict(
+      folder.parentId,
+      folder.name,
+      userId,
+      id,
+    );
+
+    let autoRenamed = false;
+    let finalName = folder.name;
+
+    if (conflict) {
+      const existingNames = await this.nameConflictService.getExistingNames(
+        folder.parentId,
+        userId,
+      );
+      finalName = this.nameConflictService.generateUniqueName(
+        folder.name,
+        existingNames,
+      );
+      autoRenamed = true;
+      this.logger.log(
+        `Folder restore auto-renamed: "${folder.name}" to "${finalName}" (id: ${id})`,
+      );
+    }
+
     await this.restoreRecursive(id, folder.deletedAt!);
 
-    this.logger.log(`Folder restored: "${folder.name}" (id: ${id}, userId: ${userId})`);
-    return folder;
+    // Update tên folder nếu có auto-rename
+    if (autoRenamed) {
+      await this.prisma.folder.update({
+        where: { id },
+        data: { name: finalName },
+      });
+    }
+
+    this.logger.log(
+      `Folder restored: "${finalName}" (id: ${id}, userId: ${userId})`,
+    );
+    return {
+      folder: { id, name: finalName },
+      autoRenamed,
+    };
   }
 
   /**
    * Đệ quy khôi phục folder và nội dung bên trong.
    * Chỉ khôi phục items có cùng deletedAt timestamp (items bị xoá trước khi folder bị xoá sẽ không khôi phục).
    */
-  private async restoreRecursive(folderId: string, deletedAt: Date): Promise<void> {
+  private async restoreRecursive(
+    folderId: string,
+    deletedAt: Date,
+  ): Promise<void> {
     // Khôi phục files có cùng deletedAt
     await this.prisma.fileRecord.updateMany({
       where: { folderId, deletedAt },
@@ -446,10 +656,7 @@ export class FolderService {
         userId,
         deletedAt: { not: null },
         // Chỉ hiện folder "gốc" trong trash: folder cha phải đang active hoặc là root
-        OR: [
-          { parentId: null },
-          { parent: { deletedAt: null } },
-        ],
+        OR: [{ parentId: null }, { parent: { deletedAt: null } }],
       },
       orderBy: { deletedAt: 'desc' },
     });
@@ -465,7 +672,7 @@ export class FolderService {
       where: { folderId },
       select: { id: true },
     });
-    fileIds.push(...files.map(f => f.id));
+    fileIds.push(...files.map((f) => f.id));
 
     const children = await this.prisma.folder.findMany({
       where: { parentId: folderId },
@@ -486,32 +693,47 @@ export class FolderService {
   /**
    * Tạo signed download URL cho file trong shared folder
    */
-  async generateShareFolderDownloadToken(shareToken: string, fileId: string): Promise<{ url: string; expiresAt: string }> {
+  async generateShareFolderDownloadToken(
+    shareToken: string,
+    fileId: string,
+  ): Promise<{ url: string; expiresAt: string }> {
     const rootSharedFolder = await this.prisma.folder.findUnique({
       where: { shareToken },
     });
-    if (!rootSharedFolder || rootSharedFolder.deletedAt) throw new NotFoundException('Shared folder not found');
+    if (!rootSharedFolder || rootSharedFolder.deletedAt)
+      throw new NotFoundException('Shared folder not found');
 
     const fileRecord = await this.prisma.fileRecord.findFirst({
       where: { id: fileId, deletedAt: null },
       select: { id: true, folderId: true, status: true },
     });
     if (!fileRecord) throw new NotFoundException('File not found');
-    if (fileRecord.status !== 'complete') throw new BadRequestException('File upload not completed yet');
-    if (!fileRecord.folderId) throw new BadRequestException('File is not part of this shared link');
+    if (fileRecord.status !== 'complete')
+      throw new BadRequestException('File upload not completed yet');
+    if (!fileRecord.folderId)
+      throw new BadRequestException('File is not part of this shared link');
 
-    const isChild = await this.isDescendantOf(fileRecord.folderId, rootSharedFolder.id);
-    if (!isChild) throw new BadRequestException('File is not part of this shared link');
+    const isChild = await this.isDescendantOf(
+      fileRecord.folderId,
+      rootSharedFolder.id,
+    );
+    if (!isChild)
+      throw new BadRequestException('File is not part of this shared link');
 
     const ttl = await this.fileService.getDownloadTtl();
     const token = this.cryptoService.createSignedToken(fileId, 'sf', ttl);
     const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
 
-    this.logger.debug(`Share folder download token generated: shareToken=${shareToken}, fileId=${fileId}, ttl=${ttl}s`);
+    this.logger.debug(
+      `Share folder download token generated: shareToken=${shareToken}, fileId=${fileId}, ttl=${ttl}s`,
+    );
     return { url: `/files/d/${token}`, expiresAt };
   }
 
-  private async isDescendantOf(folderId: string, ancestorId: string): Promise<boolean> {
+  private async isDescendantOf(
+    folderId: string,
+    ancestorId: string,
+  ): Promise<boolean> {
     let currentId: string | null = folderId;
     while (currentId) {
       if (currentId === ancestorId) return true;

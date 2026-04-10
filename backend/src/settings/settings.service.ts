@@ -3,14 +3,14 @@ import { PrismaService } from '../prisma/prisma.service';
 
 /** Giá trị mặc định seed khi hệ thống khởi tạo lần đầu */
 const DEFAULT_SETTINGS: Record<string, string> = {
-  DEFAULT_USER_QUOTA: '15000000000',            // 15 GB
-  DEFAULT_GUEST_BANDWIDTH: '1000000000',         // 1 GB/day
-  DEFAULT_FILE_DOWNLOAD_LIMIT: '0',              // 0 = không giới hạn
-  DEFAULT_DAILY_BANDWIDTH_LIMIT: '0',            // 0 = không giới hạn
-  ENABLE_MULTI_THREAD_DOWNLOAD: 'true',          // Cho phép download managers (IDM) dùng multi-thread
-  MAX_CONCURRENT_CHUNKS: '3',                    // Số chunk tối đa 1 client upload đồng thời
-  DOWNLOAD_URL_TTL_SECONDS: '300',               // 5 phút — thời hạn signed download URL
-  STREAM_COOKIE_TTL_SECONDS: '3600',             // 1 giờ — thời hạn stream cookie
+  DEFAULT_USER_QUOTA: '15000000000', // 15 GB
+  DEFAULT_GUEST_BANDWIDTH: '1000000000', // 1 GB/day
+  DEFAULT_FILE_DOWNLOAD_LIMIT: '0', // 0 = không giới hạn
+  DEFAULT_DAILY_BANDWIDTH_LIMIT: '0', // 0 = không giới hạn
+  ENABLE_MULTI_THREAD_DOWNLOAD: 'true', // Cho phép download managers (IDM) dùng multi-thread
+  MAX_CONCURRENT_CHUNKS: '3', // Số chunk tối đa 1 client upload đồng thời
+  DOWNLOAD_URL_TTL_SECONDS: '300', // 5 phút — thời hạn signed download URL
+  STREAM_COOKIE_TTL_SECONDS: '3600', // 1 giờ — thời hạn stream cookie
 };
 
 @Injectable()
@@ -18,7 +18,10 @@ export class SettingsService implements OnModuleInit {
   private readonly logger = new Logger(SettingsService.name);
 
   /** In-memory cache for getCachedSetting() */
-  private readonly settingsCache = new Map<string, { value: unknown; expiry: number }>();
+  private readonly settingsCache = new Map<
+    string,
+    { value: unknown; expiry: number }
+  >();
   private readonly DEFAULT_CACHE_TTL_MS = 30_000; // 30 seconds
 
   constructor(private readonly prisma: PrismaService) {}
@@ -29,7 +32,9 @@ export class SettingsService implements OnModuleInit {
   async onModuleInit() {
     let seeded = 0;
     for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-      const existing = await this.prisma.systemSetting.findUnique({ where: { key } });
+      const existing = await this.prisma.systemSetting.findUnique({
+        where: { key },
+      });
       if (!existing) {
         await this.prisma.systemSetting.create({ data: { key, value } });
         seeded++;
@@ -95,12 +100,18 @@ export class SettingsService implements OnModuleInit {
       return cached.value as T;
     }
 
-    const setting = await this.prisma.systemSetting.findUnique({ where: { key } });
+    const setting = await this.prisma.systemSetting.findUnique({
+      where: { key },
+    });
     let value: T;
     if (setting) {
       value = parser ? parser(setting.value) : (setting.value as unknown as T);
       // If parser returns NaN or null/undefined, fall back to default
-      if (value === null || value === undefined || (typeof value === 'number' && isNaN(value))) {
+      if (
+        value === null ||
+        value === undefined ||
+        (typeof value === 'number' && isNaN(value))
+      ) {
         value = defaultValue;
       }
     } else {

@@ -83,7 +83,7 @@ export class S3Controller {
     private readonly telegramService: TelegramService,
     private readonly cryptoService: CryptoService,
     private readonly prisma: PrismaService,
-  ) { }
+  ) {}
 
   // ---------------------------------------------------------------------------
   // GET /s3/ → ListBuckets
@@ -245,7 +245,8 @@ export class S3Controller {
         );
 
         const deleted: Array<{ key: string }> = [];
-        const errors: Array<{ key: string; code: string; message: string }> = [];
+        const errors: Array<{ key: string; code: string; message: string }> =
+          [];
 
         for (const key of keys) {
           try {
@@ -267,7 +268,11 @@ export class S3Controller {
             if (status === 404 || message === 'NoSuchKey') {
               deleted.push({ key });
             } else {
-              errors.push({ key, code: message || 'InternalError', message: message || 'An internal error occurred.' });
+              errors.push({
+                key,
+                code: message || 'InternalError',
+                message: message || 'An internal error occurred.',
+              });
             }
           }
         }
@@ -285,7 +290,12 @@ export class S3Controller {
     res
       .status(400)
       .setHeader('Content-Type', 'application/xml')
-      .send(this.s3Service.buildErrorXml('InvalidRequest', 'Unknown POST operation on bucket'));
+      .send(
+        this.s3Service.buildErrorXml(
+          'InvalidRequest',
+          'Unknown POST operation on bucket',
+        ),
+      );
   }
 
   // ---------------------------------------------------------------------------
@@ -300,7 +310,9 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    this.logger.debug(`S3 handlePut: ${userId}, ${bucket}, ${JSON.stringify(params)}`);
+    this.logger.debug(
+      `S3 handlePut: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
+    );
     const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
@@ -308,7 +320,9 @@ export class S3Controller {
 
     // --- CopyObject (Task 7) ---
     // aws-cli URL-encodes the copy-source path, e.g. "my%2Dbucket/path/file.txt"
-    const rawCopySource = req.headers['x-amz-copy-source'] as string | undefined;
+    const rawCopySource = req.headers['x-amz-copy-source'] as
+      | string
+      | undefined;
     if (rawCopySource) {
       const copySource = decodeURIComponent(rawCopySource);
       return this.doCopyObject(userId, bucket, key, copySource, res);
@@ -330,7 +344,10 @@ export class S3Controller {
         res.setHeader('ETag', etag);
         res.status(200).end();
       } catch (err: unknown) {
-        this.logger.error(`S3 UploadPart error: ${uploadId}, ${partNumber}, ${err instanceof Error ? err.message : err}`, err instanceof Error ? err.stack : undefined);
+        this.logger.error(
+          `S3 UploadPart error: ${uploadId}, ${partNumber}, ${err instanceof Error ? err.message : err}`,
+          err instanceof Error ? err.stack : undefined,
+        );
         this.sendS3Error(res, err);
       }
       return;
@@ -338,7 +355,15 @@ export class S3Controller {
 
     // --- PutObject (default) ---
     const { stream, contentLength } = wrapRequestStream(req);
-    return this.doPutObject(userId, bucket, key, req, stream, contentLength, res);
+    return this.doPutObject(
+      userId,
+      bucket,
+      key,
+      req,
+      stream,
+      contentLength,
+      res,
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -353,7 +378,9 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    this.logger.debug(`S3 handlePost: ${userId}, ${bucket}, ${JSON.stringify(params)}`);
+    this.logger.debug(
+      `S3 handlePost: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
+    );
     const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
@@ -364,18 +391,27 @@ export class S3Controller {
       const contentType =
         (req.headers['content-type'] as string) || 'application/octet-stream';
       try {
-        this.logger.debug(`S3 CreateMultipartUpload: ${userId}, ${bucket}, ${key}, ${contentType}`);
+        this.logger.debug(
+          `S3 CreateMultipartUpload: ${userId}, ${bucket}, ${key}, ${contentType}`,
+        );
         const { uploadId } = await this.s3Multipart.createMultipartUpload(
           userId,
           bucket,
           key,
           contentType,
         );
-        const xml = this.s3Multipart.buildInitiateMultipartUploadXml(bucket, key, uploadId);
+        const xml = this.s3Multipart.buildInitiateMultipartUploadXml(
+          bucket,
+          key,
+          uploadId,
+        );
         res.setHeader('Content-Type', 'application/xml');
         res.status(200).send(xml);
       } catch (err: unknown) {
-        this.logger.error(`S3 CreateMultipartUpload error: ${bucket}, ${key}, ${err instanceof Error ? err.message : err}`, err instanceof Error ? err.stack : undefined);
+        this.logger.error(
+          `S3 CreateMultipartUpload error: ${bucket}, ${key}, ${err instanceof Error ? err.message : err}`,
+          err instanceof Error ? err.stack : undefined,
+        );
         this.sendS3Error(res, err);
       }
       return;
@@ -385,17 +421,20 @@ export class S3Controller {
     const uploadId = query['uploadId'];
     if (uploadId) {
       try {
-        this.logger.debug(`S3 CompleteMultipartUpload: ${userId}, ${bucket}, ${key}, ${uploadId}`);
+        this.logger.debug(
+          `S3 CompleteMultipartUpload: ${userId}, ${bucket}, ${key}, ${uploadId}`,
+        );
         const { stream: bodyStream } = wrapRequestStream(req);
         const bodyBuf = await this.readBody(bodyStream);
         const bodyStr = bodyBuf.toString('utf8');
         const partCount = this.s3Multipart.parseCompleteMultipartXml(bodyStr);
 
-        const { location, etag } = await this.s3Multipart.completeMultipartUpload(
-          uploadId,
-          userId,
-          partCount,
-        );
+        const { location, etag } =
+          await this.s3Multipart.completeMultipartUpload(
+            uploadId,
+            userId,
+            partCount,
+          );
 
         const xml = this.s3Multipart.buildCompleteMultipartUploadXml(
           bucket,
@@ -407,7 +446,10 @@ export class S3Controller {
         res.setHeader('ETag', etag);
         res.status(200).send(xml);
       } catch (err: unknown) {
-        this.logger.error(`S3 CompleteMultipartUpload error: ${err instanceof Error ? err.message : err}`, err instanceof Error ? err.stack : undefined);
+        this.logger.error(
+          `S3 CompleteMultipartUpload error: ${err instanceof Error ? err.message : err}`,
+          err instanceof Error ? err.stack : undefined,
+        );
         this.sendS3Error(res, err);
       }
       return;
@@ -416,7 +458,12 @@ export class S3Controller {
     res
       .status(400)
       .setHeader('Content-Type', 'application/xml')
-      .send(this.s3Service.buildErrorXml('InvalidRequest', 'Unknown POST operation'));
+      .send(
+        this.s3Service.buildErrorXml(
+          'InvalidRequest',
+          'Unknown POST operation',
+        ),
+      );
   }
 
   // ---------------------------------------------------------------------------
@@ -431,7 +478,9 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    this.logger.debug(`S3 handleGet: ${userId}, ${bucket}, ${JSON.stringify(params)}`);
+    this.logger.debug(
+      `S3 handleGet: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
+    );
     const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
@@ -441,9 +490,16 @@ export class S3Controller {
     const uploadId = query['uploadId'];
     if (uploadId) {
       try {
-        this.logger.debug(`S3 ListParts: ${userId}, ${bucket}, ${key}, ${uploadId}`);
+        this.logger.debug(
+          `S3 ListParts: ${userId}, ${bucket}, ${key}, ${uploadId}`,
+        );
         const parts = await this.s3Multipart.listParts(uploadId, userId);
-        const xml = this.s3Multipart.buildListPartsXml(bucket, key, uploadId, parts);
+        const xml = this.s3Multipart.buildListPartsXml(
+          bucket,
+          key,
+          uploadId,
+          parts,
+        );
         res.setHeader('Content-Type', 'application/xml');
         res.status(200).send(xml);
       } catch (err: unknown) {
@@ -460,19 +516,24 @@ export class S3Controller {
       const downloadInfo = this.fileService.getDownloadMetadata(file);
 
       const etag = file.etag || `"${file.id}"`;
-      res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
+      res.setHeader(
+        'Content-Type',
+        file.mimeType || 'application/octet-stream',
+      );
       res.setHeader('Content-Length', file.size.toString());
       res.setHeader('ETag', etag);
       res.setHeader('Last-Modified', file.updatedAt.toUTCString());
       res.setHeader('Accept-Ranges', 'bytes');
 
-      const rangeHeader = req.headers['range'] as string | undefined;
+      const rangeHeader = req.headers['range'];
       if (rangeHeader) {
         return this.fileService.processStream(downloadInfo, rangeHeader, res);
       }
       return this.fileService.processDownload(downloadInfo, res);
     } catch (err: unknown) {
-      this.logger.error(`S3 GetObject error: ${err instanceof Error ? err.message : err}`);
+      this.logger.error(
+        `S3 GetObject error: ${err instanceof Error ? err.message : err}`,
+      );
       this.sendS3Error(res, err);
     }
   }
@@ -489,7 +550,9 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    this.logger.debug(`S3 HeadObject: ${userId}, ${bucket}, ${JSON.stringify(params)}`);
+    this.logger.debug(
+      `S3 HeadObject: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
+    );
     const key = this.getObjectKey(bucket, params, req);
 
     this.logger.log(`S3 HeadObject: s3://${bucket}/${key} (userId: ${userId})`);
@@ -499,7 +562,10 @@ export class S3Controller {
       const file = await this.s3Service.findObject(userId, bucket, key);
       const etag = file.etag || `"${file.id}"`;
 
-      res.setHeader('Content-Type', file.mimeType || 'application/octet-stream');
+      res.setHeader(
+        'Content-Type',
+        file.mimeType || 'application/octet-stream',
+      );
       res.setHeader('Content-Length', file.size.toString());
       res.setHeader('ETag', etag);
       res.setHeader('Last-Modified', file.updatedAt.toUTCString());
@@ -512,7 +578,10 @@ export class S3Controller {
         .status(status || 404)
         .setHeader('Content-Type', 'application/xml')
         .send(
-          this.s3Service.buildErrorXml('NoSuchKey', 'The specified key does not exist.'),
+          this.s3Service.buildErrorXml(
+            'NoSuchKey',
+            'The specified key does not exist.',
+          ),
         );
     }
   }
@@ -529,7 +598,9 @@ export class S3Controller {
     @Res() res: Response,
   ) {
     const userId = req.s3UserId;
-    this.logger.debug(`S3 handleDelete: ${userId}, ${bucket}, ${JSON.stringify(params)}`);
+    this.logger.debug(
+      `S3 handleDelete: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
+    );
     const key = this.getObjectKey(bucket, params, req);
     const query = req.query as Record<string, string>;
 
@@ -548,7 +619,9 @@ export class S3Controller {
     }
 
     // --- DeleteObject ---
-    this.logger.log(`S3 DeleteObject: s3://${bucket}/${key} (userId: ${userId})`);
+    this.logger.log(
+      `S3 DeleteObject: s3://${bucket}/${key} (userId: ${userId})`,
+    );
     try {
       if (key.endsWith('/')) {
         await this.s3Service.deleteFolderMarker(userId, bucket, key);
@@ -598,11 +671,18 @@ export class S3Controller {
       if (contentLength === 0) {
         const folderKey = key.endsWith('/') ? key : `${key}/`;
         await this.s3Service.resolveKeyAsFolder(userId, bucket, folderKey);
-        this.logger.log(`S3 PutObject folder: s3://${bucket}/${folderKey} (userId: ${userId})`);
+        this.logger.log(
+          `S3 PutObject folder: s3://${bucket}/${folderKey} (userId: ${userId})`,
+        );
         return res.status(200).end();
       }
 
-      const { folderId } = await this.s3Service.resolveKey(userId, bucket, key, true);
+      const { folderId } = await this.s3Service.resolveKey(
+        userId,
+        bucket,
+        key,
+        true,
+      );
       await (this.fileService as any).checkQuota(userId, contentLength || 0);
 
       const dek = this.cryptoService.generateFileKey();
@@ -612,11 +692,17 @@ export class S3Controller {
       if (contentLength > 0 && contentLength <= MAX_CHUNK_SIZE) {
         // ── Small file path: buffer → verify Content-MD5 → encrypt → upload ──
         const bodyBuffer = await this.readBody(stream);
-        const computedMd5Hex = crypto.createHash('md5').update(bodyBuffer).digest('hex');
+        const computedMd5Hex = crypto
+          .createHash('md5')
+          .update(bodyBuffer)
+          .digest('hex');
 
         // Content-MD5 verification (Task 8)
         if (contentMd5Header) {
-          const expectedMd5Hex = Buffer.from(contentMd5Header, 'base64').toString('hex');
+          const expectedMd5Hex = Buffer.from(
+            contentMd5Header,
+            'base64',
+          ).toString('hex');
           if (expectedMd5Hex !== computedMd5Hex) {
             this.logger.warn(
               `S3 PutObject BadDigest: expected ${expectedMd5Hex}, got ${computedMd5Hex}`,
@@ -636,7 +722,10 @@ export class S3Controller {
         const etag = `"${computedMd5Hex}"`;
 
         const cipher = this.cryptoService.createEncryptStream(dek, iv);
-        const encryptedBuffer = Buffer.concat([cipher.update(bodyBuffer), cipher.final()]);
+        const encryptedBuffer = Buffer.concat([
+          cipher.update(bodyBuffer),
+          cipher.final(),
+        ]);
 
         const record = await this.prisma.fileRecord.create({
           data: {
@@ -654,13 +743,21 @@ export class S3Controller {
           },
         });
 
-        const { fileId: telegramFileId, messageId: telegramMessageId, botId } =
-          await this.telegramService.uploadFile(encryptedBuffer, record.id);
+        const {
+          fileId: telegramFileId,
+          messageId: telegramMessageId,
+          botId,
+        } = await this.telegramService.uploadFile(encryptedBuffer, record.id);
 
         await this.prisma.$transaction(async (tx) => {
           await tx.fileRecord.update({
             where: { id: record.id },
-            data: { telegramFileId, telegramMessageId, botId, status: 'complete' },
+            data: {
+              telegramFileId,
+              telegramMessageId,
+              botId,
+              status: 'complete',
+            },
           });
           await tx.user.update({
             where: { id: userId },
@@ -702,12 +799,13 @@ export class S3Controller {
         });
 
         const cipherStream = this.cryptoService.createEncryptStream(dek, iv);
-        const uploadStream = stream
-          .pipe(counterTransform)
-          .pipe(cipherStream);
+        const uploadStream = stream.pipe(counterTransform).pipe(cipherStream);
 
-        const { fileId: telegramFileId, messageId: telegramMessageId, botId } =
-          await this.telegramService.uploadStream(uploadStream, record.id);
+        const {
+          fileId: telegramFileId,
+          messageId: telegramMessageId,
+          botId,
+        } = await this.telegramService.uploadStream(uploadStream, record.id);
 
         const etag = `"${md5.digest('hex')}"`;
 
@@ -736,7 +834,10 @@ export class S3Controller {
         res.status(200).end();
       }
     } catch (err: unknown) {
-      this.logger.error(`S3 PutObject error: ${err instanceof Error ? err.message : err}`, err instanceof Error ? err.stack : undefined);
+      this.logger.error(
+        `S3 PutObject error: ${err instanceof Error ? err.message : err}`,
+        err instanceof Error ? err.stack : undefined,
+      );
       this.sendS3Error(res, err);
     }
   }
@@ -753,7 +854,9 @@ export class S3Controller {
     res: Response,
   ) {
     // Format: /sourceBucket/sourceKey  or  sourceBucket/sourceKey
-    const cleanSource = copySource.startsWith('/') ? copySource.slice(1) : copySource;
+    const cleanSource = copySource.startsWith('/')
+      ? copySource.slice(1)
+      : copySource;
     const slashIdx = cleanSource.indexOf('/');
     if (slashIdx === -1) {
       return this.sendS3Error(res, { status: 400, message: 'InvalidArgument' });
@@ -765,7 +868,11 @@ export class S3Controller {
     // Guard: source === destination is a no-op (S3 allows it, returns 200)
     if (sourceBucket === destBucket && sourceKey === destKey) {
       try {
-        const file = await this.s3Service.findObject(userId, sourceBucket, sourceKey);
+        const file = await this.s3Service.findObject(
+          userId,
+          sourceBucket,
+          sourceKey,
+        );
         const etag = file.etag || `"${file.id}"`;
         const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <CopyObjectResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
@@ -785,8 +892,17 @@ export class S3Controller {
     );
 
     try {
-      const sourceFile = await this.s3Service.findObject(userId, sourceBucket, sourceKey);
-      const { folderId } = await this.s3Service.resolveKey(userId, destBucket, destKey, true);
+      const sourceFile = await this.s3Service.findObject(
+        userId,
+        sourceBucket,
+        sourceKey,
+      );
+      const { folderId } = await this.s3Service.resolveKey(
+        userId,
+        destBucket,
+        destKey,
+        true,
+      );
       const filename = destKey.split('/').pop() || destKey;
 
       // Inherit source ETag
@@ -848,7 +964,10 @@ export class S3Controller {
 
   /** Add x-amz-request-id to every response for aws-cli compatibility. */
   private setRequestId(res: Response) {
-    res.setHeader('x-amz-request-id', crypto.randomBytes(8).toString('hex').toUpperCase());
+    res.setHeader(
+      'x-amz-request-id',
+      crypto.randomBytes(8).toString('hex').toUpperCase(),
+    );
     res.setHeader('x-amz-id-2', crypto.randomBytes(16).toString('base64'));
   }
 
@@ -857,7 +976,9 @@ export class S3Controller {
     params: Record<string, string>,
     req: S3AuthenticatedRequest,
   ): string {
-    const fromParams = Array.isArray(params['key']) ? params['key'].join('/') : String(params['key'] || '');
+    const fromParams = Array.isArray(params['key'])
+      ? params['key'].join('/')
+      : String(params['key'] || '');
 
     const path = req.path || '';
     const base = `/s3/${bucket}/`;
@@ -887,7 +1008,10 @@ export class S3Controller {
       .status(httpStatus)
       .setHeader('Content-Type', 'application/xml')
       .send(
-        this.s3Service.buildErrorXml(code, message || 'An internal error occurred.'),
+        this.s3Service.buildErrorXml(
+          code,
+          message || 'An internal error occurred.',
+        ),
       );
   }
 }

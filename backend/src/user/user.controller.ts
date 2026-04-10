@@ -1,4 +1,13 @@
-import { Controller, Get, Patch, Delete, Param, Body, Req, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Patch,
+  Delete,
+  Param,
+  Body,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { UserService } from './user.service';
 import { AdminGuard } from '../auth/admin.guard';
 import { ChangePasswordDto } from './dto/change-password.dto';
@@ -22,7 +31,11 @@ export class UserController {
     @Req() req: AuthenticatedRequest,
     @Body() body: ChangePasswordDto,
   ) {
-    return this.userService.changePassword(req.user.userId, body.currentPassword, body.newPassword);
+    return this.userService.changePassword(
+      req.user.userId,
+      body.currentPassword,
+      body.newPassword,
+    );
   }
 
   @UseGuards(AdminGuard)
@@ -33,10 +46,7 @@ export class UserController {
 
   @UseGuards(AdminGuard)
   @Patch(':id/quota')
-  updateQuota(
-    @Param('id') id: string,
-    @Body() body: UpdateQuotaDto,
-  ) {
+  updateQuota(@Param('id') id: string, @Body() body: UpdateQuotaDto) {
     return this.userService.updateQuota(id, BigInt(body.quota));
   }
 
@@ -48,7 +58,9 @@ export class UserController {
   ) {
     return this.userService.updateBandwidthLimit(
       id,
-      body.dailyBandwidthLimit === null ? null : BigInt(body.dailyBandwidthLimit),
+      body.dailyBandwidthLimit === null
+        ? null
+        : BigInt(body.dailyBandwidthLimit),
     );
   }
 
@@ -76,19 +88,13 @@ export class UserController {
 
   @UseGuards(AdminGuard)
   @Delete(':id/files/:fileId')
-  deleteUserFile(
-    @Param('id') id: string,
-    @Param('fileId') fileId: string,
-  ) {
+  deleteUserFile(@Param('id') id: string, @Param('fileId') fileId: string) {
     return this.userService.deleteUserFile(id, fileId);
   }
 
   @UseGuards(AdminGuard)
   @Patch(':id/password')
-  adminResetPassword(
-    @Param('id') id: string,
-    @Body() body: ResetPasswordDto,
-  ) {
+  adminResetPassword(@Param('id') id: string, @Body() body: ResetPasswordDto) {
     return this.userService.adminResetPassword(id, body.newPassword);
   }
 }

@@ -5,9 +5,10 @@
 export function getClientIp(req: any): string {
   const forwardedFor = req.headers?.['x-forwarded-for'];
   if (forwardedFor) {
-    const first = typeof forwardedFor === 'string'
-      ? forwardedFor.split(',')[0]
-      : forwardedFor[0]?.split(',')[0];
+    const first =
+      typeof forwardedFor === 'string'
+        ? forwardedFor.split(',')[0]
+        : forwardedFor[0]?.split(',')[0];
     if (first) return first.trim();
   }
 

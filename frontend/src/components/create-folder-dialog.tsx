@@ -8,9 +8,11 @@ interface CreateFolderDialogProps {
   isOpen: boolean;
   onClose: () => void;
   onConfirm: (name: string) => Promise<void> | void;
+  error?: string;
+  onClearError?: () => void;
 }
 
-export default function CreateFolderDialog({ isOpen, onClose, onConfirm }: CreateFolderDialogProps) {
+export default function CreateFolderDialog({ isOpen, onClose, onConfirm, error, onClearError }: CreateFolderDialogProps) {
   const { t } = useI18n();
   const [name, setName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -51,11 +53,12 @@ export default function CreateFolderDialog({ isOpen, onClose, onConfirm }: Creat
           <input
             type="text"
             value={name}
-            onChange={(e) => setName(e.target.value)}
+            onChange={(e) => { setName(e.target.value); if (error) onClearError?.(); }}
             placeholder={t('createFolder.placeholder')}
-            className="w-full border border-gray-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            className={`w-full border rounded-lg p-2 focus:ring-2 focus:outline-none ${error ? 'border-red-500 focus:ring-red-500 focus:border-red-500' : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500'}`}
             autoFocus
           />
+          {error && <p className="text-sm text-red-600 mt-2">{error}</p>}
           <div className="flex justify-end gap-2 mt-6">
             <button
               type="button"
@@ -66,7 +69,7 @@ export default function CreateFolderDialog({ isOpen, onClose, onConfirm }: Creat
             </button>
             <button
               type="submit"
-              disabled={!name.trim() || isSubmitting}
+              disabled={!name.trim() || isSubmitting || !!error}
               className="px-4 py-2 text-white bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2"
             >
               {isSubmitting ? t('createFolder.creating') : t('createFolder.create')}

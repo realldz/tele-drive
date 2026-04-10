@@ -29,7 +29,8 @@ export class S3AuthGuard implements CanActivate {
       );
       throw new UnauthorizedException({
         code: 'InvalidSignature',
-        message: 'The request signature we calculated does not match the signature you provided.',
+        message:
+          'The request signature we calculated does not match the signature you provided.',
       });
     }
 

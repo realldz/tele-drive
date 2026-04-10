@@ -14,7 +14,13 @@ import { CryptoModule } from '../crypto/crypto.module';
 @Module({
   imports: [PrismaModule, FileModule, TelegramModule, CryptoModule],
   controllers: [S3Controller, S3CredentialController],
-  providers: [S3Service, S3MultipartService, S3AuthService, S3CredentialService, S3AuthGuard],
+  providers: [
+    S3Service,
+    S3MultipartService,
+    S3AuthService,
+    S3CredentialService,
+    S3AuthGuard,
+  ],
   exports: [S3AuthService],
 })
 export class S3Module {}

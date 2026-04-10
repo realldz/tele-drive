@@ -38,17 +38,27 @@ export class S3AuthService {
         return null;
       }
 
-      const { accessKeyId, credentialScope, signedHeaders, signature, date, region, service } = parsed;
+      const {
+        accessKeyId,
+        credentialScope,
+        signedHeaders,
+        signature,
+        date,
+        region,
+        service,
+      } = parsed;
 
       // Date skew check — reject requests more than 15 minutes old
-      const dateTime = req.headers['x-amz-date'] as string || '';
+      const dateTime = (req.headers['x-amz-date'] as string) || '';
       if (dateTime.length === 16) {
         const reqTime = new Date(
-          `${dateTime.slice(0,4)}-${dateTime.slice(4,6)}-${dateTime.slice(6,8)}T${dateTime.slice(9,11)}:${dateTime.slice(11,13)}:${dateTime.slice(13,15)}Z`,
+          `${dateTime.slice(0, 4)}-${dateTime.slice(4, 6)}-${dateTime.slice(6, 8)}T${dateTime.slice(9, 11)}:${dateTime.slice(11, 13)}:${dateTime.slice(13, 15)}Z`,
         );
         const skewMs = Math.abs(Date.now() - reqTime.getTime());
         if (skewMs > 15 * 60 * 1000) {
-          this.logger.warn(`S3 auth denied: request timestamp too old (skew=${Math.round(skewMs/1000)}s)`);
+          this.logger.warn(
+            `S3 auth denied: request timestamp too old (skew=${Math.round(skewMs / 1000)}s)`,
+          );
           return null;
         }
       }
@@ -60,7 +70,9 @@ export class S3AuthService {
       });
 
       if (!credential || !credential.isActive) {
-        this.logger.warn(`S3 auth failed: AccessKeyId not found or inactive: ${accessKeyId}`);
+        this.logger.warn(
+          `S3 auth failed: AccessKeyId not found or inactive: ${accessKeyId}`,
+        );
         return null;
       }
 
@@ -83,7 +95,12 @@ export class S3AuthService {
       ].join('\n');
 
       // Derive signing key
-      const signingKey = this.deriveSigningKey(secretAccessKey, date, region, service);
+      const signingKey = this.deriveSigningKey(
+        secretAccessKey,
+        date,
+        region,
+        service,
+      );
 
       // Compute expected signature
       const expectedSignature = crypto
@@ -92,19 +109,23 @@ export class S3AuthService {
         .digest('hex');
 
       if (expectedSignature !== signature) {
-        this.logger.warn(`S3 auth failed: signature mismatch for AccessKeyId: ${accessKeyId}`);
+        this.logger.warn(
+          `S3 auth failed: signature mismatch for AccessKeyId: ${accessKeyId}`,
+        );
         this.logger.debug(
           `[S3-AUTH-DEBUG] method=${req.method} url="${req.originalUrl || req.url}" ` +
-          `dateTime="${dateTime}" credentialScope="${credentialScope}" ` +
-          `signedHeaders=[${signedHeaders.join(';')}] ` +
-          `canonicalRequest=\n${canonicalRequest}\n---END--- ` +
-          `stringToSign=\n${stringToSign}\n---END--- ` +
-          `expectedSig=${expectedSignature} clientSig=${signature}`,
+            `dateTime="${dateTime}" credentialScope="${credentialScope}" ` +
+            `signedHeaders=[${signedHeaders.join(';')}] ` +
+            `canonicalRequest=\n${canonicalRequest}\n---END--- ` +
+            `stringToSign=\n${stringToSign}\n---END--- ` +
+            `expectedSig=${expectedSignature} clientSig=${signature}`,
         );
         return null;
       }
 
-      this.logger.debug(`S3 auth success: userId=${credential.userId}, accessKeyId=${accessKeyId}`);
+      this.logger.debug(
+        `S3 auth success: userId=${credential.userId}, accessKeyId=${accessKeyId}`,
+      );
       return credential.userId;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -128,12 +149,17 @@ export class S3AuthService {
   private async verifyPresignedUrl(req: any): Promise<string | null> {
     try {
       const requestUrl = req.originalUrl || req.url;
-      const url = new URL(requestUrl, `http://${req.headers['host'] || 'localhost'}`);
+      const url = new URL(
+        requestUrl,
+        `http://${req.headers['host'] || 'localhost'}`,
+      );
       const params = url.searchParams;
 
       const algorithm = params.get('X-Amz-Algorithm');
       if (algorithm !== 'AWS4-HMAC-SHA256') {
-        this.logger.debug('Missing or invalid Authorization header / presigned params');
+        this.logger.debug(
+          'Missing or invalid Authorization header / presigned params',
+        );
         return null;
       }
 
@@ -143,7 +169,13 @@ export class S3AuthService {
       const signedHeadersStr = params.get('X-Amz-SignedHeaders');
       const signature = params.get('X-Amz-Signature');
 
-      if (!credentialStr || !dateTime || !expiresStr || !signedHeadersStr || !signature) {
+      if (
+        !credentialStr ||
+        !dateTime ||
+        !expiresStr ||
+        !signedHeadersStr ||
+        !signature
+      ) {
         this.logger.debug('Presigned URL missing required query params');
         return null;
       }
@@ -169,7 +201,7 @@ export class S3AuthService {
         return null;
       }
       const reqTime = new Date(
-        `${dateTime.slice(0,4)}-${dateTime.slice(4,6)}-${dateTime.slice(6,8)}T${dateTime.slice(9,11)}:${dateTime.slice(11,13)}:${dateTime.slice(13,15)}Z`,
+        `${dateTime.slice(0, 4)}-${dateTime.slice(4, 6)}-${dateTime.slice(6, 8)}T${dateTime.slice(9, 11)}:${dateTime.slice(11, 13)}:${dateTime.slice(13, 15)}Z`,
       );
       const expirationTime = reqTime.getTime() + expires * 1000;
       if (Date.now() > expirationTime) {
@@ -184,7 +216,9 @@ export class S3AuthService {
       });
 
       if (!credential || !credential.isActive) {
-        this.logger.warn(`Presigned URL auth failed: AccessKeyId not found or inactive: ${accessKeyId}`);
+        this.logger.warn(
+          `Presigned URL auth failed: AccessKeyId not found or inactive: ${accessKeyId}`,
+        );
         return null;
       }
 
@@ -193,7 +227,10 @@ export class S3AuthService {
 
       // Build canonical request — for presigned URLs, exclude X-Amz-Signature
       // from canonical query string and use UNSIGNED-PAYLOAD as payload hash
-      const canonicalRequest = this.buildCanonicalRequestPresigned(req, signedHeaders);
+      const canonicalRequest = this.buildCanonicalRequestPresigned(
+        req,
+        signedHeaders,
+      );
       const canonicalRequestHash = crypto
         .createHash('sha256')
         .update(canonicalRequest)
@@ -208,7 +245,12 @@ export class S3AuthService {
       ].join('\n');
 
       // Derive signing key
-      const signingKey = this.deriveSigningKey(secretAccessKey, date, region, service);
+      const signingKey = this.deriveSigningKey(
+        secretAccessKey,
+        date,
+        region,
+        service,
+      );
 
       // Compute expected signature
       const expectedSignature = crypto
@@ -217,11 +259,15 @@ export class S3AuthService {
         .digest('hex');
 
       if (expectedSignature !== signature) {
-        this.logger.warn(`Presigned URL auth failed: signature mismatch for AccessKeyId: ${accessKeyId}`);
+        this.logger.warn(
+          `Presigned URL auth failed: signature mismatch for AccessKeyId: ${accessKeyId}`,
+        );
         return null;
       }
 
-      this.logger.debug(`Presigned URL auth success: userId=${credential.userId}, accessKeyId=${accessKeyId}`);
+      this.logger.debug(
+        `Presigned URL auth success: userId=${credential.userId}, accessKeyId=${accessKeyId}`,
+      );
       return credential.userId;
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err);
@@ -291,7 +337,10 @@ export class S3AuthService {
 
     // Canonical URI — must use originalUrl to preserve the full path the client signed
     const requestUrl = req.originalUrl || req.url;
-    const url = new URL(requestUrl, `http://${req.headers['host'] || 'localhost'}`);
+    const url = new URL(
+      requestUrl,
+      `http://${req.headers['host'] || 'localhost'}`,
+    );
     const canonicalUri = url.pathname || '/';
 
     // Canonical Query String — sorted by key
@@ -308,7 +357,7 @@ export class S3AuthService {
     const canonicalHeaderLines = signedHeaders
       .map((h) => {
         const val = req.headers[h.toLowerCase()];
-        return `${h.toLowerCase()}:${Array.isArray(val) ? val.join(',') : (val || '')}`;
+        return `${h.toLowerCase()}:${Array.isArray(val) ? val.join(',') : val || ''}`;
       })
       .join('\n');
 
@@ -334,11 +383,17 @@ export class S3AuthService {
    *   - X-Amz-Signature is excluded from canonical query string
    *   - Payload hash is always UNSIGNED-PAYLOAD
    */
-  private buildCanonicalRequestPresigned(req: any, signedHeaders: string[]): string {
+  private buildCanonicalRequestPresigned(
+    req: any,
+    signedHeaders: string[],
+  ): string {
     const method = req.method.toUpperCase();
 
     const requestUrl = req.originalUrl || req.url;
-    const url = new URL(requestUrl, `http://${req.headers['host'] || 'localhost'}`);
+    const url = new URL(
+      requestUrl,
+      `http://${req.headers['host'] || 'localhost'}`,
+    );
     const canonicalUri = url.pathname || '/';
 
     // Canonical Query String — sorted by key, excluding X-Amz-Signature
@@ -357,7 +412,7 @@ export class S3AuthService {
     const canonicalHeaderLines = signedHeaders
       .map((h) => {
         const val = req.headers[h.toLowerCase()];
-        return `${h.toLowerCase()}:${Array.isArray(val) ? val.join(',') : (val || '')}`;
+        return `${h.toLowerCase()}:${Array.isArray(val) ? val.join(',') : val || ''}`;
       })
       .join('\n');
 
@@ -387,8 +442,14 @@ export class S3AuthService {
       .update(date)
       .digest();
     const kRegion = crypto.createHmac('sha256', kDate).update(region).digest();
-    const kService = crypto.createHmac('sha256', kRegion).update(service).digest();
-    const kSigning = crypto.createHmac('sha256', kService).update('aws4_request').digest();
+    const kService = crypto
+      .createHmac('sha256', kRegion)
+      .update(service)
+      .digest();
+    const kSigning = crypto
+      .createHmac('sha256', kService)
+      .update('aws4_request')
+      .digest();
     return kSigning;
   }
 
@@ -419,7 +480,10 @@ export class S3AuthService {
     const masterKey = this.getMasterKey();
     const iv = crypto.randomBytes(16);
     const cipher = crypto.createCipheriv('aes-256-cbc', masterKey, iv);
-    const encrypted = Buffer.concat([cipher.update(secret, 'utf8'), cipher.final()]);
+    const encrypted = Buffer.concat([
+      cipher.update(secret, 'utf8'),
+      cipher.final(),
+    ]);
     return `${iv.toString('hex')}:${encrypted.toString('hex')}`;
   }
 
@@ -435,13 +499,18 @@ export class S3AuthService {
     const iv = Buffer.from(ivHex, 'hex');
     const encrypted = Buffer.from(encryptedHex, 'hex');
     const decipher = crypto.createDecipheriv('aes-256-cbc', masterKey, iv);
-    return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
+    return Buffer.concat([
+      decipher.update(encrypted),
+      decipher.final(),
+    ]).toString('utf8');
   }
 
   private getMasterKey(): Buffer {
     const masterSecret = process.env.MASTER_SECRET;
     if (!masterSecret) {
-      throw new Error('MASTER_SECRET environment variable is not set. S3 credential encryption requires it.');
+      throw new Error(
+        'MASTER_SECRET environment variable is not set. S3 credential encryption requires it.',
+      );
     }
     // Derive a 32-byte key from MASTER_SECRET
     return crypto.createHash('sha256').update(masterSecret).digest();

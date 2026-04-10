@@ -52,19 +52,23 @@ async function bootstrap() {
   });
 
   // Security headers
-  app.use(helmet({
-    crossOriginResourcePolicy: { policy: 'cross-origin' },
-  }));
+  app.use(
+    helmet({
+      crossOriginResourcePolicy: { policy: 'cross-origin' },
+    }),
+  );
 
   // Cookie parser — cần cho stream_token cookie
   app.use(cookieParser());
 
   // Global validation pipe — reject unknown/invalid fields
-  app.useGlobalPipes(new ValidationPipe({
-    whitelist: true,
-    forbidNonWhitelisted: true,
-    transform: true,
-  }));
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
 
   // CORS
   const corsOrigin = process.env.CORS_ORIGIN;
@@ -79,6 +83,8 @@ async function bootstrap() {
   await app.listen(port);
 
   const logger = new Logger('Bootstrap');
-  logger.log(`Application started on port ${port} [${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}]`);
+  logger.log(
+    `Application started on port ${port} [${isProduction ? 'PRODUCTION' : 'DEVELOPMENT'}]`,
+  );
 }
 bootstrap();

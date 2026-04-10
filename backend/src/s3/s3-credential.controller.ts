@@ -35,11 +35,17 @@ export class S3CredentialController {
     @Req() req: AuthenticatedRequest,
     @Body() body: CreateS3CredentialDto,
   ) {
-    return this.s3CredentialService.createCredential(req.user.userId, body.label);
+    return this.s3CredentialService.createCredential(
+      req.user.userId,
+      body.label,
+    );
   }
 
   @Delete(':id')
-  async deleteCredential(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  async deleteCredential(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.s3CredentialService.deleteCredential(id, req.user.userId);
   }
 }

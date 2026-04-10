@@ -69,6 +69,8 @@ export class StaleUploadCleanupService {
       }
     }
 
-    this.logger.log(`Stale upload cleanup completed: ${cleaned}/${staleUploads.length} cleaned.`);
+    this.logger.log(
+      `Stale upload cleanup completed: ${cleaned}/${staleUploads.length} cleaned.`,
+    );
   }
 }
