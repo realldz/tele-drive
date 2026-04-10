@@ -1,4 +1,9 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { escapeXml, decodeXmlEntities } from '../common/utils/xml';
 
@@ -59,7 +64,10 @@ export class S3Service {
       throw new BadRequestException('BucketNotEmpty');
     }
 
-    await this.prisma.folder.update({ where: { id: folder.id }, data: { deletedAt: new Date() } });
+    await this.prisma.folder.update({
+      where: { id: folder.id },
+      data: { deletedAt: new Date() },
+    });
     this.logger.log(`S3 DeleteBucket: "${bucketName}" (userId: ${userId})`);
   }
 
@@ -99,7 +107,11 @@ export class S3Service {
   /**
    * Resolve a folder key ending with '/' and return the leaf folder ID.
    */
-  async resolveKeyAsFolder(userId: string, bucketName: string, key: string): Promise<string> {
+  async resolveKeyAsFolder(
+    userId: string,
+    bucketName: string,
+    key: string,
+  ): Promise<string> {
     if (!key.endsWith('/')) throw new BadRequestException('InvalidArgument');
 
     const parts = key.split('/').filter(Boolean);
@@ -117,7 +129,12 @@ export class S3Service {
 
     for (const part of parts) {
       const existing = await this.prisma.folder.findFirst({
-        where: { name: part, parentId: currentFolderId, userId, deletedAt: null },
+        where: {
+          name: part,
+          parentId: currentFolderId,
+          userId,
+          deletedAt: null,
+        },
       });
 
       if (existing) {
@@ -134,7 +151,10 @@ export class S3Service {
     return currentFolderId;
   }
 
-  async cleanupEmptyFolders(userId: string, folderId: string | null | undefined): Promise<void> {
+  async cleanupEmptyFolders(
+    userId: string,
+    folderId: string | null | undefined,
+  ): Promise<void> {
     let currentFolderId = folderId;
 
     while (currentFolderId) {
@@ -171,7 +191,11 @@ export class S3Service {
     }
   }
 
-  async deleteFolderMarker(userId: string, bucketName: string, key: string): Promise<boolean> {
+  async deleteFolderMarker(
+    userId: string,
+    bucketName: string,
+    key: string,
+  ): Promise<boolean> {
     if (!key.endsWith('/')) return false;
 
     const parts = key.split('/').filter(Boolean);
@@ -187,7 +211,12 @@ export class S3Service {
 
     for (const part of parts) {
       const folder = await this.prisma.folder.findFirst({
-        where: { parentId: currentFolderId, name: part, userId, deletedAt: null },
+        where: {
+          parentId: currentFolderId,
+          name: part,
+          userId,
+          deletedAt: null,
+        },
         select: { id: true },
       });
 
@@ -233,7 +262,12 @@ export class S3Service {
 
     for (const part of dirParts) {
       const existing = await this.prisma.folder.findFirst({
-        where: { name: part, parentId: currentFolderId, userId, deletedAt: null },
+        where: {
+          name: part,
+          parentId: currentFolderId,
+          userId,
+          deletedAt: null,
+        },
       });
 
       if (existing) {
@@ -242,7 +276,9 @@ export class S3Service {
         const newFolder = await this.prisma.folder.create({
           data: { name: part, parentId: currentFolderId, userId },
         });
-        this.logger.debug(`S3 auto-created folder: "${part}" (parentId: ${currentFolderId})`);
+        this.logger.debug(
+          `S3 auto-created folder: "${part}" (parentId: ${currentFolderId})`,
+        );
         currentFolderId = newFolder.id;
       } else {
         throw new NotFoundException('NoSuchKey');
@@ -256,10 +292,21 @@ export class S3Service {
    * Find a FileRecord by bucket + key.
    */
   async findObject(userId: string, bucketName: string, key: string) {
-    const { folderId, filename } = await this.resolveKey(userId, bucketName, key, false);
+    const { folderId, filename } = await this.resolveKey(
+      userId,
+      bucketName,
+      key,
+      false,
+    );
 
     const file = await this.prisma.fileRecord.findFirst({
-      where: { folderId, filename, userId, deletedAt: null, status: 'complete' },
+      where: {
+        folderId,
+        filename,
+        userId,
+        deletedAt: null,
+        status: 'complete',
+      },
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
     });
 
@@ -278,7 +325,12 @@ export class S3Service {
     delimiter?: string,
     maxKeys = 1000,
   ): Promise<{
-    objects: Array<{ key: string; size: bigint; lastModified: Date; etag: string }>;
+    objects: Array<{
+      key: string;
+      size: bigint;
+      lastModified: Date;
+      etag: string;
+    }>;
     commonPrefixes: string[];
   }> {
     const bucket = await this.prisma.folder.findFirst({
@@ -286,12 +338,29 @@ export class S3Service {
     });
     if (!bucket) throw new NotFoundException('NoSuchBucket');
 
-    const objects: Array<{ key: string; size: bigint; lastModified: Date; etag: string }> = [];
+    const objects: Array<{
+      key: string;
+      size: bigint;
+      lastModified: Date;
+      etag: string;
+    }> = [];
     const commonPrefixes = new Set<string>();
 
-    await this.listRecursive(userId, bucket.id, '', prefix || '', delimiter, objects, commonPrefixes, maxKeys);
+    await this.listRecursive(
+      userId,
+      bucket.id,
+      '',
+      prefix || '',
+      delimiter,
+      objects,
+      commonPrefixes,
+      maxKeys,
+    );
 
-    return { objects: objects.slice(0, maxKeys), commonPrefixes: [...commonPrefixes] };
+    return {
+      objects: objects.slice(0, maxKeys),
+      commonPrefixes: [...commonPrefixes],
+    };
   }
 
   private async listRecursive(
@@ -300,7 +369,12 @@ export class S3Service {
     currentPath: string,
     prefix: string,
     delimiter: string | undefined,
-    objects: Array<{ key: string; size: bigint; lastModified: Date; etag: string }>,
+    objects: Array<{
+      key: string;
+      size: bigint;
+      lastModified: Date;
+      etag: string;
+    }>,
     commonPrefixes: Set<string>,
     maxKeys: number,
   ): Promise<void> {
@@ -309,11 +383,19 @@ export class S3Service {
     // List files in current folder
     const files = await this.prisma.fileRecord.findMany({
       where: { folderId, userId, deletedAt: null, status: 'complete' },
-      select: { filename: true, size: true, updatedAt: true, id: true, etag: true },
+      select: {
+        filename: true,
+        size: true,
+        updatedAt: true,
+        id: true,
+        etag: true,
+      },
     });
 
     for (const file of files) {
-      const key = currentPath ? `${currentPath}/${file.filename}` : file.filename;
+      const key = currentPath
+        ? `${currentPath}/${file.filename}`
+        : file.filename;
 
       if (prefix && !key.startsWith(prefix)) continue;
 
@@ -343,17 +425,32 @@ export class S3Service {
     });
 
     for (const folder of subFolders) {
-      const folderPath = currentPath ? `${currentPath}/${folder.name}` : folder.name;
+      const folderPath = currentPath
+        ? `${currentPath}/${folder.name}`
+        : folder.name;
       const fullPath = `${folderPath}/`;
 
-      if (prefix && !fullPath.startsWith(prefix) && !prefix.startsWith(fullPath)) {
+      if (
+        prefix &&
+        !fullPath.startsWith(prefix) &&
+        !prefix.startsWith(fullPath)
+      ) {
         continue;
       }
 
       if (delimiter) {
         // Prefix is deeper than this folder, keep traversing down to it.
         if (prefix && prefix.startsWith(fullPath)) {
-          await this.listRecursive(userId, folder.id, folderPath, prefix, delimiter, objects, commonPrefixes, maxKeys);
+          await this.listRecursive(
+            userId,
+            folder.id,
+            folderPath,
+            prefix,
+            delimiter,
+            objects,
+            commonPrefixes,
+            maxKeys,
+          );
           continue;
         }
 
@@ -393,7 +490,16 @@ export class S3Service {
         }
       }
 
-      await this.listRecursive(userId, folder.id, folderPath, prefix, delimiter, objects, commonPrefixes, maxKeys);
+      await this.listRecursive(
+        userId,
+        folder.id,
+        folderPath,
+        prefix,
+        delimiter,
+        objects,
+        commonPrefixes,
+        maxKeys,
+      );
     }
   }
 
@@ -427,7 +533,9 @@ export class S3Service {
   ): string {
     const deletedXml = quiet
       ? ''
-      : deleted.map((item) => `<Deleted><Key>${escapeXml(item.key)}</Key></Deleted>`).join('');
+      : deleted
+          .map((item) => `<Deleted><Key>${escapeXml(item.key)}</Key></Deleted>`)
+          .join('');
 
     const errorsXml = errors
       .map(
@@ -439,7 +547,10 @@ export class S3Service {
     return `<?xml version="1.0" encoding="UTF-8"?>\n<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">${deletedXml}${errorsXml}</DeleteResult>`;
   }
 
-  buildListBucketsXml(buckets: Array<{ name: string; createdAt: Date }>, owner: string): string {
+  buildListBucketsXml(
+    buckets: Array<{ name: string; createdAt: Date }>,
+    owner: string,
+  ): string {
     const bucketsXml = buckets
       .map(
         (b) => `
@@ -463,7 +574,12 @@ export class S3Service {
 
   buildListObjectsV2Xml(
     bucketName: string,
-    objects: Array<{ key: string; size: bigint; lastModified: Date; etag: string }>,
+    objects: Array<{
+      key: string;
+      size: bigint;
+      lastModified: Date;
+      etag: string;
+    }>,
     commonPrefixes: string[],
     prefix: string,
     delimiter: string,
@@ -484,7 +600,10 @@ export class S3Service {
       .join('');
 
     const prefixesXml = commonPrefixes
-      .map((p) => `\n  <CommonPrefixes><Prefix>${escapeXml(p)}</Prefix></CommonPrefixes>`)
+      .map(
+        (p) =>
+          `\n  <CommonPrefixes><Prefix>${escapeXml(p)}</Prefix></CommonPrefixes>`,
+      )
       .join('');
 
     return `<?xml version="1.0" encoding="UTF-8"?>

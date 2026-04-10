@@ -1,4 +1,13 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, HttpException, HttpStatus, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  HttpException,
+  HttpStatus,
+  UnauthorizedException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { fetchWithRetry } from '../telegram/telegram.service';
@@ -10,6 +19,11 @@ import { CryptoService } from '../crypto/crypto.service';
 import { SettingsService } from '../settings/settings.service';
 import { MAX_CHUNK_SIZE } from '../config/upload.config';
 import type { DownloadInfo } from '../common/types/download';
+import {
+  NameConflictService,
+  ConflictAction,
+} from '../common/name-conflict.service';
+import { message } from 'telegraf/filters';
 
 /**
  * Transform stream đếm bytes đi qua — dùng để biết kích thước chunk
@@ -17,7 +31,11 @@ import type { DownloadInfo } from '../common/types/download';
  */
 class ByteCounter extends Transform {
   public bytes = 0;
-  _transform(chunk: Buffer, _encoding: BufferEncoding, callback: TransformCallback) {
+  _transform(
+    chunk: Buffer,
+    _encoding: BufferEncoding,
+    callback: TransformCallback,
+  ) {
     this.bytes += chunk.length;
     this.push(chunk);
     callback();
@@ -39,7 +57,8 @@ export class FileService {
     private readonly telegram: TelegramService,
     private readonly cryptoService: CryptoService,
     private readonly settingsService: SettingsService,
-  ) {}
+    private readonly nameConflictService: NameConflictService,
+  ) { }
 
   /**
    * Acquire a per-user lock to serialize concurrent deletions.
@@ -63,28 +82,44 @@ export class FileService {
    * Kiểm tra setting ENABLE_MULTI_THREAD_DOWNLOAD (cached 30s via SettingsService)
    */
   async isMultiThreadEnabled(): Promise<boolean> {
-    return this.settingsService.getCachedSetting('ENABLE_MULTI_THREAD_DOWNLOAD', true, (v) => v !== 'false');
+    return this.settingsService.getCachedSetting(
+      'ENABLE_MULTI_THREAD_DOWNLOAD',
+      true,
+      (v) => v !== 'false',
+    );
   }
 
   /**
    * Kiểm tra setting MAX_CONCURRENT_CHUNKS (cached 30s via SettingsService)
    */
   async getMaxConcurrentChunks(): Promise<number> {
-    return this.settingsService.getCachedSetting('MAX_CONCURRENT_CHUNKS', 3, (v) => parseInt(v, 10));
+    return this.settingsService.getCachedSetting(
+      'MAX_CONCURRENT_CHUNKS',
+      3,
+      (v) => parseInt(v, 10),
+    );
   }
 
   /**
    * Lấy TTL cho signed download URL (cached 30s via SettingsService)
    */
   async getDownloadTtl(): Promise<number> {
-    return this.settingsService.getCachedSetting('DOWNLOAD_URL_TTL_SECONDS', 300, (v) => parseInt(v, 10));
+    return this.settingsService.getCachedSetting(
+      'DOWNLOAD_URL_TTL_SECONDS',
+      300,
+      (v) => parseInt(v, 10),
+    );
   }
 
   /**
    * Lấy TTL cho stream cookie (cached 30s via SettingsService)
    */
   async getStreamTtl(): Promise<number> {
-    return this.settingsService.getCachedSetting('STREAM_COOKIE_TTL_SECONDS', 3600, (v) => parseInt(v, 10));
+    return this.settingsService.getCachedSetting(
+      'STREAM_COOKIE_TTL_SECONDS',
+      3600,
+      (v) => parseInt(v, 10),
+    );
   }
 
   // ── Signed Download Token ──────────────────────────────────────────────
@@ -92,7 +127,10 @@ export class FileService {
   /**
    * Tạo signed download URL cho user (auth required)
    */
-  async generateDownloadToken(fileId: string, userId: string): Promise<{ url: string; expiresAt: string }> {
+  async generateDownloadToken(
+    fileId: string,
+    userId: string,
+  ): Promise<{ url: string; expiresAt: string }> {
     const file = await this.prisma.fileRecord.findFirst({
       where: { id: fileId, userId, status: 'complete', deletedAt: null },
       select: { id: true },
@@ -100,29 +138,42 @@ export class FileService {
     if (!file) throw new NotFoundException('File not found');
 
     const ttl = await this.getDownloadTtl();
-    const token = this.cryptoService.createSignedToken(fileId, 'u', ttl, userId);
+    const token = this.cryptoService.createSignedToken(
+      fileId,
+      'u',
+      ttl,
+      userId,
+    );
     const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
 
-    this.logger.debug(`Download token generated: fileId=${fileId}, userId=${userId}, ttl=${ttl}s`);
+    this.logger.debug(
+      `Download token generated: fileId=${fileId}, userId=${userId}, ttl=${ttl}s`,
+    );
     return { url: `/files/d/${token}`, expiresAt };
   }
 
   /**
    * Tạo signed download URL cho shared file (public)
    */
-  async generateShareDownloadToken(shareToken: string): Promise<{ url: string; expiresAt: string }> {
+  async generateShareDownloadToken(
+    shareToken: string,
+  ): Promise<{ url: string; expiresAt: string }> {
     const file = await this.prisma.fileRecord.findUnique({
       where: { shareToken },
       select: { id: true, status: true, deletedAt: true },
     });
-    if (!file || file.deletedAt) throw new NotFoundException('Shared file not found');
-    if (file.status !== 'complete') throw new BadRequestException('File upload not completed yet');
+    if (!file || file.deletedAt)
+      throw new NotFoundException('Shared file not found');
+    if (file.status !== 'complete')
+      throw new BadRequestException('File upload not completed yet');
 
     const ttl = await this.getDownloadTtl();
     const token = this.cryptoService.createSignedToken(file.id, 's', ttl);
     const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
 
-    this.logger.debug(`Share download token generated: shareToken=${shareToken}, fileId=${file.id}, ttl=${ttl}s`);
+    this.logger.debug(
+      `Share download token generated: shareToken=${shareToken}, fileId=${file.id}, ttl=${ttl}s`,
+    );
     return { url: `/files/d/${token}`, expiresAt };
   }
 
@@ -131,7 +182,8 @@ export class FileService {
    */
   async downloadBySignedToken(signedToken: string): Promise<DownloadInfo> {
     const payload = this.cryptoService.verifySignedToken(signedToken);
-    if (!payload) throw new UnauthorizedException('Invalid or expired download link');
+    if (!payload)
+      throw new UnauthorizedException('Invalid or expired download link');
 
     const fileRecord = await this.prisma.fileRecord.findFirst({
       where: { id: payload.fid, status: 'complete', deletedAt: null },
@@ -147,9 +199,17 @@ export class FileService {
   /**
    * Lấy DownloadInfo cho stream — verify cookie subject khớp file owner
    */
-  async getStreamInfoByOwner(fileId: string, cookieSubject: string): Promise<DownloadInfo> {
+  async getStreamInfoByOwner(
+    fileId: string,
+    cookieSubject: string,
+  ): Promise<DownloadInfo> {
     const fileRecord = await this.prisma.fileRecord.findFirst({
-      where: { id: fileId, userId: cookieSubject, status: 'complete', deletedAt: null },
+      where: {
+        id: fileId,
+        userId: cookieSubject,
+        status: 'complete',
+        deletedAt: null,
+      },
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
     });
     if (!fileRecord) throw new NotFoundException('File not found');
@@ -169,10 +229,16 @@ export class FileService {
    */
   async getStreamInfoByGuest(fileId: string): Promise<DownloadInfo> {
     const fileRecord = await this.prisma.fileRecord.findFirst({
-      where: { id: fileId, status: 'complete', deletedAt: null, visibility: 'PUBLIC_LINK' },
+      where: {
+        id: fileId,
+        status: 'complete',
+        deletedAt: null,
+        visibility: 'PUBLIC_LINK',
+      },
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
     });
-    if (!fileRecord) throw new NotFoundException('File not found or not shared');
+    if (!fileRecord)
+      throw new NotFoundException('File not found or not shared');
 
     return this.getDownloadMetadata(fileRecord);
   }
@@ -181,7 +247,10 @@ export class FileService {
    * Kiểm tra quota trước khi upload.
    * Throw 400 nếu usedSpace + fileSize > quota.
    */
-  private async checkQuota(userId: string, fileSize: number | bigint): Promise<void> {
+  private async checkQuota(
+    userId: string,
+    fileSize: number | bigint,
+  ): Promise<void> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { usedSpace: true, quota: true },
@@ -207,11 +276,69 @@ export class FileService {
    * userId lấy từ JWT (req.user.userId)
    * Kiểm tra quota trước upload, cập nhật usedSpace sau upload bằng transaction.
    */
-  async uploadFile(file: Express.Multer.File, userId: string, folderId?: string) {
+  async uploadFile(
+    file: Express.Multer.File,
+    userId: string,
+    folderId?: string,
+    conflictAction?: ConflictAction,
+  ) {
     // Check quota trước khi upload lên Telegram
     await this.checkQuota(userId, file.size);
 
     const filename = Buffer.from(file.originalname, 'latin1').toString('utf8');
+
+    // Check name conflict at destination
+    const conflict = await this.nameConflictService.checkFileConflict(
+      folderId || null,
+      filename,
+      userId,
+    );
+
+    let targetFilename = filename;
+    if (conflict) {
+      if (!conflictAction || conflictAction === 'skip') {
+        throw new ConflictException({
+          message:
+            'A file or folder with this name already exists in the destination folder',
+          type: 'file' as const,
+          id: conflict.id,
+          name: conflict.filename,
+          suggestedName: await this.nameConflictService.generateUniqueName(
+            filename,
+            await this.nameConflictService.getExistingNames(
+              folderId || null,
+              userId,
+            ),
+          ),
+        });
+      }
+
+      if (conflictAction === 'overwrite') {
+        // Soft-delete file cũ
+        await this.prisma.fileRecord.update({
+          where: { id: conflict.id },
+          data: { deletedAt: new Date() },
+        });
+        this.logger.log(
+          `File overwritten during upload: "${conflict.filename}" (id: ${conflict.id}) soft-deleted`,
+        );
+      }
+
+      if (conflictAction === 'rename') {
+        // Auto-rename file mới
+        const existingNames = await this.nameConflictService.getExistingNames(
+          folderId || null,
+          userId,
+        );
+        targetFilename = this.nameConflictService.generateUniqueName(
+          filename,
+          existingNames,
+        );
+        this.logger.log(
+          `File auto-renamed during upload: "${filename}" to "${targetFilename}"`,
+        );
+      }
+    }
 
     const dek = this.cryptoService.generateFileKey();
     const iv = this.cryptoService.generateIv();
@@ -220,7 +347,7 @@ export class FileService {
     // 1) Tạo placeholder FileRecord trước khi upload
     const record = await this.prisma.fileRecord.create({
       data: {
-        filename,
+        filename: targetFilename,
         size: file.size,
         mimeType: file.mimetype,
         telegramFileId: null,
@@ -237,14 +364,23 @@ export class FileService {
       },
     });
 
-    this.logger.log(`Starting upload to Telegram for file: "${filename}" (${file.size} bytes)`);
+    this.logger.log(
+      `Starting upload to Telegram for file: "${targetFilename}" (${file.size} bytes)`,
+    );
 
     try {
       // 2) Encrypt and Upload lên Telegram
       const cipher = this.cryptoService.createEncryptStream(dek, iv);
-      const encryptedBuffer = Buffer.concat([cipher.update(file.buffer), cipher.final()]);
+      const encryptedBuffer = Buffer.concat([
+        cipher.update(file.buffer),
+        cipher.final(),
+      ]);
       // Use record.id as the Telegram filename to avoid leaking the real filename
-      const { fileId: telegramFileId, messageId: telegramMessageId, botId } = await this.telegram.uploadFile(encryptedBuffer, record.id);
+      const {
+        fileId: telegramFileId,
+        messageId: telegramMessageId,
+        botId,
+      } = await this.telegram.uploadFile(encryptedBuffer, record.id);
 
       // 3) Thành công -> Update trạng thái và cộng dung lượng
       const updated = await this.prisma.$transaction(async (tx) => {
@@ -266,12 +402,17 @@ export class FileService {
         return fileRecord;
       });
 
-      this.logger.log(`File uploaded: "${filename}" (${file.size} bytes, userId: ${userId}, recordId: ${record.id})`);
+      this.logger.log(
+        `File uploaded: "${targetFilename}" (${file.size} bytes, userId: ${userId}, recordId: ${record.id})`,
+      );
       return updated;
     } catch (err: unknown) {
       // Nếu lỗi upload, xoá placeholder record
       await this.prisma.fileRecord.delete({ where: { id: record.id } });
-      this.logger.error(`Failed to upload file to Telegram: ${filename}`, err);
+      this.logger.error(
+        `Failed to upload file to Telegram: "${targetFilename}"`,
+        err,
+      );
       throw err;
     }
   }
@@ -288,16 +429,69 @@ export class FileService {
     totalChunks: number,
     userId: string,
     folderId?: string,
+    conflictAction?: ConflictAction,
   ) {
     // Check quota trước khi bắt đầu upload chunks
     await this.checkQuota(userId, size);
+
+    // Check name conflict at destination
+    const conflict = await this.nameConflictService.checkFileConflict(
+      folderId || null,
+      filename,
+      userId,
+    );
+
+    let targetFilename = filename;
+    if (conflict) {
+      if (!conflictAction || conflictAction === 'skip') {
+        throw new ConflictException({
+          message:
+            'A file or folder with this name already exists in the destination folder',
+          type: 'file' as const,
+          id: conflict.id,
+          name: conflict.filename,
+          suggestedName: await this.nameConflictService.generateUniqueName(
+            filename,
+            await this.nameConflictService.getExistingNames(
+              folderId || null,
+              userId,
+            ),
+          ),
+        });
+      }
+
+      if (conflictAction === 'overwrite') {
+        await this.prisma.fileRecord.update({
+          where: { id: conflict.id },
+          data: { deletedAt: new Date() },
+        });
+        this.logger.log(
+          `File overwritten during chunked upload init: "${conflict.filename}" (id: ${conflict.id}) soft-deleted`,
+        );
+      }
+
+      if (conflictAction === 'rename') {
+        const existingNames = await this.nameConflictService.getExistingNames(
+          folderId || null,
+          userId,
+        );
+        targetFilename = this.nameConflictService.generateUniqueName(
+          filename,
+          existingNames,
+        );
+        this.logger.log(
+          `File auto-renamed during chunked upload init: "${filename}" to "${targetFilename}"`,
+        );
+      }
+    }
+
     const dek = this.cryptoService.generateFileKey();
     const iv = this.cryptoService.generateIv();
     const encryptedKey = this.cryptoService.encryptKey(dek);
 
     const record = await this.prisma.fileRecord.create({
       data: {
-        filename,
+        filename: targetFilename,
         size,
         mimeType,
         telegramFileId: null,
@@ -314,17 +508,24 @@ export class FileService {
       },
     });
 
-    this.logger.log(`Chunked upload initialized: "${filename}" (${size} bytes, ${totalChunks} chunks, userId: ${userId}, recordId: ${record.id})`);
+    this.logger.log(
+      `Chunked upload initialized: "${targetFilename}" (${size} bytes, ${totalChunks} chunks, userId: ${userId}, recordId: ${record.id})`,
+    );
     return record;
   }
 
   /**
    * Upload chunk bằng stream pipe-through:
-   * 
+   *
    *   Client ──stream──▶ busboy ──pipe──▶ ByteCounter ──pipe──▶ Telegram
    *                (tất cả diễn ra đồng thời, không buffer toàn bộ chunk)
    */
-  async uploadChunkStream(fileId: string, chunkIndex: number, userId: string, req: any): Promise<any> {
+  async uploadChunkStream(
+    fileId: string,
+    chunkIndex: number,
+    userId: string,
+    req: any,
+  ): Promise<any> {
     // Kiểm tra concurrent chunk upload limit
     const maxConcurrent = await this.getMaxConcurrentChunks();
     const active = this.activeUploads.get(userId) || 0;
@@ -350,14 +551,22 @@ export class FileService {
     const socket = req.socket;
     const onSocketClose = () => {
       if (!settled) {
-        this.logger.debug(`Client disconnected during chunk upload (file: ${fileId}, chunk: ${chunkIndex})`);
+        this.logger.debug(
+          `Client disconnected during chunk upload (file: ${fileId}, chunk: ${chunkIndex})`,
+        );
         abortController.abort();
       }
     };
     socket?.on('close', onSocketClose);
 
     try {
-      return await this._uploadChunkStreamInternal(fileId, chunkIndex, userId, req, abortController.signal);
+      return await this._uploadChunkStreamInternal(
+        fileId,
+        chunkIndex,
+        userId,
+        req,
+        abortController.signal,
+      );
     } finally {
       settled = true;
       socket?.removeListener('close', onSocketClose);
@@ -367,14 +576,23 @@ export class FileService {
     }
   }
 
-  private async _uploadChunkStreamInternal(fileId: string, chunkIndex: number, userId: string, req: any, signal?: AbortSignal): Promise<any> {
+  private async _uploadChunkStreamInternal(
+    fileId: string,
+    chunkIndex: number,
+    userId: string,
+    req: any,
+    signal?: AbortSignal,
+  ): Promise<any> {
     const fileRecord = await this.prisma.fileRecord.findFirst({
       where: { id: fileId, userId, deletedAt: null },
     });
     if (!fileRecord) throw new NotFoundException('File record not found');
-    if (fileRecord.status !== 'uploading') throw new BadRequestException('File upload already completed or aborted');
+    if (fileRecord.status !== 'uploading')
+      throw new BadRequestException('File upload already completed or aborted');
     if (chunkIndex < 0 || chunkIndex >= fileRecord.totalChunks) {
-      throw new BadRequestException(`Invalid chunk index: ${chunkIndex}. Expected 0-${fileRecord.totalChunks - 1}`);
+      throw new BadRequestException(
+        `Invalid chunk index: ${chunkIndex}. Expected 0-${fileRecord.totalChunks - 1}`,
+      );
     }
 
     // Idempotent: nếu chunk đã upload THÀNH CÔNG rồi, bỏ qua
@@ -385,12 +603,16 @@ export class FileService {
       if (existing.telegramFileId && existing.telegramFileId !== '') {
         // Chunk already uploaded successfully — skip
         req.resume();
-        this.logger.debug(`Chunk ${chunkIndex}/${fileRecord.totalChunks} already uploaded for file ${fileId}, skipping`);
+        this.logger.debug(
+          `Chunk ${chunkIndex}/${fileRecord.totalChunks} already uploaded for file ${fileId}, skipping`,
+        );
         return existing;
       }
       // Pending record from a failed attempt — delete it and retry
       await this.prisma.fileChunk.delete({ where: { id: existing.id } });
-      this.logger.debug(`Deleted stale pending chunk ${chunkIndex} for file ${fileId}, retrying`);
+      this.logger.debug(
+        `Deleted stale pending chunk ${chunkIndex} for file ${fileId}, retrying`,
+      );
     }
 
     // Use record id as chunk filename to avoid leaking the real filename on Telegram
@@ -422,7 +644,10 @@ export class FileService {
 
         let dataStream: Readable | Transform = stream;
         if (dek && chunkIv) {
-          const cipherStream = this.cryptoService.createEncryptStream(dek, chunkIv);
+          const cipherStream = this.cryptoService.createEncryptStream(
+            dek,
+            chunkIv,
+          );
           dataStream = stream.pipe(cipherStream);
         }
 
@@ -431,9 +656,11 @@ export class FileService {
           rawBytes += buf.length;
           if (rawBytes > MAX_CHUNK_SIZE) {
             stream.destroy();
-            reject(new BadRequestException(
-              `Chunk size exceeds maximum allowed size (${MAX_CHUNK_SIZE} bytes)`,
-            ));
+            reject(
+              new BadRequestException(
+                `Chunk size exceeds maximum allowed size (${MAX_CHUNK_SIZE} bytes)`,
+              ),
+            );
           }
         });
 
@@ -448,61 +675,86 @@ export class FileService {
             return;
           }
 
-          this.logger.log(`Starting chunk upload to Telegram: ${chunkIndex + 1}/${fileRecord.totalChunks} for file "${fileRecord.filename}" (${fileRecord.id}), ${rawBytes} bytes`);
+          this.logger.log(
+            `Starting chunk upload to Telegram: ${chunkIndex + 1}/${fileRecord.totalChunks} for file "${fileRecord.filename}" (${fileRecord.id}), ${rawBytes} bytes`,
+          );
 
           // Create pending DB record BEFORE uploading to Telegram
-          this.prisma.fileChunk.create({
-            data: {
-              fileId,
-              chunkIndex,
-              size: rawBytes,
-              telegramFileId: '', // placeholder — will be updated after upload
-              telegramMessageId: null,
-              ...(chunkIv && { encryptionIv: chunkIv.toString('hex') }),
-            },
-          })
+          this.prisma.fileChunk
+            .create({
+              data: {
+                fileId,
+                chunkIndex,
+                size: rawBytes,
+                telegramFileId: '', // placeholder — will be updated after upload
+                telegramMessageId: null,
+                ...(chunkIv && { encryptionIv: chunkIv.toString('hex') }),
+              },
+            })
             .then((pendingChunk) => {
-              return this.telegram.uploadFile(buffer, chunkFilename, signal)
-                .then(async ({ fileId: telegramFileId, messageId: telegramMessageId, botId }) => {
-                  try {
-                    // Update with real Telegram IDs
-                    const updated = await this.prisma.fileChunk.update({
-                      where: { id: pendingChunk.id },
-                      data: { telegramFileId, telegramMessageId, botId },
-                    });
+              return this.telegram
+                .uploadFile(buffer, chunkFilename, signal)
+                .then(
+                  async ({
+                    fileId: telegramFileId,
+                    messageId: telegramMessageId,
+                    botId,
+                  }) => {
+                    try {
+                      // Update with real Telegram IDs
+                      const updated = await this.prisma.fileChunk.update({
+                        where: { id: pendingChunk.id },
+                        data: { telegramFileId, telegramMessageId, botId },
+                      });
 
-                    // Check if file was aborted while we were uploading
-                    const currentFile = await this.prisma.fileRecord.findUnique({
-                      where: { id: fileId },
-                      select: { status: true },
-                    });
-                    if (!currentFile || currentFile.status === 'aborted') {
-                      this.logger.warn(`Chunk ${chunkIndex} for file ${fileId} completed but file was aborted — deleting Telegram message ${telegramMessageId}`);
-                      this.telegram.deleteMessage(telegramMessageId).catch(() => {});
-                      reject(new Error('Upload aborted'));
-                      return;
-                    }
+                      // Check if file was aborted while we were uploading
+                      const currentFile =
+                        await this.prisma.fileRecord.findUnique({
+                          where: { id: fileId },
+                          select: { status: true },
+                        });
+                      if (!currentFile || currentFile.status === 'aborted') {
+                        this.logger.warn(
+                          `Chunk ${chunkIndex} for file ${fileId} completed but file was aborted — deleting Telegram message ${telegramMessageId}`,
+                        );
+                        this.telegram
+                          .deleteMessage(telegramMessageId)
+                          .catch(() => { });
+                        reject(new Error('Upload aborted'));
+                        return;
+                      }
 
-                    this.logger.debug(`Chunk uploaded: ${chunkIndex + 1}/${fileRecord.totalChunks} for file ${fileId} (${rawBytes} bytes)`);
-                    resolve(updated);
-                  } catch (updateErr: any) {
-                    // Race A: Record was cascade-deleted by abort — clean up the orphaned Telegram message
-                    if (updateErr?.code === 'P2025') {
-                      this.logger.warn(`Chunk ${chunkIndex} for file ${fileId} was aborted during upload — deleting orphaned Telegram message ${telegramMessageId}`);
-                      this.telegram.deleteMessage(telegramMessageId).catch(() => {});
-                      reject(new Error('Upload aborted'));
-                      return;
+                      this.logger.debug(
+                        `Chunk uploaded: ${chunkIndex + 1}/${fileRecord.totalChunks} for file ${fileId} (${rawBytes} bytes)`,
+                      );
+                      resolve(updated);
+                    } catch (updateErr: any) {
+                      // Race A: Record was cascade-deleted by abort — clean up the orphaned Telegram message
+                      if (updateErr?.code === 'P2025') {
+                        this.logger.warn(
+                          `Chunk ${chunkIndex} for file ${fileId} was aborted during upload — deleting orphaned Telegram message ${telegramMessageId}`,
+                        );
+                        this.telegram
+                          .deleteMessage(telegramMessageId)
+                          .catch(() => { });
+                        reject(new Error('Upload aborted'));
+                        return;
+                      }
+                      reject(updateErr);
                     }
-                    reject(updateErr);
-                  }
-                });
+                  },
+                );
             })
             .catch((err) => {
               // Clean up pending record if upload fails
-              this.prisma.fileChunk.deleteMany({
-                where: { fileId, chunkIndex },
-              }).catch(() => {});
-              this.logger.error(`Chunk upload failed: ${chunkIndex}/${fileRecord.totalChunks} for file ${fileId}: ${err.message}`);
+              this.prisma.fileChunk
+                .deleteMany({
+                  where: { fileId, chunkIndex },
+                })
+                .catch(() => { });
+              this.logger.error(
+                `Chunk upload failed: ${chunkIndex}/${fileRecord.totalChunks} for file ${fileId}: ${err.message}`,
+              );
               reject(err);
             });
         });
@@ -512,7 +764,9 @@ export class FileService {
 
       bb.on('close', () => {
         if (!fileProcessed) {
-          reject(new BadRequestException('No file field received in the request'));
+          reject(
+            new BadRequestException('No file field received in the request'),
+          );
         }
       });
 
@@ -531,7 +785,9 @@ export class FileService {
     if (!fileRecord) throw new NotFoundException('File record not found');
 
     if (fileRecord.status === 'complete') {
-      throw new BadRequestException('Cannot abort a completed upload. Use DELETE instead.');
+      throw new BadRequestException(
+        'Cannot abort a completed upload. Use DELETE instead.',
+      );
     }
 
     await this.prisma.fileRecord.update({
@@ -552,17 +808,24 @@ export class FileService {
       where: { fileId },
     });
     const alreadyDeleted = new Set(
-      fileRecord.chunks.filter(c => c.telegramMessageId).map(c => c.telegramMessageId),
+      fileRecord.chunks
+        .filter((c) => c.telegramMessageId)
+        .map((c) => c.telegramMessageId),
     );
     for (const chunk of latestChunks) {
-      if (chunk.telegramMessageId && !alreadyDeleted.has(chunk.telegramMessageId)) {
+      if (
+        chunk.telegramMessageId &&
+        !alreadyDeleted.has(chunk.telegramMessageId)
+      ) {
         await this.telegram.deleteMessage(chunk.telegramMessageId);
       }
     }
 
     await this.prisma.fileRecord.delete({ where: { id: fileId } });
 
-    this.logger.warn(`Upload aborted: "${fileRecord.filename}" (fileId: ${fileId}, cleaned up ${latestChunks.length} chunks)`);
+    this.logger.warn(
+      `Upload aborted: "${fileRecord.filename}" (fileId: ${fileId}, cleaned up ${latestChunks.length} chunks)`,
+    );
     return { success: true, deletedChunks: latestChunks.length };
   }
 
@@ -600,7 +863,9 @@ export class FileService {
       return updated;
     });
 
-    this.logger.log(`Chunked upload completed: "${fileRecord.filename}" (fileId: ${fileId}, ${fileRecord.totalChunks} chunks, ${fileRecord.size} bytes)`);
+    this.logger.log(
+      `Chunked upload completed: "${fileRecord.filename}" (fileId: ${fileId}, ${fileRecord.totalChunks} chunks, ${fileRecord.size} bytes)`,
+    );
     return result;
   }
 
@@ -632,7 +897,8 @@ export class FileService {
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
     });
     if (!fileRecord) throw new NotFoundException('File not found');
-    if (fileRecord.status !== 'complete') throw new BadRequestException('File upload not completed yet');
+    if (fileRecord.status !== 'complete')
+      throw new BadRequestException('File upload not completed yet');
 
     return this.getDownloadMetadata(fileRecord);
   }
@@ -645,8 +911,10 @@ export class FileService {
       where: { shareToken: token },
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
     });
-    if (!fileRecord || fileRecord.deletedAt) throw new NotFoundException('Shared file not found');
-    if (fileRecord.status !== 'complete') throw new BadRequestException('File upload not completed yet');
+    if (!fileRecord || fileRecord.deletedAt)
+      throw new NotFoundException('Shared file not found');
+    if (fileRecord.status !== 'complete')
+      throw new BadRequestException('File upload not completed yet');
 
     return this.getDownloadMetadata(fileRecord);
   }
@@ -688,7 +956,9 @@ export class FileService {
         telegramMessageId: fileRecord.telegramMessageId,
         isEncrypted: fileRecord.isEncrypted,
         dek,
-        iv: fileRecord.encryptionIv ? Buffer.from(fileRecord.encryptionIv, 'hex') : null,
+        iv: fileRecord.encryptionIv
+          ? Buffer.from(fileRecord.encryptionIv, 'hex')
+          : null,
         mimeType: fileRecord.mimeType,
       };
     }
@@ -734,14 +1004,21 @@ export class FileService {
     if (!telegramMessageId) {
       throw new Error(`Bot ${botId} unavailable and no messageId for recovery`);
     }
-    this.logger.warn(`Bot ${botId} unavailable, recovering via forward (messageId: ${telegramMessageId})`);
-    const { fileId: newFileId, botId: newBotId } = await this.telegram.recoverFileId(telegramMessageId);
+    this.logger.warn(
+      `Bot ${botId} unavailable, recovering via forward (messageId: ${telegramMessageId})`,
+    );
+    const { fileId: newFileId, botId: newBotId } =
+      await this.telegram.recoverFileId(telegramMessageId);
     // Cập nhật DB (fire-and-forget, không block download)
     if (chunkDbId) {
-      this.prisma.fileChunk.update({
-        where: { id: chunkDbId },
-        data: { telegramFileId: newFileId, botId: newBotId },
-      }).catch(e => this.logger.warn(`Failed to update recovered chunk: ${e.message}`));
+      this.prisma.fileChunk
+        .update({
+          where: { id: chunkDbId },
+          data: { telegramFileId: newFileId, botId: newBotId },
+        })
+        .catch((e) =>
+          this.logger.warn(`Failed to update recovered chunk: ${e.message}`),
+        );
     }
     return this.telegram.getFileLink(newFileId, newBotId, context);
   }
@@ -749,7 +1026,10 @@ export class FileService {
   /**
    * Admin: re-index all chunks/files whose bot is no longer available.
    */
-  async reindexUnavailableBots(): Promise<{ recovered: number; failed: number }> {
+  async reindexUnavailableBots(): Promise<{
+    recovered: number;
+    failed: number;
+  }> {
     const availableIds = this.telegram.availableBotIds;
 
     const staleChunks = await this.prisma.fileChunk.findMany({
@@ -768,8 +1048,13 @@ export class FileService {
 
     for (const chunk of staleChunks) {
       try {
-        if (!chunk.telegramMessageId) { failed++; continue; }
-        const { fileId, botId } = await this.telegram.recoverFileId(chunk.telegramMessageId);
+        if (!chunk.telegramMessageId) {
+          failed++;
+          continue;
+        }
+        const { fileId, botId } = await this.telegram.recoverFileId(
+          chunk.telegramMessageId,
+        );
         await this.prisma.fileChunk.update({
           where: { id: chunk.id },
           data: { telegramFileId: fileId, botId },
@@ -782,8 +1067,13 @@ export class FileService {
 
     for (const file of staleFiles) {
       try {
-        if (!file.telegramMessageId) { failed++; continue; }
-        const { fileId, botId } = await this.telegram.recoverFileId(file.telegramMessageId);
+        if (!file.telegramMessageId) {
+          failed++;
+          continue;
+        }
+        const { fileId, botId } = await this.telegram.recoverFileId(
+          file.telegramMessageId,
+        );
         await this.prisma.fileRecord.update({
           where: { id: file.id },
           data: { telegramFileId: fileId, botId },
@@ -794,7 +1084,9 @@ export class FileService {
       }
     }
 
-    this.logger.log(`Reindex complete: ${recovered} recovered, ${failed} failed`);
+    this.logger.log(
+      `Reindex complete: ${recovered} recovered, ${failed} failed`,
+    );
     return { recovered, failed };
   }
 
@@ -821,9 +1113,17 @@ export class FileService {
       let output: Readable | Transform = rawStream;
 
       if (options.decrypt) {
-        const decryptStream = options.decrypt.offset !== undefined
-          ? this.cryptoService.createOffsetDecryptStream(options.decrypt.dek, options.decrypt.iv, options.decrypt.offset)
-          : this.cryptoService.createDecryptStream(options.decrypt.dek, options.decrypt.iv);
+        const decryptStream =
+          options.decrypt.offset !== undefined
+            ? this.cryptoService.createOffsetDecryptStream(
+              options.decrypt.dek,
+              options.decrypt.iv,
+              options.decrypt.offset,
+            )
+            : this.cryptoService.createDecryptStream(
+              options.decrypt.dek,
+              options.decrypt.iv,
+            );
         decryptStream.on('error', (err) => {
           rawStream.destroy();
           if (!res.destroyed) res.end();
@@ -853,7 +1153,11 @@ export class FileService {
   private isClientDisconnect(err: unknown): boolean {
     if (err instanceof Error) {
       const code = (err as NodeJS.ErrnoException).code;
-      return code === 'ECONNRESET' || err.message === 'terminated' || code === 'ERR_STREAM_PREMATURE_CLOSE';
+      return (
+        code === 'ECONNRESET' ||
+        err.message === 'terminated' ||
+        code === 'ERR_STREAM_PREMATURE_CLOSE'
+      );
     }
     return false;
   }
@@ -862,13 +1166,20 @@ export class FileService {
    * Helper process download file (dùng Streams)
    * Resolve URLs lazily: stream chunk[i] trong khi prefetch URL cho chunk[i+1..i+PREFETCH_AHEAD]
    */
-  async processDownload(downloadInfo: DownloadInfo, res: Response, rangeHeader?: string) {
+  async processDownload(
+    downloadInfo: DownloadInfo,
+    res: Response,
+    rangeHeader?: string,
+  ) {
     // Multi-thread download: nếu có Range header và tính năng được bật → delegate sang processRangeDownload
-    if (rangeHeader && await this.isMultiThreadEnabled()) {
+    if (rangeHeader && (await this.isMultiThreadEnabled())) {
       return this.processRangeDownload(downloadInfo, rangeHeader, res);
     }
 
-    res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadInfo.filename)}"`);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${encodeURIComponent(downloadInfo.filename)}"`,
+    );
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Length', downloadInfo.size.toString());
 
@@ -879,28 +1190,38 @@ export class FileService {
 
     if (!downloadInfo.isChunked) {
       const url = await this.resolveFileLink(
-        downloadInfo.telegramFileId, downloadInfo.botId,
-        downloadInfo.telegramMessageId, null,
+        downloadInfo.telegramFileId,
+        downloadInfo.botId,
+        downloadInfo.telegramMessageId,
+        null,
       );
       const fetchRes = await fetchWithRetry(url);
       if (!fetchRes.ok || !fetchRes.body) {
-        this.logger.error(`Failed to fetch file from Telegram: "${downloadInfo.filename}" (status: ${fetchRes.status}, url: ${url})`);
+        this.logger.error(
+          `Failed to fetch file from Telegram: "${downloadInfo.filename}" (status: ${fetchRes.status}, url: ${url})`,
+        );
         res.status(500).send('Trích xuất file từ Telegram thất bại');
         return;
       }
 
       try {
         await this.pipeStreamToResponse(fetchRes.body, res, {
-          decrypt: (downloadInfo.isEncrypted && downloadInfo.dek && downloadInfo.iv)
-            ? { dek: downloadInfo.dek, iv: downloadInfo.iv }
-            : undefined,
+          decrypt:
+            downloadInfo.isEncrypted && downloadInfo.dek && downloadInfo.iv
+              ? { dek: downloadInfo.dek, iv: downloadInfo.iv }
+              : undefined,
           endResponse: true,
         });
       } catch (err: unknown) {
         if (this.isClientDisconnect(err)) {
-          this.logger.debug(`Client disconnected during download: "${downloadInfo.filename}"`);
+          this.logger.debug(
+            `Client disconnected during download: "${downloadInfo.filename}"`,
+          );
         } else {
-          this.logger.error(`Download failed: "${downloadInfo.filename}"`, err instanceof Error ? err.message : String(err));
+          this.logger.error(
+            `Download failed: "${downloadInfo.filename}"`,
+            err instanceof Error ? err.message : String(err),
+          );
           if (!res.headersSent) res.status(500).end();
           else if (!res.destroyed) res.end();
         }
@@ -912,38 +1233,54 @@ export class FileService {
 
         for (let i = 0; i < totalChunks; i++) {
           // Prefetch URLs cho các chunk tiếp theo (fire-and-forget, chúng sẽ được cache)
-          for (let p = i + 1; p < Math.min(i + 1 + this.PREFETCH_AHEAD, totalChunks); p++) {
+          for (
+            let p = i + 1;
+            p < Math.min(i + 1 + this.PREFETCH_AHEAD, totalChunks);
+            p++
+          ) {
             this.resolveFileLink(
-              chunks[p].telegramFileId, chunks[p].botId,
-              chunks[p].telegramMessageId, chunks[p].id,
+              chunks[p].telegramFileId,
+              chunks[p].botId,
+              chunks[p].telegramMessageId,
+              chunks[p].id,
               `prefetch chunk ${p + 1}/${totalChunks} of "${downloadInfo.filename}"`,
             );
           }
 
           // Resolve URL cho chunk hiện tại (instant nếu đã prefetch/cache)
           const url = await this.resolveFileLink(
-            chunks[i].telegramFileId, chunks[i].botId,
-            chunks[i].telegramMessageId, chunks[i].id,
+            chunks[i].telegramFileId,
+            chunks[i].botId,
+            chunks[i].telegramMessageId,
+            chunks[i].id,
             `chunk ${i + 1}/${totalChunks} of "${downloadInfo.filename}"`,
           );
 
           const fetchRes = await fetchWithRetry(url);
           if (!fetchRes.ok || !fetchRes.body) {
-            throw new Error(`Failed to fetch chunk ${i + 1}/${totalChunks} from Telegram`);
+            throw new Error(
+              `Failed to fetch chunk ${i + 1}/${totalChunks} from Telegram`,
+            );
           }
 
-          await this.pipeStreamToResponse(fetchRes.body!, res, {
-            decrypt: (downloadInfo.isEncrypted && downloadInfo.dek && chunks[i].iv)
-              ? { dek: downloadInfo.dek, iv: chunks[i].iv! }
-              : undefined,
+          await this.pipeStreamToResponse(fetchRes.body, res, {
+            decrypt:
+              downloadInfo.isEncrypted && downloadInfo.dek && chunks[i].iv
+                ? { dek: downloadInfo.dek, iv: chunks[i].iv! }
+                : undefined,
           });
         }
         res.end();
       } catch (error: unknown) {
         if (this.isClientDisconnect(error)) {
-          this.logger.debug(`Client disconnected during chunked download: "${downloadInfo.filename}"`);
+          this.logger.debug(
+            `Client disconnected during chunked download: "${downloadInfo.filename}"`,
+          );
         } else {
-          this.logger.error(`Chunked download failed: "${downloadInfo.filename}"`, error instanceof Error ? error.stack : String(error));
+          this.logger.error(
+            `Chunked download failed: "${downloadInfo.filename}"`,
+            error instanceof Error ? error.stack : String(error),
+          );
           if (!res.headersSent) {
             res.status(500).send('Lỗi khi ghép file từ Telegram');
           } else if (!res.destroyed) {
@@ -958,7 +1295,11 @@ export class FileService {
    * Helper process streaming media (dùng Range Requests)
    * Resolve chunk URLs lazily — chỉ resolve cho các chunks overlap với Range
    */
-  async processStream(downloadInfo: DownloadInfo, rangeHeader: string | undefined, res: Response) {
+  async processStream(
+    downloadInfo: DownloadInfo,
+    rangeHeader: string | undefined,
+    res: Response,
+  ) {
     return this.processRangeRequest(downloadInfo, rangeHeader, res, 'inline');
   }
 
@@ -966,8 +1307,17 @@ export class FileService {
    * Download với Range header (cho multi-thread download managers như IDM)
    * Giống processStream nhưng giữ Content-Disposition: attachment
    */
-  private async processRangeDownload(downloadInfo: DownloadInfo, rangeHeader: string, res: Response) {
-    return this.processRangeRequest(downloadInfo, rangeHeader, res, 'attachment');
+  private async processRangeDownload(
+    downloadInfo: DownloadInfo,
+    rangeHeader: string,
+    res: Response,
+  ) {
+    return this.processRangeRequest(
+      downloadInfo,
+      rangeHeader,
+      res,
+      'attachment',
+    );
   }
 
   /**
@@ -1013,45 +1363,71 @@ export class FileService {
     }
     res.setHeader('Accept-Ranges', 'bytes');
     res.setHeader('Content-Length', contentLength.toString());
-    res.setHeader('Content-Type', downloadInfo.mimeType || 'application/octet-stream');
+    res.setHeader(
+      'Content-Type',
+      downloadInfo.mimeType || 'application/octet-stream',
+    );
     if (disposition === 'attachment') {
-      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(downloadInfo.filename)}"`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="${encodeURIComponent(downloadInfo.filename)}"`,
+      );
     } else {
       res.setHeader('Content-Disposition', 'inline');
     }
 
     if (!downloadInfo.isChunked) {
       const url = await this.resolveFileLink(
-        downloadInfo.telegramFileId, downloadInfo.botId,
-        downloadInfo.telegramMessageId, null,
+        downloadInfo.telegramFileId,
+        downloadInfo.botId,
+        downloadInfo.telegramMessageId,
+        null,
       );
       const fetchRes = await fetchWithRetry(url, {
-        headers: { Range: `bytes=${start}-${end}` }
+        headers: { Range: `bytes=${start}-${end}` },
       });
       if (!fetchRes.ok || !fetchRes.body) {
-        this.logger.error(`Failed to fetch from Telegram: "${downloadInfo.filename}"`);
+        this.logger.error(
+          `Failed to fetch from Telegram: "${downloadInfo.filename}"`,
+        );
         return res.status(500).end();
       }
 
       try {
         await this.pipeStreamToResponse(fetchRes.body, res, {
-          decrypt: (downloadInfo.isEncrypted && downloadInfo.dek && downloadInfo.iv)
-            ? { dek: downloadInfo.dek, iv: downloadInfo.iv, offset: start }
-            : undefined,
+          decrypt:
+            downloadInfo.isEncrypted && downloadInfo.dek && downloadInfo.iv
+              ? { dek: downloadInfo.dek, iv: downloadInfo.iv, offset: start }
+              : undefined,
           endResponse: true,
         });
       } catch (err: unknown) {
         if (this.isClientDisconnect(err)) {
-          this.logger.debug(`Client disconnected during ${disposition}: "${downloadInfo.filename}"`);
+          this.logger.debug(
+            `Client disconnected during ${disposition}: "${downloadInfo.filename}"`,
+          );
         } else {
-          this.logger.error(`${disposition} failed: "${downloadInfo.filename}"`, err instanceof Error ? err.message : String(err));
+          this.logger.error(
+            `${disposition} failed: "${downloadInfo.filename}"`,
+            err instanceof Error ? err.message : String(err),
+          );
           if (!res.headersSent) res.status(500).end();
           else if (!res.destroyed) res.end();
         }
       }
     } else {
       let currentOffset = 0;
-      const chunksToFetch: { telegramFileId: string; botId: bigint; telegramMessageId: number | null; id: string | null; iv: Buffer | null; size: number; fetchStart: number; fetchEnd: number; byteOffsetInChunk: number }[] = [];
+      const chunksToFetch: {
+        telegramFileId: string;
+        botId: bigint;
+        telegramMessageId: number | null;
+        id: string | null;
+        iv: Buffer | null;
+        size: number;
+        fetchStart: number;
+        fetchEnd: number;
+        byteOffsetInChunk: number;
+      }[] = [];
 
       for (const chunk of downloadInfo.chunks) {
         const chunkStart = currentOffset;
@@ -1081,34 +1457,55 @@ export class FileService {
           const chunkReq = chunksToFetch[i];
 
           // Prefetch URLs cho các chunk tiếp theo
-          for (let p = i + 1; p < Math.min(i + 1 + this.PREFETCH_AHEAD, chunksToFetch.length); p++) {
+          for (
+            let p = i + 1;
+            p < Math.min(i + 1 + this.PREFETCH_AHEAD, chunksToFetch.length);
+            p++
+          ) {
             this.resolveFileLink(
-              chunksToFetch[p].telegramFileId, chunksToFetch[p].botId,
-              chunksToFetch[p].telegramMessageId, chunksToFetch[p].id,
+              chunksToFetch[p].telegramFileId,
+              chunksToFetch[p].botId,
+              chunksToFetch[p].telegramMessageId,
+              chunksToFetch[p].id,
             );
           }
 
           const url = await this.resolveFileLink(
-            chunkReq.telegramFileId, chunkReq.botId,
-            chunkReq.telegramMessageId, chunkReq.id,
+            chunkReq.telegramFileId,
+            chunkReq.botId,
+            chunkReq.telegramMessageId,
+            chunkReq.id,
           );
           const fetchRes = await fetchWithRetry(url, {
-            headers: { Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}` }
+            headers: {
+              Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}`,
+            },
           });
-          if (!fetchRes.ok || !fetchRes.body) throw new Error('Fetch chunk error');
+          if (!fetchRes.ok || !fetchRes.body)
+            throw new Error('Fetch chunk error');
 
           await this.pipeStreamToResponse(fetchRes.body, res, {
-            decrypt: (downloadInfo.isEncrypted && downloadInfo.dek && chunkReq.iv)
-              ? { dek: downloadInfo.dek, iv: chunkReq.iv, offset: chunkReq.byteOffsetInChunk }
-              : undefined,
+            decrypt:
+              downloadInfo.isEncrypted && downloadInfo.dek && chunkReq.iv
+                ? {
+                  dek: downloadInfo.dek,
+                  iv: chunkReq.iv,
+                  offset: chunkReq.byteOffsetInChunk,
+                }
+                : undefined,
           });
         }
         res.end();
       } catch (err: unknown) {
         if (this.isClientDisconnect(err)) {
-          this.logger.debug(`Client disconnected during ${disposition}: "${downloadInfo.filename}"`);
+          this.logger.debug(
+            `Client disconnected during ${disposition}: "${downloadInfo.filename}"`,
+          );
         } else {
-          this.logger.error(`${disposition} error: "${downloadInfo.filename}"`, err instanceof Error ? err.message : String(err));
+          this.logger.error(
+            `${disposition} error: "${downloadInfo.filename}"`,
+            err instanceof Error ? err.message : String(err),
+          );
         }
         if (!res.headersSent) res.status(500).end();
         else if (!res.destroyed) res.end();
@@ -1142,32 +1539,113 @@ export class FileService {
   async rename(id: string, newName: string, userId: string) {
     const fileRecord = await this.prisma.fileRecord.findFirst({
       where: { id, userId, deletedAt: null },
+      select: { id: true, filename: true, folderId: true },
     });
     if (!fileRecord) throw new NotFoundException('File not found');
+
+    const conflict = await this.nameConflictService.checkFileConflict(
+      fileRecord.folderId,
+      newName,
+      userId,
+      id,
+    );
+    if (conflict) {
+      throw new ConflictException({
+        message: 'A file or folder with this name already exists in the current folder',
+        type: 'file' as const
+      });
+    }
 
     const updated = await this.prisma.fileRecord.update({
       where: { id },
       data: { filename: newName },
     });
 
-    this.logger.log(`File renamed: "${fileRecord.filename}" to "${newName}" (fileId: ${id})`);
+    this.logger.log(
+      `File renamed: "${fileRecord.filename}" to "${newName}" (fileId: ${id})`,
+    );
     return updated;
   }
 
   /**
    * Di chuyển file
    */
-  async move(id: string, newFolderId: string | null, userId: string) {
+  async move(
+    id: string,
+    newFolderId: string | null,
+    userId: string,
+    conflictAction?: ConflictAction,
+  ) {
     const fileRecord = await this.prisma.fileRecord.findFirst({
       where: { id, userId, deletedAt: null },
+      select: { id: true, filename: true, folderId: true },
     });
     if (!fileRecord) throw new NotFoundException('File not found');
 
     if (newFolderId) {
       const folder = await this.prisma.folder.findFirst({
         where: { id: newFolderId, userId, deletedAt: null },
+        select: { id: true },
       });
       if (!folder) throw new NotFoundException('Destination folder not found');
+    }
+
+    // Check conflict at destination
+    const conflict = await this.nameConflictService.checkFileConflict(
+      newFolderId,
+      fileRecord.filename,
+      userId,
+      id,
+    );
+
+    if (conflict) {
+      // Default: throw conflict error for web UI to handle
+      if (!conflictAction || conflictAction === 'skip') {
+        throw new ConflictException({
+          message:
+            'A file or folder with this name already exists in the destination folder',
+          type: 'file' as const,
+          id: conflict.id,
+          name: conflict.filename,
+          suggestedName: await this.nameConflictService.generateUniqueName(
+            fileRecord.filename,
+            await this.nameConflictService.getExistingNames(
+              newFolderId,
+              userId,
+            ),
+          ),
+        });
+      }
+
+      if (conflictAction === 'overwrite') {
+        // Soft-delete file cũ, sau đó move file mới vào
+        await this.prisma.fileRecord.update({
+          where: { id: conflict.id },
+          data: { deletedAt: new Date() },
+        });
+        this.logger.log(
+          `File overwrite during move: "${conflict.filename}" (id: ${conflict.id}) soft-deleted`,
+        );
+      }
+
+      if (conflictAction === 'rename') {
+        // Auto-rename file cần move
+        const existingNames = await this.nameConflictService.getExistingNames(
+          newFolderId,
+          userId,
+        );
+        const uniqueName = this.nameConflictService.generateUniqueName(
+          fileRecord.filename,
+          existingNames,
+        );
+        await this.prisma.fileRecord.update({
+          where: { id },
+          data: { filename: uniqueName },
+        });
+        this.logger.log(
+          `File auto-renamed during move: "${fileRecord.filename}" to "${uniqueName}" (fileId: ${id})`,
+        );
+      }
     }
 
     const updated = await this.prisma.fileRecord.update({
@@ -1175,7 +1653,9 @@ export class FileService {
       data: { folderId: newFolderId },
     });
 
-    this.logger.log(`File moved: "${fileRecord.filename}" (fileId: ${id}) to folder: ${newFolderId || 'root'}`);
+    this.logger.log(
+      `File moved: "${fileRecord.filename}" (fileId: ${id}) to folder: ${newFolderId || 'root'}`,
+    );
     return updated;
   }
 
@@ -1188,17 +1668,20 @@ export class FileService {
     });
     if (!fileRecord) throw new NotFoundException('File not found');
 
-    const shareToken = fileRecord.shareToken || crypto.randomBytes(16).toString('hex');
+    const shareToken =
+      fileRecord.shareToken || crypto.randomBytes(16).toString('hex');
 
     const updated = await this.prisma.fileRecord.update({
       where: { id },
-      data: { 
+      data: {
         visibility: 'PUBLIC_LINK',
         shareToken,
       },
     });
 
-    this.logger.log(`File shared: "${fileRecord.filename}" (fileId: ${id}, token: ${shareToken})`);
+    this.logger.log(
+      `File shared: "${fileRecord.filename}" (fileId: ${id}, token: ${shareToken})`,
+    );
     return updated;
   }
 
@@ -1213,7 +1696,7 @@ export class FileService {
 
     const updated = await this.prisma.fileRecord.update({
       where: { id },
-      data: { 
+      data: {
         visibility: 'PRIVATE',
         shareToken: null,
       },
@@ -1254,7 +1737,9 @@ export class FileService {
       }
     });
 
-    this.logger.log(`File deleted: "${fileRecord.filename}" (fileId: ${id}, chunks: ${fileRecord.chunks.length}, freed: ${fileRecord.size} bytes)`);
+    this.logger.log(
+      `File deleted: "${fileRecord.filename}" (fileId: ${id}, chunks: ${fileRecord.chunks.length}, freed: ${fileRecord.size} bytes)`,
+    );
   }
 
   /**
@@ -1271,32 +1756,77 @@ export class FileService {
       data: { deletedAt: new Date() },
     });
 
-    this.logger.log(`File soft-deleted: "${fileRecord.filename}" (fileId: ${id}, userId: ${userId})`);
+    this.logger.log(
+      `File soft-deleted: "${fileRecord.filename}" (fileId: ${id}, userId: ${userId})`,
+    );
     return updated;
   }
 
   /**
    * Khôi phục file từ thùng rác.
+   * Nếu tên bị chiếm tại vị trí cũ → auto-rename + trả về suggested name.
    */
-  async restore(id: string, userId: string) {
+  async restore(
+    id: string,
+    userId: string,
+  ): Promise<{ file: { id: string; filename: string }; autoRenamed: boolean }> {
     const fileRecord = await this.prisma.fileRecord.findFirst({
       where: { id, userId, deletedAt: { not: null } },
     });
     if (!fileRecord) throw new NotFoundException('File not found in trash');
 
+    // Check nếu tên file bị chiếm tại vị trí cũ (folderId)
+    const conflict = await this.nameConflictService.checkFileConflict(
+      fileRecord.folderId,
+      fileRecord.filename,
+      userId,
+      id,
+    );
+
+    let autoRenamed = false;
+    let finalFilename = fileRecord.filename;
+
+    if (conflict) {
+      const existingNames = await this.nameConflictService.getExistingNames(
+        fileRecord.folderId,
+        userId,
+      );
+      finalFilename = this.nameConflictService.generateUniqueName(
+        fileRecord.filename,
+        existingNames,
+      );
+      autoRenamed = true;
+      this.logger.log(
+        `File restore auto-renamed: "${fileRecord.filename}" to "${finalFilename}" (fileId: ${id})`,
+      );
+    }
+
     const updated = await this.prisma.fileRecord.update({
       where: { id },
-      data: { deletedAt: null },
+      data: {
+        deletedAt: null,
+        ...(autoRenamed && { filename: finalFilename }),
+      },
     });
 
-    this.logger.log(`File restored: "${fileRecord.filename}" (fileId: ${id}, userId: ${userId})`);
-    return updated;
+    this.logger.log(
+      `File restored: "${updated.filename}" (fileId: ${id}, userId: ${userId})`,
+    );
+    return { file: updated, autoRenamed };
   }
 
   /**
    * Xoá vĩnh viễn file từ thùng rác — xoá trên Telegram + DB + hoàn trả usedSpace.
    */
   async permanentDelete(id: string, userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isCleaningTrash: true },
+    });
+    if (user?.isCleaningTrash) {
+      throw new ConflictException('Trash cleanup is in progress');
+    }
+
     const releaseLock = await this.acquireDeletionLock(userId);
     try {
       const fileRecord = await this.prisma.fileRecord.findFirst({
@@ -1319,7 +1849,9 @@ export class FileService {
         }
       });
 
-      this.logger.log(`File permanently deleted: "${fileRecord.filename}" (fileId: ${id}, freed: ${fileRecord.size} bytes)`);
+      this.logger.log(
+        `File permanently deleted: "${fileRecord.filename}" (fileId: ${id}, freed: ${fileRecord.size} bytes)`,
+      );
     } finally {
       releaseLock();
     }
@@ -1362,7 +1894,9 @@ export class FileService {
         }
       });
 
-      this.logger.log(`Bulk permanently deleted ${files.length} files, freed: ${freedSize} bytes`);
+      this.logger.log(
+        `Bulk permanently deleted ${files.length} files, freed: ${freedSize} bytes`,
+      );
       return freedSize;
     } finally {
       releaseLock();
@@ -1373,6 +1907,14 @@ export class FileService {
    * Dọn sạch toàn bộ thùng rác (files và folders)
    */
   async emptyTrash(userId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { isCleaningTrash: true },
+    });
+    if (user?.isCleaningTrash) {
+      throw new ConflictException('Trash cleanup is in progress');
+    }
+
     const releaseLock = await this.acquireDeletionLock(userId);
     try {
       const files = await this.prisma.fileRecord.findMany({
@@ -1390,8 +1932,8 @@ export class FileService {
       }
 
       let freedSize = BigInt(0);
-      const fileIds = files.map(f => f.id);
-      const folderIds = folders.map(f => f.id);
+      const fileIds = files.map((f) => f.id);
+      const folderIds = folders.map((f) => f.id);
 
       for (const file of files) {
         if (file.status === 'complete') freedSize += file.size;
@@ -1420,8 +1962,14 @@ export class FileService {
         }
       });
 
-      this.logger.log(`Emptied trash for userId ${userId}: ${files.length} files, ${folders.length} folders, freed: ${freedSize} bytes`);
-      return { success: true, count: files.length + folders.length, freedSize: freedSize.toString() };
+      this.logger.log(
+        `Emptied trash for userId ${userId}: ${files.length} files, ${folders.length} folders, freed: ${freedSize} bytes`,
+      );
+      return {
+        success: true,
+        count: files.length + folders.length,
+        freedSize: freedSize.toString(),
+      };
     } finally {
       releaseLock();
     }
@@ -1435,7 +1983,10 @@ export class FileService {
    * Tránh lặp code pattern: xoá main message + chunks messages.
    */
   async purgeFilesFromTelegram(
-    files: Array<{ telegramMessageId: number | null; chunks: Array<{ telegramMessageId: number | null }> }>,
+    files: Array<{
+      telegramMessageId: number | null;
+      chunks: Array<{ telegramMessageId: number | null }>;
+    }>,
   ): Promise<void> {
     const messageIds: number[] = [];
     for (const file of files) {
@@ -1450,7 +2001,7 @@ export class FileService {
         await this.telegram.deleteMessage(msgId);
         // Delay nhỏ để tránh rate-limit nếu số lượng lớn
         if (messageIds.length > 5) {
-          await new Promise(res => setTimeout(res, 50));
+          await new Promise((res) => setTimeout(res, 50));
         }
       } catch (err) {
         this.logger.warn(`Failed to delete Telegram message ${msgId}: ${err}`);
@@ -1475,7 +2026,15 @@ export class FileService {
     existingFileId?: string;
     signal?: AbortSignal;
   }) {
-    const { buffer, filename, mimeType, userId, folderId, existingFileId, signal } = params;
+    const {
+      buffer,
+      filename,
+      mimeType,
+      userId,
+      folderId,
+      existingFileId,
+      signal,
+    } = params;
 
     await this.checkQuota(userId, buffer.length);
 
@@ -1485,7 +2044,10 @@ export class FileService {
 
     // Encrypt buffer
     const cipher = this.cryptoService.createEncryptStream(dek, iv);
-    const encryptedBuffer = Buffer.concat([cipher.update(buffer), cipher.final()]);
+    const encryptedBuffer = Buffer.concat([
+      cipher.update(buffer),
+      cipher.final(),
+    ]);
 
     if (existingFileId) {
       // Update existing file (S3 overwrite)
@@ -1495,7 +2057,15 @@ export class FileService {
       });
 
       // Upload to Telegram
-      const { fileId: telegramFileId, messageId: telegramMessageId, botId } = await this.telegram.uploadFile(encryptedBuffer, existingFileId, signal);
+      const {
+        fileId: telegramFileId,
+        messageId: telegramMessageId,
+        botId,
+      } = await this.telegram.uploadFile(
+        encryptedBuffer,
+        existingFileId,
+        signal,
+      );
 
       // Delete old Telegram messages
       if (oldRecord) {
@@ -1537,7 +2107,9 @@ export class FileService {
         return record;
       });
 
-      this.logger.log(`File overwritten via uploadFromBuffer: "${filename}" (${buffer.length} bytes, userId: ${userId})`);
+      this.logger.log(
+        `File overwritten via uploadFromBuffer: "${filename}" (${buffer.length} bytes, userId: ${userId})`,
+      );
       return updated;
     } else {
       // Create new record
@@ -1561,7 +2133,11 @@ export class FileService {
       });
 
       try {
-        const { fileId: telegramFileId, messageId: telegramMessageId, botId } = await this.telegram.uploadFile(encryptedBuffer, record.id, signal);
+        const {
+          fileId: telegramFileId,
+          messageId: telegramMessageId,
+          botId,
+        } = await this.telegram.uploadFile(encryptedBuffer, record.id, signal);
 
         const updated = await this.prisma.$transaction(async (tx) => {
           const fileRecord = await tx.fileRecord.update({
@@ -1582,7 +2158,9 @@ export class FileService {
           return fileRecord;
         });
 
-        this.logger.log(`File uploaded via uploadFromBuffer: "${filename}" (${buffer.length} bytes, userId: ${userId})`);
+        this.logger.log(
+          `File uploaded via uploadFromBuffer: "${filename}" (${buffer.length} bytes, userId: ${userId})`,
+        );
         return updated;
       } catch (err) {
         await this.prisma.fileRecord.delete({ where: { id: record.id } });
@@ -1607,7 +2185,16 @@ export class FileService {
     existingFileId?: string;
     signal?: AbortSignal;
   }) {
-    const { stream, filename, mimeType, size, userId, folderId, existingFileId, signal } = params;
+    const {
+      stream,
+      filename,
+      mimeType,
+      size,
+      userId,
+      folderId,
+      existingFileId,
+      signal,
+    } = params;
 
     await this.checkQuota(userId, size);
 
@@ -1625,7 +2212,15 @@ export class FileService {
         include: { chunks: true },
       });
 
-      const { fileId: telegramFileId, messageId: telegramMessageId, botId } = await this.telegram.uploadStream(encryptedStream, existingFileId, signal);
+      const {
+        fileId: telegramFileId,
+        messageId: telegramMessageId,
+        botId,
+      } = await this.telegram.uploadStream(
+        encryptedStream,
+        existingFileId,
+        signal,
+      );
 
       if (oldRecord) {
         await this.purgeFilesFromTelegram([oldRecord]);
@@ -1665,7 +2260,9 @@ export class FileService {
         return record;
       });
 
-      this.logger.log(`File overwritten via uploadFromStream: "${filename}" (${size} bytes, userId: ${userId})`);
+      this.logger.log(
+        `File overwritten via uploadFromStream: "${filename}" (${size} bytes, userId: ${userId})`,
+      );
       return updated;
     } else {
       const record = await this.prisma.fileRecord.create({
@@ -1688,7 +2285,15 @@ export class FileService {
       });
 
       try {
-        const { fileId: telegramFileId, messageId: telegramMessageId, botId } = await this.telegram.uploadStream(encryptedStream, record.id, signal);
+        const {
+          fileId: telegramFileId,
+          messageId: telegramMessageId,
+          botId,
+        } = await this.telegram.uploadStream(
+          encryptedStream,
+          record.id,
+          signal,
+        );
 
         const updated = await this.prisma.$transaction(async (tx) => {
           const fileRecord = await tx.fileRecord.update({
@@ -1709,7 +2314,9 @@ export class FileService {
           return fileRecord;
         });
 
-        this.logger.log(`File uploaded via uploadFromStream: "${filename}" (${size} bytes, userId: ${userId})`);
+        this.logger.log(
+          `File uploaded via uploadFromStream: "${filename}" (${size} bytes, userId: ${userId})`,
+        );
         return updated;
       } catch (err) {
         await this.prisma.fileRecord.delete({ where: { id: record.id } });
@@ -1727,10 +2334,7 @@ export class FileService {
       where: {
         userId,
         deletedAt: { not: null },
-        OR: [
-          { folderId: null },
-          { folder: { deletedAt: null } },
-        ],
+        OR: [{ folderId: null }, { folder: { deletedAt: null } }],
       },
       orderBy: { deletedAt: 'desc' },
     });

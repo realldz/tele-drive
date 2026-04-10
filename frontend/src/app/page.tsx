@@ -20,9 +20,13 @@ import axios from 'axios';
 import {
   fetchFolderContent, fetchBreadcrumbs,
   createFolder, deleteFolder, restoreFolder, deleteFile, restoreFile,
-  abortUpload, requestDownloadToken, moveItem, getApiErrorMessage, formatBandwidthResetTime, API_URL,
+  abortUpload, requestDownloadToken, moveItem, formatBandwidthResetTime, API_URL,
+  isConflictError, parseConflictResponse,
 } from '@/lib/api';
+import ConflictDialog from '@/components/conflict-dialog';
+import type { ConflictInfo } from '@/lib/api';
 import type { FileRecord, FolderRecord, BreadcrumbItem } from '@/lib/types';
+import type { ConflictResolution } from '@/components/upload-context';
 
 type SortField = 'name' | 'createdAt';
 type SortDirection = 'asc' | 'desc';
@@ -30,7 +34,7 @@ type SortDirection = 'asc' | 'desc';
 export default function Dashboard() {
   const { isReady, token } = useRequireAuth();
   const { t, locale } = useI18n();
-  const { setCurrentFolderId: setUploadFolderId, setOnUploadSuccess, addFiles, addFolder } = useUpload();
+  const { setCurrentFolderId: setUploadFolderId, setOnUploadSuccess, addFiles, addFolder, resolveConflict, queue } = useUpload();
 
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [folders, setFolders] = useState<FolderRecord[]>([]);
@@ -38,6 +42,21 @@ export default function Dashboard() {
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set());
   const [isLoadingContent, setIsLoadingContent] = useState(false);
+
+  // Conflict dialog state
+  interface PendingConflict {
+    type: 'upload' | 'move';
+    itemId: string;
+    conflictInfo: ConflictInfo;
+    destinationFolderId?: string | null;
+    existingItemName?: string;
+    existingItemSize?: number;
+    existingItemDate?: string;
+    incomingSize?: number;
+    incomingDate?: string;
+  }
+  const [pendingConflict, setPendingConflict] = useState<PendingConflict | null>(null);
+  const applyToAllRef = useRef<ConflictResolution | null>(null);
 
   // Modal / dialog state
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
@@ -189,14 +208,45 @@ export default function Dashboard() {
     }
   }, [files, fetchContent, searchQuery]);
 
+  // Watch for upload conflicts in the queue
+  useEffect(() => {
+    const conflictItem = queue.find(item => item.errorMessage === 'conflict');
+    if (conflictItem && !pendingConflict) {
+      const fileInfo = conflictItem.conflictInfo;
+      if (fileInfo) {
+        setPendingConflict({
+          type: 'upload',
+          itemId: conflictItem.id,
+          conflictInfo: {
+            type: 'file',
+            id: fileInfo.existingItemId,
+            name: fileInfo.name,
+            suggestedName: '',
+            existingItemId: fileInfo.existingItemId,
+          },
+          existingItemName: fileInfo.name,
+          incomingSize: conflictItem.totalBytes,
+          incomingDate: new Date().toISOString(),
+        });
+      }
+    }
+  }, [queue, pendingConflict]);
+
   // Handlers
+  const [createFolderError, setCreateFolderError] = useState<string | null>(null);
+
   const handleCreateFolder = useCallback(async (name: string) => {
+    setCreateFolderError(null);
     try {
       await createFolder(name, currentFolderId);
       setShowCreateFolder(false);
       fetchContent();
     } catch (error: unknown) {
-      alert(getApiErrorMessage(error, t('dashboard.createFolderError')));
+      if (isConflictError(error)) {
+        setCreateFolderError(t('createFolder.nameConflict'));
+      } else {
+        setCreateFolderError(t('dashboard.createFolderError'));
+      }
     }
   }, [currentFolderId, fetchContent, t]);
 
@@ -208,11 +258,11 @@ export default function Dashboard() {
       toast.success((ti) => (
         <span className="flex items-center gap-2">
           {t('dashboard.deletedFolder')}
-          <button onClick={async () => { toast.dismiss(ti.id); try { await restoreFolder(id); fetchContent(); } catch { alert(t('dashboard.undoError')); } }}
+          <button onClick={async () => { toast.dismiss(ti.id); try { await restoreFolder(id); fetchContent(); } catch { toast.error(t('dashboard.undoError')); } }}
             className="text-blue-500 font-semibold text-sm hover:underline ml-2 cursor-pointer">{t('dashboard.undo')}</button>
         </span>
       ), { duration: 5000 });
-    } catch (error: unknown) { alert(getApiErrorMessage(error, t('dashboard.deleteStuckError'))); }
+    } catch (error: unknown) { toast.error(t('dashboard.deleteStuckError')); }
   }, [fetchContent, t]);
 
   const handleDeleteFile = useCallback(async (e: React.MouseEvent, id: string) => {
@@ -223,17 +273,17 @@ export default function Dashboard() {
       toast.success((ti) => (
         <span className="flex items-center gap-2">
           {t('dashboard.deletedFile')}
-          <button onClick={async () => { toast.dismiss(ti.id); try { await restoreFile(id); fetchContent(); } catch { alert(t('dashboard.undoError')); } }}
+          <button onClick={async () => { toast.dismiss(ti.id); try { await restoreFile(id); fetchContent(); } catch { toast.error(t('dashboard.undoError')); } }}
             className="text-blue-500 font-semibold text-sm hover:underline ml-2 cursor-pointer">{t('dashboard.undo')}</button>
         </span>
       ), { duration: 5000 });
-    } catch (error: unknown) { alert(getApiErrorMessage(error, t('dashboard.deleteStuckError'))); }
+    } catch (error: unknown) { toast.error(t('dashboard.deleteStuckError')); }
   }, [fetchContent, t]);
 
   const handleDeleteStuckFile = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     try { await abortUpload(id); fetchContent(); }
-    catch (error: unknown) { alert(getApiErrorMessage(error, t('dashboard.deleteStuckError'))); }
+    catch (error: unknown) { toast.error(t('dashboard.deleteStuckError')); }
   }, [fetchContent, t]);
 
   const handleDownload = useCallback(async (fileId: string, filename: string) => {
@@ -273,7 +323,7 @@ export default function Dashboard() {
           await deleteFile(id);
         }
       } catch (error: unknown) {
-        alert(getApiErrorMessage(error, t('dashboard.deleteStuckError')));
+        toast.error(t('dashboard.deleteStuckError'));
       }
     }
     selection.clearSelection();
@@ -290,16 +340,90 @@ export default function Dashboard() {
     const ids = Array.from(selection.selectedIds);
     for (const id of ids) {
       const isFolder = folders.some(f => f.id === id);
+      const type: 'file' | 'folder' = isFolder ? 'folder' : 'file';
+
+      const applyStored = applyToAllRef.current;
+      if (applyStored) {
+        const action = applyStored === 'skip' ? 'skip' : applyStored === 'overwrite' ? 'overwrite' : applyStored === 'keepBoth' ? 'rename' : 'merge';
+        try {
+          await moveItem(type, id, destFolderId, action);
+        } catch (error: unknown) {
+          if (!isConflictError(error)) {
+            toast.error(t('dashboard.moveError'));
+          }
+        }
+        continue;
+      }
+
       try {
-        await moveItem(isFolder ? 'folder' : 'file', id, destFolderId);
+        await moveItem(type, id, destFolderId);
       } catch (error: unknown) {
-        alert(getApiErrorMessage(error, t('dashboard.moveError')));
+        if (isConflictError(error)) {
+          const conflict = parseConflictResponse(error);
+          if (!conflict) continue;
+          const existingItem = isFolder
+            ? folders.find(f => f.id === conflict.existingItemId)
+            : files.find(f => f.id === conflict.existingItemId);
+          const movingItem = isFolder
+            ? folders.find(f => f.id === id)
+            : files.find(f => f.id === id);
+
+          setPendingConflict({
+            type: 'move',
+            itemId: id,
+            conflictInfo: conflict,
+            destinationFolderId: destFolderId,
+            existingItemName: type === 'folder' && existingItem ? (existingItem as FolderRecord).name : type === 'file' && existingItem ? (existingItem as FileRecord).filename : conflict.name,
+            existingItemDate: existingItem?.updatedAt,
+            incomingSize: type === 'file' && movingItem ? (movingItem as FileRecord).size : undefined,
+            incomingDate: movingItem?.updatedAt,
+          });
+          return;
+        }
+        toast.error(t('dashboard.moveError'));
       }
     }
+
     selection.clearSelection();
     setActiveDialog('none');
     fetchContent();
-  }, [selection, folders, fetchContent, t]);
+  }, [selection, folders, files, fetchContent, t]);
+
+  // Resolve conflict from dialog — works for both move and upload conflicts
+  const handleConflictResolution = useCallback(async (action: ConflictResolution, applyToAll: boolean) => {
+    if (!pendingConflict) return;
+    const { type, itemId, destinationFolderId } = pendingConflict;
+
+    if (applyToAll) {
+      applyToAllRef.current = action;
+    }
+
+    if (type === 'move') {
+      const backendAction = action === 'skip' ? 'skip' : action === 'overwrite' ? 'overwrite' : action === 'keepBoth' ? 'rename' : 'merge';
+      try {
+        const itemType = folders.some(f => f.id === itemId) ? 'folder' : 'file';
+        await moveItem(itemType, itemId, destinationFolderId ?? null, backendAction);
+        if (action !== 'skip') {
+          toast.success(
+            action === 'overwrite' ? t('conflict.overwriteSuccess')
+              : action === 'keepBoth' ? t('conflict.renamed')
+              : t('conflict.merged'),
+          );
+        } else {
+          toast.success(t('conflict.skipped'));
+        }
+        fetchContent();
+      } catch (error: unknown) {
+        if (!isConflictError(error)) {
+          toast.error(t('dashboard.moveError'));
+        }
+      }
+    } else if (type === 'upload') {
+      await resolveConflict(itemId, action);
+    }
+
+    setPendingConflict(null);
+  }, [pendingConflict, folders, fetchContent, resolveConflict, t]);
 
   const handleDragStart = (e: React.DragEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
     setDraggedItem({ id: item.id, type }); e.dataTransfer.effectAllowed = 'move';
@@ -312,8 +436,35 @@ export default function Dashboard() {
   const handleDrop = async (e: React.DragEvent, targetFolderId: string | null) => {
     e.preventDefault(); e.stopPropagation(); setDragOverFolderId(null);
     if (!draggedItem || targetFolderId === (currentFolderId || null) || draggedItem.id === targetFolderId) return;
-    try { await moveItem(draggedItem.type, draggedItem.id, targetFolderId); fetchContent(); }
-    catch (error: unknown) { alert(getApiErrorMessage(error, t('dashboard.moveError'))); }
+
+    try {
+      await moveItem(draggedItem.type, draggedItem.id, targetFolderId);
+      fetchContent();
+    } catch (error: unknown) {
+      if (isConflictError(error)) {
+        const conflict = parseConflictResponse(error);
+        if (!conflict) return;
+        const existingItem = draggedItem.type === 'folder'
+          ? folders.find(f => f.id === conflict.existingItemId)
+          : files.find(f => f.id === conflict.existingItemId);
+        const movingItem = draggedItem.type === 'folder'
+          ? folders.find(f => f.id === draggedItem.id)
+          : files.find(f => f.id === draggedItem.id);
+
+        setPendingConflict({
+          type: 'move',
+          itemId: draggedItem.id,
+          conflictInfo: conflict,
+          destinationFolderId: targetFolderId,
+          existingItemName: draggedItem.type === 'folder' && existingItem ? (existingItem as FolderRecord).name : draggedItem.type === 'file' && existingItem ? (existingItem as FileRecord).filename : conflict.name,
+          existingItemDate: existingItem?.updatedAt,
+          incomingSize: draggedItem.type === 'file' && movingItem ? (movingItem as FileRecord).size : undefined,
+          incomingDate: movingItem?.updatedAt,
+        });
+        return;
+      }
+      toast.error(t('dashboard.moveError'));
+    }
     setDraggedItem(null);
   };
 
@@ -466,6 +617,7 @@ export default function Dashboard() {
       <DashboardDialogs
         showCreateFolder={showCreateFolder} setShowCreateFolder={setShowCreateFolder}
         onCreateFolder={handleCreateFolder}
+        createFolderError={createFolderError} setCreateFolderError={setCreateFolderError}
         activeDialog={activeDialog} setActiveDialog={setActiveDialog}
         dialogItem={dialogItem} dialogItemType={dialogItemType}
         fetchContent={fetchContent}
@@ -473,7 +625,46 @@ export default function Dashboard() {
         batchMoveItemToMove={batchMoveItem}
         onBatchMoveConfirm={handleBatchMoveConfirm}
         previewFileId={previewFileId} setPreviewFileId={setPreviewFileId}
+        onMoveConflict={(itemId, itemType, error) => {
+          const conflict = parseConflictResponse(error);
+          if (!conflict) return;
+          const existingItem = itemType === 'folder'
+            ? folders.find(f => f.id === conflict.existingItemId)
+            : files.find(f => f.id === conflict.existingItemId);
+          const movingItem = itemType === 'folder'
+            ? folders.find(f => f.id === itemId)
+            : files.find(f => f.id === itemId);
+
+          setPendingConflict({
+            type: 'move',
+            itemId,
+            conflictInfo: conflict,
+            existingItemName: itemType === 'folder' && existingItem ? (existingItem as FolderRecord).name : itemType === 'file' && existingItem ? (existingItem as FileRecord).filename : conflict.name,
+            existingItemDate: existingItem?.updatedAt,
+            incomingSize: itemType === 'file' && movingItem ? (movingItem as FileRecord).size : undefined,
+            incomingDate: movingItem?.updatedAt,
+          });
+        }}
       />
+
+      {/* Conflict Dialog */}
+      {pendingConflict && (
+        <ConflictDialog
+          isOpen={!!pendingConflict}
+          onClose={() => setPendingConflict(null)}
+          conflictType={pendingConflict.conflictInfo.type}
+          incomingName={pendingConflict.conflictInfo.name}
+          incomingSize={pendingConflict.incomingSize}
+          incomingDate={pendingConflict.incomingDate}
+          existingName={pendingConflict.existingItemName || pendingConflict.conflictInfo.name}
+          existingSize={pendingConflict.existingItemSize}
+          existingDate={pendingConflict.existingItemDate}
+          onOverwrite={(applyToAll) => handleConflictResolution('overwrite', applyToAll)}
+          onKeepBoth={(applyToAll) => handleConflictResolution('keepBoth', applyToAll)}
+          onMerge={(applyToAll) => handleConflictResolution('merge', applyToAll)}
+          onSkip={(applyToAll) => handleConflictResolution('skip', applyToAll)}
+        />
+      )}
     </div>
   );
 }

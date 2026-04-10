@@ -8,6 +8,8 @@ import { useAppSelector } from '@/lib/store';
 import { loadUploadConfig } from '@/lib/upload-config-slice';
 import { useAppDispatch } from '@/lib/store';
 
+export type ConflictResolution = 'overwrite' | 'keepBoth' | 'merge' | 'skip';
+
 export interface QueueItem {
   id: string;
   file: File;
@@ -21,6 +23,8 @@ export interface QueueItem {
   totalChunks: number;
   errorMessage?: string;
   serverFileId?: string;
+  conflictInfo?: { type: 'file' | 'folder'; name: string; existingItemId: string };
+  conflictAction?: 'overwrite' | 'rename';
 }
 
 interface UploadContextValue {
@@ -32,10 +36,12 @@ interface UploadContextValue {
   cancelAll: () => void;
   clearCompleted: () => void;
   retryItem: (id: string) => void;
+  resolveConflict: (id: string, action: ConflictResolution) => Promise<void>;
   currentFolderId?: string;
   setCurrentFolderId: (id?: string) => void;
   onUploadSuccess?: () => void;
   setOnUploadSuccess: (cb: (() => void) | undefined) => void;
+  setOnConflict: (cb: ((queueItem: QueueItem) => Promise<ConflictResolution>) | undefined) => void;
 }
 
 const UploadContext = createContext<UploadContextValue | undefined>(undefined);
@@ -54,6 +60,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
   const abortControllersRef = useRef<Map<string, AbortController[]>>(new Map());
   const processingRef = useRef(false);
   const onUploadSuccessRef = useRef<(() => void) | undefined>(undefined);
+  const onConflictRef = useRef<((queueItem: QueueItem) => Promise<ConflictResolution>) | undefined>(undefined);
   const queueRef = useRef(queue);
   queueRef.current = queue;
 
@@ -89,7 +96,11 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     formData.append('file', item.file);
     if (item.targetFolderId) formData.append('folderId', item.targetFolderId);
 
-    await axios.post(`${API_URL}/files/upload`, formData, {
+    const url = item.conflictAction
+      ? `${API_URL}/files/upload?onConflict=${item.conflictAction}`
+      : `${API_URL}/files/upload`;
+
+    await axios.post(url, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       signal: abortController.signal,
       onUploadProgress: (progressEvent) => {
@@ -107,7 +118,11 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     const totalChunks = Math.ceil(item.file.size / maxChunkSize);
     updateItem(item.id, { totalChunks });
 
-    const initRes = await axios.post(`${API_URL}/files/upload/init`, {
+    const initUrl = item.conflictAction
+      ? `${API_URL}/files/upload/init?onConflict=${item.conflictAction}`
+      : `${API_URL}/files/upload/init`;
+
+    const initRes = await axios.post(initUrl, {
       filename: item.file.name,
       size: item.file.size,
       mimeType: item.file.type || 'application/octet-stream',
@@ -260,6 +275,16 @@ export function UploadProvider({ children }: { children: ReactNode }) {
         } catch (error: unknown) {
           if (axios.isCancel(error) || (error instanceof Error && error.message === 'Upload cancelled')) {
             // Already handled by cancelItem
+          } else if (axios.isAxiosError(error) && error.response?.status === 409) {
+            updateItem(nextItem.id, {
+              status: 'error',
+              errorMessage: 'conflict',
+              conflictInfo: {
+                type: 'file',
+                name: nextItem.file.name,
+                existingItemId: error.response.data?.existingItemId || '',
+              },
+            });
           } else {
             const errorMessage = axios.isAxiosError(error)
               ? error.response?.data?.message || error.message || 'Upload failed'
@@ -408,8 +433,35 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       completedChunks: 0,
       errorMessage: undefined,
       serverFileId: undefined,
+      conflictInfo: undefined,
     });
   }, [updateItem]);
+
+  // Resolve conflict by re-trying upload with chosen action
+  const resolveConflict = useCallback(async (id: string, action: ConflictResolution) => {
+    if (action === 'skip') {
+      updateItem(id, { status: 'cancelled', errorMessage: 'Skipped (conflict)' });
+      return;
+    }
+
+    // Merge is only for folders — uploads are files, so treat merge as keepBoth (rename)
+    const backendAction = action === 'merge' ? 'rename' : action === 'keepBoth' ? 'rename' : 'overwrite';
+
+    updateItem(id, {
+      status: 'pending',
+      progress: 0,
+      uploadedBytes: 0,
+      completedChunks: 0,
+      errorMessage: undefined,
+      serverFileId: undefined,
+      conflictInfo: undefined,
+      conflictAction: backendAction,
+    });
+  }, [updateItem]);
+
+  const setOnConflict = useCallback((cb: ((queueItem: QueueItem) => Promise<ConflictResolution>) | undefined) => {
+    onConflictRef.current = cb;
+  }, []);
 
   const setOnUploadSuccess = useCallback((cb: (() => void) | undefined) => {
     onUploadSuccessRef.current = cb;
@@ -428,6 +480,8 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       currentFolderId,
       setCurrentFolderId,
       setOnUploadSuccess,
+      setOnConflict,
+      resolveConflict,
     }}>
       {children}
     </UploadContext.Provider>

@@ -3,12 +3,18 @@ import type { S3AuthenticatedRequest } from '../common/types/request';
 import { AwsChunkedDecodeStream } from './aws-chunked-decode.stream';
 
 export function isAwsChunkedRequest(req: S3AuthenticatedRequest): boolean {
-  const contentEncoding = String(req.headers['content-encoding'] || '').toLowerCase();
-  const contentSha256 = String(req.headers['x-amz-content-sha256'] || '').toUpperCase();
+  const contentEncoding = String(
+    req.headers['content-encoding'] || '',
+  ).toLowerCase();
+  const contentSha256 = String(
+    req.headers['x-amz-content-sha256'] || '',
+  ).toUpperCase();
 
-  return contentEncoding.includes('aws-chunked')
-    || contentSha256.startsWith('STREAMING-AWS4-HMAC-SHA256-PAYLOAD')
-    || req.headers['x-amz-decoded-content-length'] !== undefined;
+  return (
+    contentEncoding.includes('aws-chunked') ||
+    contentSha256.startsWith('STREAMING-AWS4-HMAC-SHA256-PAYLOAD') ||
+    req.headers['x-amz-decoded-content-length'] !== undefined
+  );
 }
 
 export function getS3RequestContentLength(req: S3AuthenticatedRequest): number {
@@ -18,8 +24,13 @@ export function getS3RequestContentLength(req: S3AuthenticatedRequest): number {
     if (Number.isFinite(value) && value >= 0) return value;
   }
 
-  const contentLength = parseInt(String(req.headers['content-length'] || '0'), 10);
-  return Number.isFinite(contentLength) && contentLength >= 0 ? contentLength : 0;
+  const contentLength = parseInt(
+    String(req.headers['content-length'] || '0'),
+    10,
+  );
+  return Number.isFinite(contentLength) && contentLength >= 0
+    ? contentLength
+    : 0;
 }
 
 export function wrapRequestStream(req: S3AuthenticatedRequest): {

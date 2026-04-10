@@ -15,7 +15,9 @@ import { OptionalJwtGuard } from './optional-jwt.guard';
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({
-        secret: configService.get<string>('JWT_SECRET') || 'default-jwt-secret-change-me',
+        secret:
+          configService.get<string>('JWT_SECRET') ||
+          'default-jwt-secret-change-me',
         signOptions: { expiresIn: '7d' },
       }),
       inject: [ConfigService],

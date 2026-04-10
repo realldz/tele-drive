@@ -12,9 +12,11 @@ import SelectionActionBar from '@/components/selection-action-bar';
 import {
   formatSize, fetchTrash as fetchTrashApi,
   restoreFile, permanentDeleteFile, restoreFolder, permanentDeleteFolder,
-  getApiErrorMessage, emptyTrash as emptyTrashApi,
+  getApiErrorMessage, getCleanupStatus, startCleanup,
+  TrashCleanupStatus,
 } from '@/lib/api';
 import type { TrashedFile, TrashedFolder } from '@/lib/types';
+import toast from 'react-hot-toast';
 
 export default function TrashPage() {
   const { isReady, token } = useRequireAuth();
@@ -24,6 +26,7 @@ export default function TrashPage() {
   const [trashedFolders, setTrashedFolders] = useState<TrashedFolder[]>([]);
   const [isEmptying, setIsEmptying] = useState(false);
   const [actionIds, setActionIds] = useState<Set<string>>(new Set());
+  const [cleanupStatus, setCleanupStatus] = useState<TrashCleanupStatus>({ isCleaning: false });
 
   const selection = useSelection();
   const contentRef = useRef<HTMLDivElement>(null);
@@ -70,6 +73,27 @@ export default function TrashPage() {
   useEffect(() => {
     fetchTrash();
   }, [fetchTrash]);
+
+  // Poll cleanup status every 2s while cleaning
+  useEffect(() => {
+    if (!cleanupStatus.isCleaning) return;
+    const interval = setInterval(async () => {
+      try {
+        const status = await getCleanupStatus();
+        setCleanupStatus(status);
+        if (!status.isCleaning) {
+          fetchTrash();
+          const deletedCount = status.deletedCount ?? 0;
+          if (deletedCount > 0) {
+            toast.success(t('trash.cleanupComplete', { count: String(deletedCount) }));
+          }
+        }
+      } catch {
+        // Ignore polling errors
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [cleanupStatus.isCleaning, fetchTrash, t]);
 
   // Single-item handlers
   const handleRestoreFile = async (id: string) => {
@@ -158,14 +182,17 @@ export default function TrashPage() {
 
   const handleEmptyTrash = async () => {
     if (!confirm(t('trash.emptyTrashConfirm'))) return;
+    if (cleanupStatus.isCleaning) {
+      toast(t('trash.cleanupInProgress'), { icon: '⏳' });
+      return;
+    }
     setIsEmptying(true);
     try {
-      await emptyTrashApi();
-      await fetchTrash();
-      selection.clearSelection();
+      await startCleanup();
+      toast.success(t('trash.cleanupStarted'), { duration: 5000, icon: '🗑️' });
+      setCleanupStatus({ isCleaning: true });
     } catch (error: unknown) {
       alert(getApiErrorMessage(error, 'Error emptying trash'));
-    } finally {
       setIsEmptying(false);
     }
   };
@@ -248,10 +275,10 @@ export default function TrashPage() {
             {totalItems > 0 && (
               <button
                 onClick={handleEmptyTrash}
-                disabled={isEmptying}
+                disabled={isEmptying || cleanupStatus.isCleaning}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
               >
-                {isEmptying ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                {(isEmptying || cleanupStatus.isCleaning) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                 <span className="hidden sm:inline">{t('trash.emptyTrash')}</span>
               </button>
             )}
@@ -320,10 +347,10 @@ export default function TrashPage() {
                                   </button>
                                   <button
                                     onClick={(e) => { e.stopPropagation(); if (confirm(t('trash.confirmDeleteFolder'))) handlePermanentDeleteFolder(folder.id); }}
-                                    disabled={actionIds.has(folder.id) || isEmptying}
+                                    disabled={actionIds.has(folder.id) || isEmptying || cleanupStatus.isCleaning}
                                     className="p-2 text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 disabled:hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium"
                                   >
-                                    {actionIds.has(folder.id) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                                    {(actionIds.has(folder.id) || isEmptying || cleanupStatus.isCleaning) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                                     <span className="hidden sm:inline">{t('trash.permanentDelete')}</span>
                                   </button>
                                 </div>
@@ -375,10 +402,10 @@ export default function TrashPage() {
                                   </button>
                                   <button
                                     onClick={(e) => { e.stopPropagation(); if (confirm(t('trash.confirmDeleteFile'))) handlePermanentDeleteFile(file.id); }}
-                                    disabled={actionIds.has(file.id) || isEmptying}
+                                    disabled={actionIds.has(file.id) || isEmptying || cleanupStatus.isCleaning}
                                     className="p-2 text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 disabled:hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium"
                                   >
-                                    {actionIds.has(file.id) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                                    {(actionIds.has(file.id) || isEmptying || cleanupStatus.isCleaning) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
                                     <span className="hidden sm:inline">{t('trash.permanentDelete')}</span>
                                   </button>
                                 </div>
@@ -412,7 +439,7 @@ export default function TrashPage() {
         variant="trash"
         onRestore={handleBatchRestore}
         onPermanentDelete={handleBatchPermanentDelete}
-        disabled={isEmptying}
+        disabled={isEmptying || cleanupStatus.isCleaning}
       />
     </div>
   );

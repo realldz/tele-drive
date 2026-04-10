@@ -1,4 +1,9 @@
-import { Injectable, Logger, UnauthorizedException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  UnauthorizedException,
+  ConflictException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
@@ -22,7 +27,9 @@ export class AuthService {
       where: { username },
     });
     if (existing) {
-      this.logger.warn(`Registration failed: username "${username}" already exists`);
+      this.logger.warn(
+        `Registration failed: username "${username}" already exists`,
+      );
       throw new ConflictException('Username already exists');
     }
 
@@ -41,9 +48,13 @@ export class AuthService {
     });
 
     if (role === 'ADMIN') {
-      this.logger.log(`First user registered as ADMIN: "${username}" (id: ${user.id})`);
+      this.logger.log(
+        `First user registered as ADMIN: "${username}" (id: ${user.id})`,
+      );
     } else {
-      this.logger.log(`User registered: "${username}" (id: ${user.id}, role: ${role})`);
+      this.logger.log(
+        `User registered: "${username}" (id: ${user.id}, role: ${role})`,
+      );
     }
 
     // Trả về JWT luôn sau khi đăng ký
@@ -76,7 +87,9 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    this.logger.log(`User logged in: "${username}" (id: ${user.id}, role: ${user.role})`);
+    this.logger.log(
+      `User logged in: "${username}" (id: ${user.id}, role: ${user.role})`,
+    );
 
     const payload = { sub: user.id, username: user.username, role: user.role };
     return {

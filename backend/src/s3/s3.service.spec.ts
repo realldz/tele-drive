@@ -41,11 +41,14 @@ describe('S3Service', () => {
     });
 
     it('should throw BadRequestException on more than 1000 keys', () => {
-      const objects = Array.from({ length: 1001 }, (_, i) =>
-        `<Object><Key>file${i}.txt</Key></Object>`
+      const objects = Array.from(
+        { length: 1001 },
+        (_, i) => `<Object><Key>file${i}.txt</Key></Object>`,
       ).join('');
       const xml = `<Delete>${objects}</Delete>`;
-      expect(() => service.parseDeleteObjectsXml(xml)).toThrow(BadRequestException);
+      expect(() => service.parseDeleteObjectsXml(xml)).toThrow(
+        BadRequestException,
+      );
       expect(() => service.parseDeleteObjectsXml(xml)).toThrow('MalformedXML');
     });
 
@@ -74,22 +77,39 @@ describe('S3Service', () => {
       } as any;
       service = new S3Service(prisma);
 
-      await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/reports/')).resolves.toBe('folder-reports');
+      await expect(
+        service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/reports/'),
+      ).resolves.toBe('folder-reports');
 
       expect(prisma.folder.findFirst).toHaveBeenCalledWith({
-        where: { userId: 'user-1', name: 'bucket-a', parentId: null, deletedAt: null },
+        where: {
+          userId: 'user-1',
+          name: 'bucket-a',
+          parentId: null,
+          deletedAt: null,
+        },
       });
       expect(prisma.folder.create).toHaveBeenNthCalledWith(1, {
         data: { name: 'bucket-a', parentId: null, userId: 'user-1' },
       });
       expect(prisma.folder.findFirst).toHaveBeenCalledWith({
-        where: { name: 'docs', parentId: 'bucket-id', userId: 'user-1', deletedAt: null },
+        where: {
+          name: 'docs',
+          parentId: 'bucket-id',
+          userId: 'user-1',
+          deletedAt: null,
+        },
       });
       expect(prisma.folder.create).toHaveBeenNthCalledWith(2, {
         data: { name: 'docs', parentId: 'bucket-id', userId: 'user-1' },
       });
       expect(prisma.folder.findFirst).toHaveBeenCalledWith({
-        where: { name: 'reports', parentId: 'folder-docs', userId: 'user-1', deletedAt: null },
+        where: {
+          name: 'reports',
+          parentId: 'folder-docs',
+          userId: 'user-1',
+          deletedAt: null,
+        },
       });
       expect(prisma.folder.create).toHaveBeenNthCalledWith(3, {
         data: { name: 'reports', parentId: 'folder-docs', userId: 'user-1' },
@@ -111,23 +131,29 @@ describe('S3Service', () => {
       } as any;
       service = new S3Service(prisma);
 
-      await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/reports/')).resolves.toBe('folder-reports');
+      await expect(
+        service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/reports/'),
+      ).resolves.toBe('folder-reports');
 
       expect(prisma.folder.create).not.toHaveBeenCalled();
     });
 
     it('throws on empty key / with InvalidArgument', async () => {
-      await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', '/')).rejects.toThrow(BadRequestException);
-      await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', '/')).rejects.toThrow('InvalidArgument');
+      await expect(
+        service.resolveKeyAsFolder('user-1', 'bucket-a', '/'),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.resolveKeyAsFolder('user-1', 'bucket-a', '/'),
+      ).rejects.toThrow('InvalidArgument');
     });
 
     it('rejects non-folder keys with InvalidArgument', async () => {
-      await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/file.txt')).rejects.toThrow(
-        BadRequestException,
-      );
-      await expect(service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/file.txt')).rejects.toThrow(
-        'InvalidArgument',
-      );
+      await expect(
+        service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/file.txt'),
+      ).rejects.toThrow(BadRequestException);
+      await expect(
+        service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/file.txt'),
+      ).rejects.toThrow('InvalidArgument');
     });
   });
 
@@ -135,7 +161,13 @@ describe('S3Service', () => {
     it('should include both Deleted and Error entries in verbose mode', () => {
       const xml = service.buildDeleteResultXml(
         [{ key: 'ok.txt' }],
-        [{ key: 'missing.txt', code: 'NoSuchKey', message: 'The specified key does not exist.' }],
+        [
+          {
+            key: 'missing.txt',
+            code: 'NoSuchKey',
+            message: 'The specified key does not exist.',
+          },
+        ],
         false,
       );
 
@@ -144,13 +176,21 @@ describe('S3Service', () => {
       expect(xml).toContain('<Error>');
       expect(xml).toContain('<Key>missing.txt</Key>');
       expect(xml).toContain('<Code>NoSuchKey</Code>');
-      expect(xml).toContain('<Message>The specified key does not exist.</Message>');
+      expect(xml).toContain(
+        '<Message>The specified key does not exist.</Message>',
+      );
     });
 
     it('should include only Error entries in quiet mode', () => {
       const xml = service.buildDeleteResultXml(
         [{ key: 'ok.txt' }],
-        [{ key: 'missing.txt', code: 'NoSuchKey', message: 'The specified key does not exist.' }],
+        [
+          {
+            key: 'missing.txt',
+            code: 'NoSuchKey',
+            message: 'The specified key does not exist.',
+          },
+        ],
         true,
       );
 
@@ -162,7 +202,9 @@ describe('S3Service', () => {
     it('should return empty DeleteResult body for all-success quiet mode', () => {
       const xml = service.buildDeleteResultXml([{ key: 'ok.txt' }], [], true);
 
-      expect(xml).toContain('<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>');
+      expect(xml).toContain(
+        '<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></DeleteResult>',
+      );
       expect(xml).not.toContain('<Deleted>');
       expect(xml).not.toContain('<Error>');
     });

@@ -32,7 +32,8 @@ function getRetryAfterMs(err: any): number | null {
     return retryAfterSec * 1000;
   }
   // Fallback: parse "retry after N" from description (Telegram 400-based rate limits)
-  const desc: string = err.response?.description ?? err.description ?? err.message ?? '';
+  const desc: string =
+    err.response?.description ?? err.description ?? err.message ?? '';
   const match = desc.match(/retry after (\d+)/i);
   if (match) {
     const secs = parseInt(match[1], 10);
@@ -48,14 +49,21 @@ function isRetryable(err: any): boolean {
   if (code && RETRYABLE_CODES.has(code)) return true;
   // Telegraf wraps HTTP errors with response.error_code
   const status: number | undefined =
-    err.response?.statusCode ?? err.response?.error_code ?? err.on?.response?.statusCode;
+    err.response?.statusCode ??
+    err.response?.error_code ??
+    err.on?.response?.statusCode;
   if (status && RETRYABLE_HTTP.has(status)) return true;
   // Telegram sometimes returns rate limits as error_code 400 with "too Many Requests" in description
   const desc: string = err.response?.description ?? err.description ?? '';
   if (desc.toLowerCase().includes('too many requests')) return true;
   // Message-based heuristic for fetch / undici errors
   const msg: string = String(err.message ?? '');
-  if (msg.includes('ECONNRESET') || msg.includes('fetch failed') || msg.includes('terminated')) return true;
+  if (
+    msg.includes('ECONNRESET') ||
+    msg.includes('fetch failed') ||
+    msg.includes('terminated')
+  )
+    return true;
   if (msg.toLowerCase().includes('too many requests')) return true;
   return false;
 }
@@ -71,7 +79,10 @@ export class TelegramService implements OnModuleInit {
   private readonly BASE_DELAY_MS = 1000;
 
   /** In-memory cache: telegramFileId → { url, expiry } */
-  private readonly fileLinkCache = new Map<string, { url: string; expiry: number }>();
+  private readonly fileLinkCache = new Map<
+    string,
+    { url: string; expiry: number }
+  >();
   /** 50 minutes — Telegram file links are valid ~1 hour */
   private readonly CACHE_TTL_MS = 50 * 60 * 1000;
 
@@ -108,20 +119,29 @@ export class TelegramService implements OnModuleInit {
   ) {
     this.chatId = this.configService.get<string>('TELEGRAM_CHAT_ID') || '';
 
-    const apiRoot = this.configService.get<string>('TELEGRAM_API_ROOT') || 'https://api.telegram.org';
-    this.extraTokens = (this.configService.get<string>('TELEGRAM_UPLOAD_BOT_TOKENS') || '')
-      .split(',').map(t => t.trim()).filter(Boolean);
+    const apiRoot =
+      this.configService.get<string>('TELEGRAM_API_ROOT') ||
+      'https://api.telegram.org';
+    this.extraTokens = (
+      this.configService.get<string>('TELEGRAM_UPLOAD_BOT_TOKENS') || ''
+    )
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean);
 
     this.initBots = [
-      this.bot.telegram,  // index 0: main bot
-      ...this.extraTokens.map(t => new Telegram(t, { apiRoot })),
+      this.bot.telegram, // index 0: main bot
+      ...this.extraTokens.map((t) => new Telegram(t, { apiRoot })),
     ];
 
     this.SEND_RATE_LIMIT = parseInt(
-      this.configService.get<string>('TELEGRAM_SEND_RATE_LIMIT') || '18', 10,
+      this.configService.get<string>('TELEGRAM_SEND_RATE_LIMIT') || '18',
+      10,
     );
 
-    this.logger.log(`Initialized ${this.initBots.length} bot(s), rate limit: ${this.SEND_RATE_LIMIT}/min per bot`);
+    this.logger.log(
+      `Initialized ${this.initBots.length} bot(s), rate limit: ${this.SEND_RATE_LIMIT}/min per bot`,
+    );
   }
 
   async onModuleInit(): Promise<void> {
@@ -130,7 +150,9 @@ export class TelegramService implements OnModuleInit {
       this.initBots.map((botClient) => botClient.getMe()),
     );
 
-    const mainToken: string = (this.bot.telegram as unknown as { token: string }).token;
+    const mainToken: string = (
+      this.bot.telegram as unknown as { token: string }
+    ).token;
 
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
@@ -142,26 +164,38 @@ export class TelegramService implements OnModuleInit {
         this.botIdList.push(botId);
         this.sendTimestamps.set(botId, []);
         if (i === 0) this.mainBotId = botId;
-        this.logger.log(`Bot ${i}: id=${botId}, username=@${result.value.username}`);
+        this.logger.log(
+          `Bot ${i}: id=${botId}, username=@${result.value.username}`,
+        );
       } else {
         this.logger.error(`Failed to getMe() for bot ${i}: ${result.reason}`);
       }
     }
 
-    this.logger.log(`Bot ID map ready: ${this.botIdList.length} bot(s) [${this.botIdList.join(', ')}]`);
+    this.logger.log(
+      `Bot ID map ready: ${this.botIdList.length} bot(s) [${this.botIdList.join(', ')}]`,
+    );
   }
 
   /** Number of available bots */
-  get botCount(): number { return this.botIdList.length; }
+  get botCount(): number {
+    return this.botIdList.length;
+  }
 
   /** Check if a bot with the given Telegram ID is currently available */
-  isBotAvailable(botId: bigint): boolean { return this.botMap.has(botId); }
+  isBotAvailable(botId: bigint): boolean {
+    return this.botMap.has(botId);
+  }
 
   /** Get list of all available bot IDs */
-  get availableBotIds(): bigint[] { return [...this.botIdList]; }
+  get availableBotIds(): bigint[] {
+    return [...this.botIdList];
+  }
 
   /** Get the main bot's Telegram numeric ID */
-  get mainBotTelegramId(): bigint { return this.mainBotId; }
+  get mainBotTelegramId(): bigint {
+    return this.mainBotId;
+  }
 
   // ─── Rate Limiter ──────────────────────────────────────────────────
 
@@ -186,13 +220,16 @@ export class TelegramService implements OnModuleInit {
     }
     if (this.botIdList.length === 0) return 0;
     const now = Date.now();
-    return Math.max(0, Math.min(
-      ...this.botIdList.map((botId) => {
-        const ts = this.sendTimestamps.get(botId);
-        if (!ts || ts.length === 0) return 0;
-        return ts[0] + this.SEND_RATE_WINDOW_MS - now;
-      }),
-    ));
+    return Math.max(
+      0,
+      Math.min(
+        ...this.botIdList.map((botId) => {
+          const ts = this.sendTimestamps.get(botId);
+          if (!ts || ts.length === 0) return 0;
+          return ts[0] + this.SEND_RATE_WINDOW_MS - now;
+        }),
+      ),
+    );
   }
 
   /**
@@ -200,7 +237,9 @@ export class TelegramService implements OnModuleInit {
    * Waits if all bots are at their rate limit.
    * Accepts optional AbortSignal to cancel the wait (e.g., on client disconnect).
    */
-  async acquireUploadSlot(signal?: AbortSignal): Promise<{ botClient: Telegram; botId: bigint }> {
+  async acquireUploadSlot(
+    signal?: AbortSignal,
+  ): Promise<{ botClient: Telegram; botId: bigint }> {
     while (true) {
       if (signal?.aborted) throw new Error('Upload cancelled');
 
@@ -215,7 +254,9 @@ export class TelegramService implements OnModuleInit {
       }
       if (bestAvail > 0) {
         this.sendTimestamps.get(bestBotId)!.push(Date.now());
-        this.logger.debug(`Upload slot acquired: bot ${bestBotId} (${bestAvail - 1} slots remaining)`);
+        this.logger.debug(
+          `Upload slot acquired: bot ${bestBotId} (${bestAvail - 1} slots remaining)`,
+        );
         return { botClient: this.botMap.get(bestBotId)!, botId: bestBotId };
       }
       // All bots full — wait for the earliest slot to expire
@@ -227,7 +268,9 @@ export class TelegramService implements OnModuleInit {
           return ts[0] + this.SEND_RATE_WINDOW_MS - now + 100;
         }),
       );
-      this.logger.debug(`Rate limiter: all ${this.botIdList.length} bot(s) full, waiting ${minWait}ms`);
+      this.logger.debug(
+        `Rate limiter: all ${this.botIdList.length} bot(s) full, waiting ${minWait}ms`,
+      );
       await new Promise<void>((resolve, reject) => {
         const timer = setTimeout(resolve, minWait);
         if (signal) {
@@ -236,10 +279,14 @@ export class TelegramService implements OnModuleInit {
             reject(new Error('Upload cancelled'));
             return;
           }
-          signal.addEventListener('abort', () => {
-            clearTimeout(timer);
-            reject(new Error('Upload cancelled'));
-          }, { once: true });
+          signal.addEventListener(
+            'abort',
+            () => {
+              clearTimeout(timer);
+              reject(new Error('Upload cancelled'));
+            },
+            { once: true },
+          );
         }
       });
     }
@@ -274,7 +321,10 @@ export class TelegramService implements OnModuleInit {
    * - On 429: waits exactly the duration Telegram specifies via retry_after
    * - On other transient errors: exponential backoff (1s → 2s → 4s)
    */
-  private async withRetry<T>(operation: string, fn: () => Promise<T>): Promise<T> {
+  private async withRetry<T>(
+    operation: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
     let lastError: any;
     for (let attempt = 0; attempt <= this.MAX_RETRIES; attempt++) {
       try {
@@ -284,13 +334,14 @@ export class TelegramService implements OnModuleInit {
         if (attempt < this.MAX_RETRIES && isRetryable(err)) {
           // Prefer server-specified retry_after for 429, fallback to exponential backoff
           const serverDelay = getRetryAfterMs(err);
-          const delay = serverDelay ?? this.BASE_DELAY_MS * Math.pow(2, attempt);
+          const delay =
+            serverDelay ?? this.BASE_DELAY_MS * Math.pow(2, attempt);
           const is429 = err.response?.error_code === 429 || err.code === 429;
           this.logger.warn(
             `[${operation}] ${is429 ? '429 rate-limited' : 'Transient error'} ` +
-            `(attempt ${attempt + 1}/${this.MAX_RETRIES + 1}), ` +
-            `retrying in ${delay}ms${serverDelay ? ' (server Retry-After)' : ''}: ` +
-            `${err.code || err.message}`,
+              `(attempt ${attempt + 1}/${this.MAX_RETRIES + 1}), ` +
+              `retrying in ${delay}ms${serverDelay ? ' (server Retry-After)' : ''}: ` +
+              `${err.code || err.message}`,
           );
           await new Promise((r) => setTimeout(r, delay));
         } else {
@@ -307,7 +358,11 @@ export class TelegramService implements OnModuleInit {
    * Upload file từ Buffer — rate-limited, auto-selects best bot.
    * Accepts optional AbortSignal to cancel the rate-limit wait.
    */
-  async uploadFile(buffer: Buffer, filename: string, signal?: AbortSignal): Promise<{ fileId: string; messageId: number; botId: bigint }> {
+  async uploadFile(
+    buffer: Buffer,
+    filename: string,
+    signal?: AbortSignal,
+  ): Promise<{ fileId: string; messageId: number; botId: bigint }> {
     const { botClient, botId } = await this.acquireUploadSlot(signal);
 
     const response = await this.withRetry('uploadFile', () =>
@@ -318,7 +373,9 @@ export class TelegramService implements OnModuleInit {
     );
 
     if ('document' in response) {
-      this.logger.log(`Uploaded file to Telegram: "${filename}" (fileId: ${response.document.file_id}, size: ${buffer.length}, bot: ${botId})`);
+      this.logger.log(
+        `Uploaded file to Telegram: "${filename}" (fileId: ${response.document.file_id}, size: ${buffer.length}, bot: ${botId})`,
+      );
       return {
         fileId: response.document.file_id,
         messageId: response.message_id,
@@ -333,7 +390,11 @@ export class TelegramService implements OnModuleInit {
    * NOTE: Streams are not retryable (consumed on first attempt). Caller must handle retry
    * by creating a new stream if needed.
    */
-  async uploadStream(stream: Readable, filename: string, signal?: AbortSignal): Promise<{ fileId: string; messageId: number; botId: bigint }> {
+  async uploadStream(
+    stream: Readable,
+    filename: string,
+    signal?: AbortSignal,
+  ): Promise<{ fileId: string; messageId: number; botId: bigint }> {
     const { botClient, botId } = await this.acquireUploadSlot(signal);
 
     const response = await botClient.sendDocument(this.chatId, {
@@ -342,7 +403,9 @@ export class TelegramService implements OnModuleInit {
     });
 
     if ('document' in response) {
-      this.logger.debug(`Stream uploaded to Telegram: "${filename}" (fileId: ${response.document.file_id}, bot: ${botId})`);
+      this.logger.debug(
+        `Stream uploaded to Telegram: "${filename}" (fileId: ${response.document.file_id}, bot: ${botId})`,
+      );
       return {
         fileId: response.document.file_id,
         messageId: response.message_id,
@@ -354,7 +417,11 @@ export class TelegramService implements OnModuleInit {
 
   // ─── getFileLink ───────────────────────────────────────────────────
 
-  async getFileLink(fileId: string, botId: bigint = 0n, context?: string): Promise<string> {
+  async getFileLink(
+    fileId: string,
+    botId: bigint = 0n,
+    context?: string,
+  ): Promise<string> {
     const label = context ? `[${context}]` : '';
 
     // 1. Check cache
@@ -367,7 +434,9 @@ export class TelegramService implements OnModuleInit {
     // 2. Singleflight dedup — reuse in-flight request for same fileId
     const pending = this.pendingRequests.get(fileId);
     if (pending) {
-      this.logger.debug(`File link singleflight JOIN ${label} for fileId: ${fileId}`);
+      this.logger.debug(
+        `File link singleflight JOIN ${label} for fileId: ${fileId}`,
+      );
       return pending;
     }
 
@@ -381,22 +450,31 @@ export class TelegramService implements OnModuleInit {
     }
   }
 
-  private async resolveFileLinkWithSemaphore(fileId: string, botId: bigint, context?: string): Promise<string> {
+  private async resolveFileLinkWithSemaphore(
+    fileId: string,
+    botId: bigint,
+    context?: string,
+  ): Promise<string> {
     const label = context ? `getFileLink(${context})` : 'getFileLink';
     const logLabel = context ? ` [${context}]` : '';
     // Lookup bot bằng botId, fallback về main bot nếu không tìm thấy
-    const botClient = this.botMap.get(botId) ?? this.botMap.get(this.mainBotId)!;
+    const botClient =
+      this.botMap.get(botId) ?? this.botMap.get(this.mainBotId)!;
 
     await this.acquireSemaphore();
     try {
       // Double-check cache after acquiring semaphore (another request may have resolved it)
       const cached = this.fileLinkCache.get(fileId);
       if (cached && cached.expiry > Date.now()) {
-        this.logger.debug(`File link cache HIT${logLabel} for fileId: ${fileId} (after semaphore)`);
+        this.logger.debug(
+          `File link cache HIT${logLabel} for fileId: ${fileId} (after semaphore)`,
+        );
         return cached.url;
       }
 
-      this.logger.debug(`File link cache MISS${logLabel} for fileId: ${fileId} (semaphore: ${this.semaphoreActive}/${this.SEMAPHORE_LIMIT}, bot: ${botId})`);
+      this.logger.debug(
+        `File link cache MISS${logLabel} for fileId: ${fileId} (semaphore: ${this.semaphoreActive}/${this.SEMAPHORE_LIMIT}, bot: ${botId})`,
+      );
 
       const link = await this.withRetry(label, () =>
         botClient.getFileLink(fileId),
@@ -406,17 +484,23 @@ export class TelegramService implements OnModuleInit {
       // Telegraf converts Local Bot API absolute paths to file:// URLs,
       // but we need HTTP URLs to fetch from the API server remotely.
       if (url.startsWith('file:')) {
-        const apiRoot = this.configService.get<string>('TELEGRAM_API_ROOT') || 'https://api.telegram.org';
+        const apiRoot =
+          this.configService.get<string>('TELEGRAM_API_ROOT') ||
+          'https://api.telegram.org';
         const filePath = new URL(url).pathname;
         // Tra token bằng botId map (chính xác bất kể thứ tự config)
-        const botToken = this.botTokenMap.get(botId)
-          ?? (this.bot.telegram as unknown as { token: string }).token;
+        const botToken =
+          this.botTokenMap.get(botId) ??
+          (this.bot.telegram as unknown as { token: string }).token;
         url = `${apiRoot}/file/bot${botToken}${filePath}`;
         this.logger.debug(`Converted file:// URL to HTTP${logLabel}: ${url}`);
       }
 
       // Cache the result
-      this.fileLinkCache.set(fileId, { url, expiry: Date.now() + this.CACHE_TTL_MS });
+      this.fileLinkCache.set(fileId, {
+        url,
+        expiry: Date.now() + this.CACHE_TTL_MS,
+      });
 
       return url;
     } finally {
@@ -430,17 +514,23 @@ export class TelegramService implements OnModuleInit {
    * Forward message gốc qua main bot để lấy file_id mới.
    * Dùng khi bot đã upload chunk không còn available.
    */
-  async recoverFileId(telegramMessageId: number): Promise<{ fileId: string; botId: bigint }> {
+  async recoverFileId(
+    telegramMessageId: number,
+  ): Promise<{ fileId: string; botId: bigint }> {
     const mainBot = this.botMap.get(this.mainBotId)!;
     const forwarded = await this.withRetry('recoverFileId', () =>
       mainBot.forwardMessage(this.chatId, this.chatId, telegramMessageId),
     );
     if (!forwarded || !('document' in forwarded)) {
-      throw new Error(`Cannot recover: forwarded message ${telegramMessageId} has no document`);
+      throw new Error(
+        `Cannot recover: forwarded message ${telegramMessageId} has no document`,
+      );
     }
     // Xóa message forward (cleanup)
     mainBot.deleteMessage(this.chatId, forwarded.message_id).catch(() => {});
-    this.logger.log(`Recovered file_id for message ${telegramMessageId}: ${forwarded.document.file_id} → bot ${this.mainBotId}`);
+    this.logger.log(
+      `Recovered file_id for message ${telegramMessageId}: ${forwarded.document.file_id} → bot ${this.mainBotId}`,
+    );
     return { fileId: forwarded.document.file_id, botId: this.mainBotId };
   }
 
@@ -453,7 +543,9 @@ export class TelegramService implements OnModuleInit {
       );
       this.logger.debug(`Deleted Telegram message: ${messageId}`);
     } catch (error) {
-      this.logger.warn(`Failed to delete Telegram message ${messageId}: ${error}`);
+      this.logger.warn(
+        `Failed to delete Telegram message ${messageId}: ${error}`,
+      );
     }
   }
 }
@@ -480,10 +572,13 @@ export async function fetchWithRetry(
         if (res.status === 429) {
           // Parse Retry-After header (seconds) from Telegram CDN
           const retryAfterHeader = res.headers.get('Retry-After');
-          const retryAfterSec = retryAfterHeader ? parseInt(retryAfterHeader, 10) : NaN;
-          delay = !isNaN(retryAfterSec) && retryAfterSec > 0
-            ? retryAfterSec * 1000
-            : baseDelay * Math.pow(2, attempt);
+          const retryAfterSec = retryAfterHeader
+            ? parseInt(retryAfterHeader, 10)
+            : NaN;
+          delay =
+            !isNaN(retryAfterSec) && retryAfterSec > 0
+              ? retryAfterSec * 1000
+              : baseDelay * Math.pow(2, attempt);
         } else {
           delay = baseDelay * Math.pow(2, attempt);
         }

@@ -5,9 +5,14 @@ export class AwsChunkedDecodeStream extends Transform {
 
   private buffer = Buffer.alloc(0);
   private expectedChunkSize = 0;
-  private state: 'header' | 'data' | 'data_crlf' | 'trailers' | 'done' = 'header';
+  private state: 'header' | 'data' | 'data_crlf' | 'trailers' | 'done' =
+    'header';
 
-  _transform(chunk: Buffer, _encoding: BufferEncoding, callback: TransformCallback) {
+  _transform(
+    chunk: Buffer,
+    _encoding: BufferEncoding,
+    callback: TransformCallback,
+  ) {
     try {
       this.buffer = Buffer.concat([this.buffer, chunk]);
       this.processBuffer();
@@ -34,7 +39,8 @@ export class AwsChunkedDecodeStream extends Transform {
       if (this.state === 'header') {
         const line = this.readLine();
         if (line === null) {
-          if (flush && this.buffer.length > 0) throw new Error('Invalid aws-chunked header line');
+          if (flush && this.buffer.length > 0)
+            throw new Error('Invalid aws-chunked header line');
           return;
         }
 
@@ -75,7 +81,8 @@ export class AwsChunkedDecodeStream extends Transform {
       if (this.state === 'trailers') {
         const line = this.readLine();
         if (line === null) {
-          if (flush && this.buffer.length > 0) throw new Error('Invalid aws-chunked trailer line');
+          if (flush && this.buffer.length > 0)
+            throw new Error('Invalid aws-chunked trailer line');
           return;
         }
 

@@ -1,4 +1,10 @@
-import { Injectable, CanActivate, ExecutionContext, ForbiddenException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  CanActivate,
+  ExecutionContext,
+  ForbiddenException,
+  Logger,
+} from '@nestjs/common';
 
 /**
  * Admin Guard — kiểm tra req.user.role === 'ADMIN'.
@@ -15,7 +21,9 @@ export class AdminGuard implements CanActivate {
 
     if (!user || user.role !== 'ADMIN') {
       const route = `${request.method} ${request.url}`;
-      this.logger.warn(`Admin access denied: user ${user?.userId || 'unknown'} (role: ${user?.role || 'none'}) attempted ${route}`);
+      this.logger.warn(
+        `Admin access denied: user ${user?.userId || 'unknown'} (role: ${user?.role || 'none'}) attempted ${route}`,
+      );
       throw new ForbiddenException('Admin access required');
     }
 

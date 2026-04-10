@@ -1,4 +1,25 @@
-import { Controller, Logger, Get, Post, Patch, Delete, Param, Req, Res, Query, UseInterceptors, UseGuards, ParseIntPipe, Body, Head, HttpCode, HttpStatus, UploadedFile, UnauthorizedException, SetMetadata } from '@nestjs/common';
+import {
+  Controller,
+  Logger,
+  Get,
+  Post,
+  Patch,
+  Delete,
+  Param,
+  Req,
+  Res,
+  Query,
+  UseInterceptors,
+  UseGuards,
+  ParseIntPipe,
+  Body,
+  Head,
+  HttpCode,
+  HttpStatus,
+  UploadedFile,
+  UnauthorizedException,
+  SetMetadata,
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
 import { FileService } from './file.service';
@@ -14,6 +35,8 @@ import { getClientIp } from '../common/utils/get-client-ip';
 import type { AuthenticatedRequest } from '../common/types/request';
 import type { Response, Request } from 'express';
 import { SkipThrottle } from '@nestjs/throttler';
+import type { ConflictAction } from '../common/name-conflict.service';
+import { TrashCleanupService } from '../common/trash-cleanup.service';
 
 const multerOptions = {
   storage: memoryStorage(),
@@ -28,7 +51,8 @@ export class FileController {
   constructor(
     private readonly fileService: FileService,
     private readonly cryptoService: CryptoService,
-  ) { }
+    private readonly trashCleanupService: TrashCleanupService,
+  ) {}
 
   @Public()
   @Get('config')
@@ -44,14 +68,21 @@ export class FileController {
   async upload(
     @UploadedFile() file: Express.Multer.File,
     @Body('folderId') folderId: string | undefined,
+    @Query('onConflict') onConflict: 'overwrite' | 'rename' | 'error' | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.fileService.uploadFile(file, req.user.userId, folderId);
+    return this.fileService.uploadFile(
+      file,
+      req.user.userId,
+      folderId,
+      onConflict as ConflictAction | undefined,
+    );
   }
 
   @Post('upload/init')
   async initChunkedUpload(
     @Body() body: InitUploadDto,
+    @Query('onConflict') onConflict: 'overwrite' | 'rename' | 'error' | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
     return this.fileService.initChunkedUpload(
@@ -61,6 +92,7 @@ export class FileController {
       body.totalChunks,
       req.user.userId,
       body.folderId,
+      onConflict as ConflictAction | undefined,
     );
   }
 
@@ -70,21 +102,35 @@ export class FileController {
     @Param('index', ParseIntPipe) index: number,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.fileService.uploadChunkStream(fileId, index, req.user.userId, req);
+    return this.fileService.uploadChunkStream(
+      fileId,
+      index,
+      req.user.userId,
+      req,
+    );
   }
 
   @Post('upload/:fileId/complete')
-  async completeUpload(@Param('fileId') fileId: string, @Req() req: AuthenticatedRequest) {
+  async completeUpload(
+    @Param('fileId') fileId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.fileService.completeChunkedUpload(fileId, req.user.userId);
   }
 
   @Post('upload/:fileId/abort')
-  async abortUpload(@Param('fileId') fileId: string, @Req() req: AuthenticatedRequest) {
+  async abortUpload(
+    @Param('fileId') fileId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.fileService.abortUpload(fileId, req.user.userId);
   }
 
   @Get('upload/:fileId/status')
-  async getUploadStatus(@Param('fileId') fileId: string, @Req() req: AuthenticatedRequest) {
+  async getUploadStatus(
+    @Param('fileId') fileId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.fileService.getUploadedChunks(fileId, req.user.userId);
   }
 
@@ -98,7 +144,10 @@ export class FileController {
   @Post(':id/download-token')
   @UseInterceptors(BandwidthInterceptor)
   @SetMetadata('BANDWIDTH_CHECK_ONLY', true)
-  async generateDownloadToken(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+  async generateDownloadToken(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.fileService.generateDownloadToken(id, req.user.userId);
   }
 
@@ -115,9 +164,17 @@ export class FileController {
   @UseGuards(OptionalJwtGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('d/:token')
-  async downloadBySigned(@Param('token') token: string, @Req() req: Request, @Res() res: Response) {
+  async downloadBySigned(
+    @Param('token') token: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     const downloadInfo = await this.fileService.downloadBySignedToken(token);
-    return this.fileService.processDownload(downloadInfo, res, req.headers.range);
+    return this.fileService.processDownload(
+      downloadInfo,
+      res,
+      req.headers.range,
+    );
   }
 
   @Public()
@@ -125,7 +182,8 @@ export class FileController {
   @HttpCode(HttpStatus.OK)
   async checkSignedToken(@Param('token') token: string, @Res() res: Response) {
     const payload = this.cryptoService.verifySignedToken(token);
-    if (!payload) throw new UnauthorizedException('Invalid or expired download link');
+    if (!payload)
+      throw new UnauthorizedException('Invalid or expired download link');
     res.status(200).end();
   }
 
@@ -134,16 +192,24 @@ export class FileController {
   @Post('stream-cookie')
   @UseInterceptors(BandwidthInterceptor)
   @SetMetadata('BANDWIDTH_CHECK_ONLY', true)
-  async issueStreamCookie(@Req() req: AuthenticatedRequest, @Res({ passthrough: true }) res: Response) {
+  async issueStreamCookie(
+    @Req() req: AuthenticatedRequest,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const ttl = await this.fileService.getStreamTtl();
-    const token = this.cryptoService.createStreamCookieToken(req.user.userId, ttl);
+    const token = this.cryptoService.createStreamCookieToken(
+      req.user.userId,
+      ttl,
+    );
     res.cookie('stream_token', token, {
       httpOnly: true,
       sameSite: 'strict',
       path: '/',
       maxAge: ttl * 1000,
     });
-    this.logger.debug(`Stream cookie issued for user ${req.user.userId}, ttl=${ttl}s`);
+    this.logger.debug(
+      `Stream cookie issued for user ${req.user.userId}, ttl=${ttl}s`,
+    );
     return { expiresAt: new Date(Date.now() + ttl * 1000).toISOString(), ttl };
   }
 
@@ -152,7 +218,10 @@ export class FileController {
   @Post('stream-cookie/guest')
   @UseInterceptors(BandwidthInterceptor)
   @SetMetadata('BANDWIDTH_CHECK_ONLY', true)
-  async issueGuestStreamCookie(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+  async issueGuestStreamCookie(
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const typedReq = req as unknown as AuthenticatedRequest;
     const ttl = await this.fileService.getStreamTtl();
     const subject = typedReq.user?.userId ?? `guest:${getClientIp(req)}`;
@@ -178,7 +247,11 @@ export class FileController {
   @UseGuards(StreamCookieGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('stream/:id')
-  async streamByCookie(@Param('id') id: string, @Req() req: Request & { streamUser?: { sub: string; exp: number } }, @Res() res: Response) {
+  async streamByCookie(
+    @Param('id') id: string,
+    @Req() req: Request & { streamUser?: { sub: string; exp: number } },
+    @Res() res: Response,
+  ) {
     const sub = req.streamUser!.sub;
 
     // User stream: verify ownership. Guest stream: allow if subject starts with 'guest:'
@@ -186,7 +259,7 @@ export class FileController {
       ? await this.fileService.getStreamInfoByGuest(id)
       : await this.fileService.getStreamInfoByOwner(id, sub);
 
-    return this.fileService.processStream(downloadInfo, req.headers.range as string | undefined, res);
+    return this.fileService.processStream(downloadInfo, req.headers.range, res);
   }
 
   @Public()
@@ -194,62 +267,109 @@ export class FileController {
   @UseGuards(StreamCookieGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('share/stream/:shareToken')
-  async streamSharedByCookie(@Param('shareToken') shareToken: string, @Req() req: Request, @Res() res: Response) {
+  async streamSharedByCookie(
+    @Param('shareToken') shareToken: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     const downloadInfo = await this.fileService.getShareStreamInfo(shareToken);
-    return this.fileService.processStream(downloadInfo, req.headers.range as string | undefined, res);
+    return this.fileService.processStream(downloadInfo, req.headers.range, res);
   }
 
   // ── Legacy routes (kept for backwards compatibility) ───────────────────
 
   @Get(':id/download')
   @UseInterceptors(BandwidthInterceptor)
-  async download(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
-    const downloadInfo = await this.fileService.getDownloadInfo(id, req.user.userId);
-    return this.fileService.processDownload(downloadInfo, res, req.headers.range);
+  async download(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const downloadInfo = await this.fileService.getDownloadInfo(
+      id,
+      req.user.userId,
+    );
+    return this.fileService.processDownload(
+      downloadInfo,
+      res,
+      req.headers.range,
+    );
   }
 
   @Head(':id/download')
   @HttpCode(HttpStatus.OK)
-  async checkDownload(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
+  async checkDownload(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
     await this.fileService.getFileInfo(id, req.user.userId);
     res.status(200).end();
   }
 
   @Get(':id/stream')
   @UseInterceptors(BandwidthInterceptor)
-  async streamMedia(@Param('id') id: string, @Req() req: AuthenticatedRequest, @Res() res: Response) {
-    const downloadInfo = await this.fileService.getDownloadInfo(id, req.user.userId);
-    return this.fileService.processStream(downloadInfo, req.headers.range as string | undefined, res);
+  async streamMedia(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const downloadInfo = await this.fileService.getDownloadInfo(
+      id,
+      req.user.userId,
+    );
+    return this.fileService.processStream(downloadInfo, req.headers.range, res);
   }
 
   @Public()
   @UseGuards(OptionalJwtGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('share/:token/download')
-  async downloadSharedFile(@Param('token') token: string, @Req() req: Request, @Res() res: Response) {
+  async downloadSharedFile(
+    @Param('token') token: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     const downloadInfo = await this.fileService.getDownloadInfoByToken(token);
-    return this.fileService.processDownload(downloadInfo, res, req.headers.range);
+    return this.fileService.processDownload(
+      downloadInfo,
+      res,
+      req.headers.range,
+    );
   }
 
   @Public()
   @UseGuards(OptionalJwtGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('share/:token/stream')
-  async streamSharedMedia(@Param('token') token: string, @Req() req: Request, @Res() res: Response) {
+  async streamSharedMedia(
+    @Param('token') token: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
     const downloadInfo = await this.fileService.getDownloadInfoByToken(token);
-    return this.fileService.processStream(downloadInfo, req.headers.range as string | undefined, res);
+    return this.fileService.processStream(downloadInfo, req.headers.range, res);
   }
 
   // ── File CRUD ──────────────────────────────────────────────────────────
 
   @Patch(':id/rename')
-  rename(@Param('id') id: string, @Body('name') name: string, @Req() req: AuthenticatedRequest) {
+  rename(
+    @Param('id') id: string,
+    @Body('name') name: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
     return this.fileService.rename(id, name, req.user.userId);
   }
 
   @Patch(':id/move')
-  move(@Param('id') id: string, @Body('folderId') folderId: string | null, @Req() req: AuthenticatedRequest) {
-    return this.fileService.move(id, folderId, req.user.userId);
+  move(
+    @Param('id') id: string,
+    @Body('folderId') folderId: string | null,
+    @Body('conflictAction') conflictAction: ConflictAction | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.fileService.move(id, folderId, req.user.userId, conflictAction);
   }
 
   @Post(':id/share')
@@ -270,8 +390,19 @@ export class FileController {
   }
 
   @Delete('trash/empty')
-  emptyTrash(@Req() req: AuthenticatedRequest) {
+  async emptyTrash(@Req() req: AuthenticatedRequest) {
     return this.fileService.emptyTrash(req.user.userId);
+  }
+
+  @Post('trash/cleanup')
+  @HttpCode(HttpStatus.ACCEPTED)
+  async startTrashCleanup(@Req() req: AuthenticatedRequest) {
+    return this.trashCleanupService.startCleanup(req.user.userId);
+  }
+
+  @Get('trash/cleanup-status')
+  async getTrashCleanupStatus(@Req() req: AuthenticatedRequest) {
+    return this.trashCleanupService.getCleanupStatus(req.user.userId);
   }
 
   @Delete(':id')
@@ -299,5 +430,4 @@ export class FileController {
   async reindexBots() {
     return this.fileService.reindexUnavailableBots();
   }
-
 }

@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException, BadRequestException, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  NotFoundException,
+  BadRequestException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FileService } from '../file/file.service';
 import * as bcrypt from 'bcrypt';
@@ -59,7 +65,9 @@ export class UserService {
    * PATCH /users/:id/quota — Cập nhật quota cho user (Admin only)
    */
   async updateQuota(targetUserId: string, quota: bigint) {
-    const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
     if (!user) throw new NotFoundException('User not found');
 
     if (quota < 0) {
@@ -72,19 +80,28 @@ export class UserService {
       select: { id: true, username: true, quota: true, usedSpace: true },
     });
 
-    this.logger.log(`Quota updated: user "${user.username}" (id: ${targetUserId}) → ${quota} bytes`);
+    this.logger.log(
+      `Quota updated: user "${user.username}" (id: ${targetUserId}) → ${quota} bytes`,
+    );
     return updated;
   }
 
   /**
    * PATCH /users/:id/bandwidth-limit — Cập nhật bandwidth limit (Admin only)
    */
-  async updateBandwidthLimit(targetUserId: string, dailyBandwidthLimit: bigint | null) {
-    const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+  async updateBandwidthLimit(
+    targetUserId: string,
+    dailyBandwidthLimit: bigint | null,
+  ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
     if (!user) throw new NotFoundException('User not found');
 
     if (dailyBandwidthLimit !== null && dailyBandwidthLimit < 0) {
-      throw new BadRequestException('Bandwidth limit must be a non-negative value or null');
+      throw new BadRequestException(
+        'Bandwidth limit must be a non-negative value or null',
+      );
     }
 
     const updated = await this.prisma.user.update({
@@ -93,7 +110,9 @@ export class UserService {
       select: { id: true, username: true, dailyBandwidthLimit: true },
     });
 
-    this.logger.log(`Bandwidth limit updated: user "${user.username}" (id: ${targetUserId}) → ${dailyBandwidthLimit === null ? 'system default' : `${dailyBandwidthLimit} bytes/day`}`);
+    this.logger.log(
+      `Bandwidth limit updated: user "${user.username}" (id: ${targetUserId}) → ${dailyBandwidthLimit === null ? 'system default' : `${dailyBandwidthLimit} bytes/day`}`,
+    );
     return updated;
   }
 
@@ -102,7 +121,9 @@ export class UserService {
    * Permanent delete: xoá file trên Telegram, xoá folders, xoá user
    */
   async deleteUser(targetUserId: string, requestingUserId: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
     if (!user) throw new NotFoundException('User not found');
 
     // Không cho phép admin tự xoá chính mình
@@ -117,37 +138,51 @@ export class UserService {
     });
 
     for (const file of files) {
-      await this.fileService.delete(file.id).catch(err =>
-        this.logger.warn(`Failed to delete file ${file.id} from Telegram during user deletion: ${err}`),
-      );
+      await this.fileService
+        .delete(file.id)
+        .catch((err) =>
+          this.logger.warn(
+            `Failed to delete file ${file.id} from Telegram during user deletion: ${err}`,
+          ),
+        );
     }
 
     // Xoá tất cả folders (cascade sẽ xoá file records còn sót)
     await this.prisma.folder.deleteMany({ where: { userId: targetUserId } });
 
     // Xoá file records không có folder (root-level files)
-    await this.prisma.fileRecord.deleteMany({ where: { userId: targetUserId } });
+    await this.prisma.fileRecord.deleteMany({
+      where: { userId: targetUserId },
+    });
 
     // Xoá user
     await this.prisma.user.delete({ where: { id: targetUserId } });
 
-    this.logger.log(`User deleted: "${user.username}" (id: ${targetUserId}, files cleaned: ${files.length})`);
+    this.logger.log(
+      `User deleted: "${user.username}" (id: ${targetUserId}, files cleaned: ${files.length})`,
+    );
     return { success: true, deletedFiles: files.length };
   }
 
   /**
    * PATCH /users/:id/role — Cập nhật role (Admin only)
    */
-  async updateRole(targetUserId: string, role: string, requestingUserId: string) {
+  async updateRole(
+    targetUserId: string,
+    role: string,
+    requestingUserId: string,
+  ) {
     if (targetUserId === requestingUserId && role !== 'ADMIN') {
       throw new BadRequestException('Cannot remove your own admin role');
     }
     const user = await this.prisma.user.update({
       where: { id: targetUserId },
       data: { role },
-      select: { id: true, username: true, role: true }
+      select: { id: true, username: true, role: true },
     });
-    this.logger.log(`Role updated: user "${user.username}" (id: ${targetUserId}) → ${role}`);
+    this.logger.log(
+      `Role updated: user "${user.username}" (id: ${targetUserId}) → ${role}`,
+    );
     return user;
   }
 
@@ -166,9 +201,9 @@ export class UserService {
         createdAt: true,
         updatedAt: true,
         isEncrypted: true,
-        telegramFileId: true // Cho phép admin xem info cơ bản
+        telegramFileId: true, // Cho phép admin xem info cơ bản
       },
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
   }
 
@@ -177,18 +212,24 @@ export class UserService {
    */
   async deleteUserFile(targetUserId: string, fileId: string) {
     const file = await this.prisma.fileRecord.findFirst({
-      where: { id: fileId, userId: targetUserId }
+      where: { id: fileId, userId: targetUserId },
     });
     if (!file) throw new NotFoundException('File not found for this user');
 
-    this.logger.warn(`Admin deleting file: "${file.filename}" (id: ${fileId}) of user ${targetUserId}`);
+    this.logger.warn(
+      `Admin deleting file: "${file.filename}" (id: ${fileId}) of user ${targetUserId}`,
+    );
     return this.fileService.delete(fileId);
   }
 
   /**
    * PATCH /users/me/password — User tự đổi mật khẩu
    */
-  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ) {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
@@ -198,7 +239,9 @@ export class UserService {
     }
 
     if (newPassword.length < 4) {
-      throw new BadRequestException('New password must be at least 4 characters');
+      throw new BadRequestException(
+        'New password must be at least 4 characters',
+      );
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -207,7 +250,9 @@ export class UserService {
       data: { password: hashedPassword },
     });
 
-    this.logger.log(`Password changed: user "${user.username}" (id: ${userId})`);
+    this.logger.log(
+      `Password changed: user "${user.username}" (id: ${userId})`,
+    );
     return { success: true };
   }
 
@@ -215,11 +260,15 @@ export class UserService {
    * PATCH /users/:id/password — Admin ép buộc reset mật khẩu cho user
    */
   async adminResetPassword(targetUserId: string, newPassword: string) {
-    const user = await this.prisma.user.findUnique({ where: { id: targetUserId } });
+    const user = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
     if (!user) throw new NotFoundException('User not found');
 
     if (newPassword.length < 4) {
-      throw new BadRequestException('New password must be at least 4 characters');
+      throw new BadRequestException(
+        'New password must be at least 4 characters',
+      );
     }
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
@@ -228,7 +277,9 @@ export class UserService {
       data: { password: hashedPassword },
     });
 
-    this.logger.log(`Admin reset password for user "${user.username}" (id: ${targetUserId})`);
+    this.logger.log(
+      `Admin reset password for user "${user.username}" (id: ${targetUserId})`,
+    );
     return { success: true };
   }
 }

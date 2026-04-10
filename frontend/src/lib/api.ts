@@ -79,11 +79,12 @@ export async function renameItem(type: 'file' | 'folder', id: string, name: stri
   return api.patch(`${API_URL}/${endpoint}/${id}/rename`, { name });
 }
 
-export async function moveItem(type: 'file' | 'folder', id: string, destinationId: string | null) {
+export async function moveItem(type: 'file' | 'folder', id: string, destinationId: string | null, conflictAction?: 'overwrite' | 'rename' | 'skip' | 'merge' | 'error') {
   const endpoint = type === 'folder' ? 'folders' : 'files';
   return api.patch(`${API_URL}/${endpoint}/${id}/move`, {
     folderId: destinationId,
     parentId: destinationId,
+    conflictAction,
   });
 }
 
@@ -307,4 +308,54 @@ export function parseBandwidthError(error: unknown): { resetTime: string } | nul
 /** Kiểm tra lỗi 429 — trả { resetTime } hoặc null. Caller hiển thị toast với i18n. */
 export function handleBandwidthError(error: unknown): { resetTime: string } | null {
   return parseBandwidthError(error);
+}
+
+// ── Conflict Helpers ──────────────────────────────────────────────────────────
+
+export interface ConflictInfo {
+  type: 'file' | 'folder';
+  id: string;
+  name: string;
+  suggestedName: string;
+  existingItemId: string;
+}
+
+/** Kiểm tra lỗi có phải là 409 Conflict chứa ConflictResponseDto không. */
+export function isConflictError(error: unknown): boolean {
+  if (axios.isAxiosError(error)) {
+    return error.response?.status === 409 && !!error.response?.data?.type;
+  }
+  return false;
+}
+
+/** Trích xuất ConflictInfo từ axios error. Trả null nếu không phải 409 conflict. */
+export function parseConflictResponse(error: unknown): ConflictInfo | null {
+  if (!isConflictError(error)) return null;
+  const data = (error as { response?: { data?: Record<string, unknown> } }).response?.data;
+  if (!data || typeof data !== 'object') return null;
+  return {
+    type: data.type as 'file' | 'folder',
+    id: data.id as string,
+    name: data.name as string,
+    suggestedName: data.suggestedName as string,
+    existingItemId: data.existingItemId as string,
+  };
+}
+
+/** Trạng thái dọn dẹp thùng rác */
+export interface TrashCleanupStatus {
+  isCleaning: boolean;
+  deletedCount?: number;
+  totalCount?: number;
+}
+
+/** Lấy trạng thái dọn dẹp thùng rác */
+export async function getCleanupStatus(): Promise<TrashCleanupStatus> {
+  const res = await api.get(`${API_URL}/files/trash/cleanup-status`);
+  return res.data;
+}
+
+/** Bắt đầu dọn dẹp thùng rác bất đồng bộ (trả 202) */
+export async function startCleanup(): Promise<void> {
+  await api.post(`${API_URL}/files/trash/cleanup`);
 }
