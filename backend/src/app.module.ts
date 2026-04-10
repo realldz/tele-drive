@@ -18,9 +18,11 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { StaleUploadCleanupService } from './common/stale-upload-cleanup.service';
 import { BandwidthModule } from './common/bandwidth.module';
 import { S3Module } from './s3/s3.module';
+import { AppLoggerModule } from './common/logger/logger.module';
 
 @Module({
   imports: [
+    AppLoggerModule,
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),

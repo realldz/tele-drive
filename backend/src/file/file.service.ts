@@ -58,7 +58,7 @@ export class FileService {
     private readonly cryptoService: CryptoService,
     private readonly settingsService: SettingsService,
     private readonly nameConflictService: NameConflictService,
-  ) { }
+  ) {}
 
   /**
    * Acquire a per-user lock to serialize concurrent deletions.
@@ -719,7 +719,7 @@ export class FileService {
                         );
                         this.telegram
                           .deleteMessage(telegramMessageId)
-                          .catch(() => { });
+                          .catch(() => {});
                         reject(new Error('Upload aborted'));
                         return;
                       }
@@ -736,7 +736,7 @@ export class FileService {
                         );
                         this.telegram
                           .deleteMessage(telegramMessageId)
-                          .catch(() => { });
+                          .catch(() => {});
                         reject(new Error('Upload aborted'));
                         return;
                       }
@@ -751,7 +751,7 @@ export class FileService {
                 .deleteMany({
                   where: { fileId, chunkIndex },
                 })
-                .catch(() => { });
+                .catch(() => {});
               this.logger.error(
                 `Chunk upload failed: ${chunkIndex}/${fileRecord.totalChunks} for file ${fileId}: ${err.message}`,
               );
@@ -1116,14 +1116,14 @@ export class FileService {
         const decryptStream =
           options.decrypt.offset !== undefined
             ? this.cryptoService.createOffsetDecryptStream(
-              options.decrypt.dek,
-              options.decrypt.iv,
-              options.decrypt.offset,
-            )
+                options.decrypt.dek,
+                options.decrypt.iv,
+                options.decrypt.offset,
+              )
             : this.cryptoService.createDecryptStream(
-              options.decrypt.dek,
-              options.decrypt.iv,
-            );
+                options.decrypt.dek,
+                options.decrypt.iv,
+              );
         decryptStream.on('error', (err) => {
           rawStream.destroy();
           if (!res.destroyed) res.end();
@@ -1488,10 +1488,10 @@ export class FileService {
             decrypt:
               downloadInfo.isEncrypted && downloadInfo.dek && chunkReq.iv
                 ? {
-                  dek: downloadInfo.dek,
-                  iv: chunkReq.iv,
-                  offset: chunkReq.byteOffsetInChunk,
-                }
+                    dek: downloadInfo.dek,
+                    iv: chunkReq.iv,
+                    offset: chunkReq.byteOffsetInChunk,
+                  }
                 : undefined,
           });
         }
@@ -1551,8 +1551,9 @@ export class FileService {
     );
     if (conflict) {
       throw new ConflictException({
-        message: 'A file or folder with this name already exists in the current folder',
-        type: 'file' as const
+        message:
+          'A file or folder with this name already exists in the current folder',
+        type: 'file' as const,
       });
     }
 

@@ -30,6 +30,9 @@ RUN npx prisma generate
 # Copy built output
 COPY --from=builder /app/dist ./dist
 
+# Create log directory
+RUN mkdir -p /app/.logs
+
 EXPOSE 3001
 
 # Push schema to DB on startup, then run

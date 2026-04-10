@@ -68,21 +68,27 @@ export class FileController {
   async upload(
     @UploadedFile() file: Express.Multer.File,
     @Body('folderId') folderId: string | undefined,
-    @Query('onConflict') onConflict: 'overwrite' | 'rename' | 'error' | undefined,
+    @Query('onConflict')
+    onConflict: 'overwrite' | 'rename' | 'error' | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.fileService.uploadFile(
+    const result = await this.fileService.uploadFile(
       file,
       req.user.userId,
       folderId,
       onConflict as ConflictAction | undefined,
     );
+    this.logger.log(
+      `File uploaded: name="${file.originalname}", size=${file.size}, userId=${req.user.userId}, folderId=${folderId || 'root'}`,
+    );
+    return result;
   }
 
   @Post('upload/init')
   async initChunkedUpload(
     @Body() body: InitUploadDto,
-    @Query('onConflict') onConflict: 'overwrite' | 'rename' | 'error' | undefined,
+    @Query('onConflict')
+    onConflict: 'overwrite' | 'rename' | 'error' | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
     return this.fileService.initChunkedUpload(
@@ -115,7 +121,14 @@ export class FileController {
     @Param('fileId') fileId: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.fileService.completeChunkedUpload(fileId, req.user.userId);
+    const result = await this.fileService.completeChunkedUpload(
+      fileId,
+      req.user.userId,
+    );
+    this.logger.log(
+      `Chunked upload completed: fileId=${fileId}, userId=${req.user.userId}`,
+    );
+    return result;
   }
 
   @Post('upload/:fileId/abort')
@@ -123,7 +136,11 @@ export class FileController {
     @Param('fileId') fileId: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.fileService.abortUpload(fileId, req.user.userId);
+    const result = await this.fileService.abortUpload(fileId, req.user.userId);
+    this.logger.log(
+      `Upload aborted: fileId=${fileId}, userId=${req.user.userId}`,
+    );
+    return result;
   }
 
   @Get('upload/:fileId/status')
@@ -354,32 +371,49 @@ export class FileController {
   // ── File CRUD ──────────────────────────────────────────────────────────
 
   @Patch(':id/rename')
-  rename(
+  async rename(
     @Param('id') id: string,
     @Body('name') name: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.fileService.rename(id, name, req.user.userId);
+    const result = await this.fileService.rename(id, name, req.user.userId);
+    this.logger.log(
+      `File renamed: id=${id}, userId=${req.user.userId}, name="${name}"`,
+    );
+    return result;
   }
 
   @Patch(':id/move')
-  move(
+  async move(
     @Param('id') id: string,
     @Body('folderId') folderId: string | null,
     @Body('conflictAction') conflictAction: ConflictAction | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.fileService.move(id, folderId, req.user.userId, conflictAction);
+    const result = await this.fileService.move(
+      id,
+      folderId,
+      req.user.userId,
+      conflictAction,
+    );
+    this.logger.log(
+      `File moved: id=${id}, userId=${req.user.userId}, folderId=${folderId || 'root'}, conflictAction=${conflictAction || 'error'}`,
+    );
+    return result;
   }
 
   @Post(':id/share')
-  share(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.fileService.share(id, req.user.userId);
+  async share(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const result = await this.fileService.share(id, req.user.userId);
+    this.logger.log(`File shared: id=${id}, userId=${req.user.userId}`);
+    return result;
   }
 
   @Post(':id/unshare')
-  unshare(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.fileService.unshare(id, req.user.userId);
+  async unshare(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const result = await this.fileService.unshare(id, req.user.userId);
+    this.logger.log(`File unshared: id=${id}, userId=${req.user.userId}`);
+    return result;
   }
 
   @Public()
@@ -391,7 +425,9 @@ export class FileController {
 
   @Delete('trash/empty')
   async emptyTrash(@Req() req: AuthenticatedRequest) {
-    return this.fileService.emptyTrash(req.user.userId);
+    const result = await this.fileService.emptyTrash(req.user.userId);
+    this.logger.log(`Trash emptied: userId=${req.user.userId}`);
+    return result;
   }
 
   @Post('trash/cleanup')
@@ -406,8 +442,10 @@ export class FileController {
   }
 
   @Delete(':id')
-  softDelete(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.fileService.softDelete(id, req.user.userId);
+  async softDelete(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const result = await this.fileService.softDelete(id, req.user.userId);
+    this.logger.log(`File soft-deleted: id=${id}, userId=${req.user.userId}`);
+    return result;
   }
 
   @Get('trash/list')
@@ -416,13 +454,25 @@ export class FileController {
   }
 
   @Patch(':id/restore')
-  restore(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.fileService.restore(id, req.user.userId);
+  async restore(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const result = await this.fileService.restore(id, req.user.userId);
+    this.logger.log(`File restored: id=${id}, userId=${req.user.userId}`);
+    return result;
   }
 
   @Delete(':id/permanent')
-  permanentDelete(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.fileService.permanentDelete(id, req.user.userId);
+  async permanentDelete(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const result = await this.fileService.permanentDelete(
+      id,
+      req.user.userId,
+    );
+    this.logger.log(
+      `File permanently deleted: id=${id}, userId=${req.user.userId}`,
+    );
+    return result;
   }
 
   @UseGuards(AdminGuard)

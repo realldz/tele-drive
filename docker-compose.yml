@@ -53,8 +53,10 @@ services:
       - ./backend/.env
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://tele_drive:tele_drive@postgres:5432/tele_drive
+      DATABASE_URL: postgresql://tele_drive@postgres:5432/tele_drive
       TELEGRAM_API_ROOT: http://nginx:8088
+    volumes:
+      - ./backend/.logs:/app/.logs
     depends_on:
       postgres:
         condition: service_healthy
