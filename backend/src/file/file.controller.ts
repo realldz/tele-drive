@@ -465,10 +465,7 @@ export class FileController {
     @Param('id') id: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    const result = await this.fileService.permanentDelete(
-      id,
-      req.user.userId,
-    );
+    const result = await this.fileService.permanentDelete(id, req.user.userId);
     this.logger.log(
       `File permanently deleted: id=${id}, userId=${req.user.userId}`,
     );
