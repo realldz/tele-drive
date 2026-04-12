@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { getClientIp } from '../utils/get-client-ip';
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -15,11 +16,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
   catch(exception: unknown, host: ArgumentsHost): void {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
-    const request = ctx.getRequest<Request>();
+    const request = ctx.getRequest<Request & { requestId?: string }>();
 
     const requestId = request.requestId || 'unknown';
     const method = request.method;
     const url = request.originalUrl || request.url;
+    const ip = getClientIp(request);
 
     let status: number;
     let message: string;
@@ -47,12 +49,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // Log full stack trace for server-side debugging
     if (status >= 500) {
       this.logger.error(
-        `[${requestId}] ${method} ${url} - ${status} ${message}`,
+        `[${requestId}] ${method} ${url} - ${status} ${message} (ip: ${ip})`,
         stack,
       );
     } else {
       this.logger.warn(
-        `[${requestId}] ${method} ${url} - ${status} ${message}`,
+        `[${requestId}] ${method} ${url} - ${status} ${message} (ip: ${ip})`,
       );
     }
 
