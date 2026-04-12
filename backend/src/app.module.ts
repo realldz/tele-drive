@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { TelegramModule } from './telegram/telegram.module';
@@ -19,6 +19,7 @@ import { StaleUploadCleanupService } from './common/stale-upload-cleanup.service
 import { BandwidthModule } from './common/bandwidth.module';
 import { S3Module } from './s3/s3.module';
 import { AppLoggerModule } from './common/logger/logger.module';
+import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
 
 @Module({
   imports: [
@@ -61,6 +62,10 @@ import { AppLoggerModule } from './common/logger/logger.module';
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_INTERCEPTOR,
+      useClass: RequestLoggingInterceptor,
     },
     StaleUploadCleanupService,
   ],

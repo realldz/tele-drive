@@ -112,9 +112,7 @@ export class FolderController {
   @Delete(':id')
   async softDelete(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const result = await this.folderService.softDelete(id, req.user.userId);
-    this.logger.log(
-      `Folder soft-deleted: id=${id}, userId=${req.user.userId}`,
-    );
+    this.logger.log(`Folder soft-deleted: id=${id}, userId=${req.user.userId}`);
     return result;
   }
 

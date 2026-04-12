@@ -9,9 +9,7 @@ interface CleanupResult {
 }
 
 function getErrorMessage(err: unknown): string {
-  return err instanceof Error
-    ? (err.stack ?? err.message)
-    : String(err);
+  return err instanceof Error ? (err.stack ?? err.message) : String(err);
 }
 
 @Injectable()
