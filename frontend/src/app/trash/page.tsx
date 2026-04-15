@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { FileText, Folder, Trash2, RotateCcw, Clock, Loader2 } from 'lucide-react';
+import { FileText, Folder, Trash2, RotateCcw, Clock, Loader2, FileSearch } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import { useSelection } from '@/hooks/use-selection';
@@ -10,7 +10,7 @@ import Sidebar from '@/components/sidebar';
 import ContextMenu from '@/components/context-menu';
 import SelectionActionBar from '@/components/selection-action-bar';
 import {
-  formatSize, fetchTrash as fetchTrashApi,
+  formatSize, fetchTrashFolders as fetchTrashFoldersApi, fetchTrashFiles as fetchTrashFilesApi,
   restoreFile, permanentDeleteFile, restoreFolder, permanentDeleteFolder,
   getApiErrorMessage, getCleanupStatus, startCleanup,
   TrashCleanupStatus,
@@ -24,6 +24,11 @@ export default function TrashPage() {
 
   const [trashedFiles, setTrashedFiles] = useState<TrashedFile[]>([]);
   const [trashedFolders, setTrashedFolders] = useState<TrashedFolder[]>([]);
+  const [foldersCursor, setFoldersCursor] = useState<string | null>(null);
+  const [filesCursor, setFilesCursor] = useState<string | null>(null);
+  const [foldersHasMore, setFoldersHasMore] = useState(true);
+  const [filesHasMore, setFilesHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [isEmptying, setIsEmptying] = useState(false);
   const [actionIds, setActionIds] = useState<Set<string>>(new Set());
   const [cleanupStatus, setCleanupStatus] = useState<TrashCleanupStatus>({ isCleaning: false });
@@ -62,9 +67,16 @@ export default function TrashPage() {
   const fetchTrash = useCallback(async () => {
     if (!token) return;
     try {
-      const data = await fetchTrashApi();
-      setTrashedFiles(data.files);
-      setTrashedFolders(data.folders);
+      const [foldersRes, filesRes] = await Promise.all([
+        fetchTrashFoldersApi(),
+        fetchTrashFilesApi(),
+      ]);
+      setTrashedFolders(foldersRes.data);
+      setTrashedFiles(filesRes.data);
+      setFoldersCursor(foldersRes.nextCursor);
+      setFilesCursor(filesRes.nextCursor);
+      setFoldersHasMore(foldersRes.nextCursor !== null);
+      setFilesHasMore(filesRes.nextCursor !== null);
     } catch {
       // 401 handled by interceptor
     }
@@ -72,7 +84,37 @@ export default function TrashPage() {
 
   useEffect(() => {
     fetchTrash();
-  }, [fetchTrash]);
+    selection.clearSelection();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- stable on mount
+
+  const loadMoreTrash = useCallback(async () => {
+    if (loadingMore || (!foldersHasMore && !filesHasMore)) return;
+    setLoadingMore(true);
+    try {
+      const fetches: Promise<unknown>[] = [];
+      if (foldersHasMore && foldersCursor) {
+        fetches.push(
+          fetchTrashFoldersApi(foldersCursor).then(res => {
+            setTrashedFolders(prev => [...prev, ...res.data]);
+            setFoldersCursor(res.nextCursor);
+            setFoldersHasMore(res.nextCursor !== null);
+          }),
+        );
+      }
+      if (filesHasMore && filesCursor) {
+        fetches.push(
+          fetchTrashFilesApi(filesCursor).then(res => {
+            setTrashedFiles(prev => [...prev, ...res.data]);
+            setFilesCursor(res.nextCursor);
+            setFilesHasMore(res.nextCursor !== null);
+          }),
+        );
+      }
+      await Promise.all(fetches);
+    } catch {
+      // Ignore errors on load more
+    } finally { setLoadingMore(false); }
+  }, [loadingMore, foldersHasMore, filesHasMore, foldersCursor, filesCursor]);
 
   // Poll cleanup status every 2s while cleaning
   useEffect(() => {
@@ -415,6 +457,19 @@ export default function TrashPage() {
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                )}
+
+                {/* Load More */}
+                {(foldersHasMore || filesHasMore) && (
+                  <div className="py-4 text-center">
+                    {loadingMore ? (
+                      <Loader2 className="animate-spin text-blue-500 mx-auto" size={20} />
+                    ) : (
+                      <button onClick={loadMoreTrash} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-600 transition-colors flex items-center gap-2 mx-auto">
+                        <FileSearch size={16} /> {t('dashboard.loadMore')}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

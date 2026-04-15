@@ -5,6 +5,7 @@ import {
   Delete,
   Param,
   Body,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -15,6 +16,7 @@ import { UpdateQuotaDto } from './dto/update-quota.dto';
 import { UpdateBandwidthDto } from './dto/update-bandwidth.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import type { AuthenticatedRequest } from '../common/types/request';
 
 @Controller('users')
@@ -40,8 +42,8 @@ export class UserController {
 
   @UseGuards(AdminGuard)
   @Get()
-  findAll() {
-    return this.userService.findAll();
+  findAll(@Query() pagination: PaginationQueryDto) {
+    return this.userService.findAll(pagination);
   }
 
   @UseGuards(AdminGuard)
@@ -82,8 +84,11 @@ export class UserController {
 
   @UseGuards(AdminGuard)
   @Get(':id/files')
-  getUserFiles(@Param('id') id: string) {
-    return this.userService.getUserFiles(id);
+  getUserFiles(
+    @Param('id') id: string,
+    @Query() pagination: PaginationQueryDto,
+  ) {
+    return this.userService.getUserFiles(id, pagination);
   }
 
   @UseGuards(AdminGuard)

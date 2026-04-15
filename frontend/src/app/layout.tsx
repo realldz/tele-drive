@@ -8,6 +8,9 @@ import { UploadProvider } from "@/components/upload-context";
 import GlobalDropZone from "@/components/global-drop-zone";
 import UploadPanel from "@/components/upload-panel";
 import StoreProvider from "@/components/store-provider";
+import { RequestTrackerProvider } from "@/lib/request-tracker";
+import NavigationLoader from "@/components/navigation-loader";
+import LoadingOverlay from "@/components/loading-overlay";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -42,10 +45,15 @@ export default function RootLayout({
           <AuthProvider>
             <StoreProvider>
               <UploadProvider>
-                <GlobalDropZone />
-                {children}
-                <UploadPanel />
-                <Toaster />
+                <RequestTrackerProvider>
+                  <NavigationLoader>
+                    <GlobalDropZone />
+                    {children}
+                    <UploadPanel />
+                    <LoadingOverlay />
+                    <Toaster />
+                  </NavigationLoader>
+                </RequestTrackerProvider>
               </UploadProvider>
             </StoreProvider>
           </AuthProvider>

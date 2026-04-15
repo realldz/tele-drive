@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Loader2 } from 'lucide-react';
 import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
-import { useLazyLoad } from '@/hooks/use-lazy-load';
 import { useSelection } from '@/hooks/use-selection';
 import { useDragSelect, DragSelectOverlay } from '@/hooks/use-drag-select';
 import Sidebar from '@/components/sidebar';
@@ -41,7 +40,11 @@ export default function Dashboard() {
   const [files, setFiles] = useState<FileRecord[]>([]);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set());
+  const [actionLoading, setActionLoading] = useState<Set<string>>(new Set());
   const [isLoadingContent, setIsLoadingContent] = useState(false);
+  const [isLoadMore, setIsLoadMore] = useState(false);
+  const [hasMoreFolders, setHasMoreFolders] = useState(true);
+  const [hasMoreFiles, setHasMoreFiles] = useState(true);
 
   // Conflict dialog state
   interface PendingConflict {
@@ -133,13 +136,27 @@ export default function Dashboard() {
     [filteredFolders, filteredFiles],
   );
 
-  // Lazy load
-  const totalItems = filteredFolders.length + filteredFiles.length;
-  const { visibleCount, hasMore, loadMoreRef, resetCount } = useLazyLoad(totalItems);
-  useEffect(() => resetCount(), [currentFolderId, searchQuery, resetCount]);
+  // Load more for server-side pagination
+  const hasMore = hasMoreFolders || hasMoreFiles;
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
 
-  const visibleFolders = filteredFolders.slice(0, visibleCount);
-  const visibleFiles = filteredFiles.slice(0, Math.max(0, visibleCount - filteredFolders.length));
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
+    if (observerRef.current) observerRef.current.disconnect();
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !isLoadingContent && !isLoadMore) {
+          handleLoadMore();
+        }
+      },
+      { rootMargin: '200px' },
+    );
+
+    observerRef.current.observe(loadMoreRef.current);
+    return () => { if (observerRef.current) observerRef.current.disconnect(); };
+  }, [hasMore, isLoadingContent, isLoadMore]);
 
   // Context menu
   const [contextMenu, setContextMenu] = useState<{
@@ -172,27 +189,41 @@ export default function Dashboard() {
   useEffect(() => { selection.clearSelection(); }, [currentFolderId, selection.clearSelection]);
 
   // Fetch content
-  const fetchContent = useCallback(async () => {
+  const fetchContent = useCallback(async (isLoadMoreCall = false) => {
     if (!token) return;
-    setIsLoadingContent(true);
+    if (!isLoadMoreCall) setIsLoadingContent(true);
+    if (isLoadMoreCall) setIsLoadMore(true);
     try {
       const data = await fetchFolderContent(currentFolderId);
-      setFolders(data.folders);
-      setFiles(data.files);
-      if (currentFolderId) {
+      if (isLoadMoreCall) {
+        setFolders(prev => [...prev, ...data.folders]);
+        setFiles(prev => [...prev, ...data.files]);
+      } else {
+        setFolders(data.folders);
+        setFiles(data.files);
+      }
+      setHasMoreFolders(data.nextFolderCursor !== null);
+      setHasMoreFiles(data.nextFileCursor !== null);
+      if (!isLoadMoreCall && currentFolderId) {
         const bc = await fetchBreadcrumbs(currentFolderId);
         setBreadcrumbs(bc);
-      } else {
+      }
+      if (!isLoadMoreCall && !currentFolderId) {
         setBreadcrumbs([]);
       }
     } catch {
       // 401 handled by axios interceptor
     } finally {
       setIsLoadingContent(false);
+      setIsLoadMore(false);
     }
   }, [currentFolderId, token]);
 
-  useEffect(() => { fetchContent(); }, [fetchContent]);
+  const handleLoadMore = useCallback(() => {
+    fetchContent(true);
+  }, [fetchContent]);
+
+  useEffect(() => { fetchContent(false); }, [fetchContent]);
   useEffect(() => { setUploadFolderId(currentFolderId); }, [currentFolderId, setUploadFolderId]);
   useEffect(() => {
     setOnUploadSuccess(fetchContent);
@@ -282,8 +313,10 @@ export default function Dashboard() {
 
   const handleDeleteStuckFile = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
+    setActionLoading(prev => new Set(prev).add(id));
     try { await abortUpload(id); fetchContent(); }
     catch (error: unknown) { toast.error(t('dashboard.deleteStuckError')); }
+    finally { setActionLoading(prev => { const next = new Set(prev); next.delete(id); return next; }); }
   }, [fetchContent, t]);
 
   const handleDownload = useCallback(async (fileId: string, filename: string) => {
@@ -575,11 +608,11 @@ export default function Dashboard() {
             <DashboardContent
               isLoadingContent={isLoadingContent}
               folders={folders} files={files}
-              visibleFolders={visibleFolders} visibleFiles={visibleFiles}
+              visibleFolders={filteredFolders} visibleFiles={filteredFiles}
               filteredFoldersCount={filteredFolders.length} filteredFilesCount={filteredFiles.length}
               viewMode={viewMode} searchQuery={searchQuery}
               sortField={sortField} sortDirection={sortDirection} onSort={handleSort}
-              selection={selection} downloadingFiles={downloadingFiles}
+              selection={selection} downloadingFiles={downloadingFiles} actionLoading={actionLoading}
               dragOverFolderId={dragOverFolderId}
               hasMore={hasMore} loadMoreRef={loadMoreRef}
               onItemClick={handleItemClick}

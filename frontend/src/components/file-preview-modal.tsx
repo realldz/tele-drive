@@ -1,11 +1,10 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import axios from 'axios';
 import { X, Download, Loader2, FileIcon } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
 import { useI18n } from '@/components/i18n-context';
-import { API_URL, requestDownloadToken, getStreamUrl, getApiErrorMessage, parseBandwidthError } from '@/lib/api';
+import { API_URL, api, requestDownloadToken, getStreamUrl, getApiErrorMessage, parseBandwidthError } from '@/lib/api';
 import { useStream } from '@/hooks/use-stream';
 import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
@@ -43,15 +42,14 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
     setError(null);
     setFileInfo(null);
 
-    axios
+    api
       .get(`${API_URL}/files/${fileId}/info`)
       .then(async (res) => {
         setFileInfo(res.data);
         await setupStream(getStreamUrl(fileId));
       })
       .catch((err: unknown) => {
-        const message = axios.isAxiosError(err) ? err.response?.data?.message : undefined;
-        setError(message || 'Failed to load file');
+        setError(getApiErrorMessage(err, 'Failed to load file'));
       })
       .finally(() => setIsLoading(false));
   }, [fileId, setupStream, teardownStream]);

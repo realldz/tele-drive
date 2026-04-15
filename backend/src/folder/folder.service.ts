@@ -9,6 +9,9 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FileService } from '../file/file.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { NameConflictService } from '../common/name-conflict.service';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse } from '../common/types/paginated-response.type';
+import { PaginatedFolderContent } from '../common/types/paginated-folder-content.type';
 import type { ConflictAction } from '../common/name-conflict.service';
 import * as crypto from 'crypto';
 import { message } from 'telegraf/filters';
@@ -116,11 +119,75 @@ export class FolderService {
 
   /**
    * Lấy nội dung folder (folders + files) — scope theo userId, ẩn soft-deleted
+   * Hỗ trợ pagination với cursor riêng cho folders và files
    */
-  async getContent(userId: string, folderId?: string) {
+  async getContent(
+    userId: string,
+    folderId: string | undefined,
+    pagination: PaginationQueryDto,
+  ): Promise<PaginatedFolderContent> {
+    const limit = pagination.limit ?? 50;
+    const parentWhere: Record<string, unknown> = {
+      parentId: folderId || null,
+      userId,
+      deletedAt: null,
+    };
+    const filesWhere: Record<string, unknown> = {
+      folderId: folderId || null,
+      userId,
+      status: { in: ['complete', 'uploading'] as const },
+      deletedAt: null,
+    };
+
+    // Apply search
+    if (pagination.search) {
+      parentWhere['name'] = {
+        contains: pagination.search,
+        mode: 'insensitive' as const,
+      };
+      (filesWhere as Record<string, unknown>)['filename'] = {
+        contains: pagination.search,
+        mode: 'insensitive' as const,
+      };
+    }
+
+    // Parse folder cursor
+    if (pagination.cursor) {
+      try {
+        const parsed = JSON.parse(
+          Buffer.from(pagination.cursor, 'base64').toString('utf-8'),
+        );
+        if (parsed.f) {
+          (parentWhere as Record<string, unknown>)['id'] = { lt: parsed.f };
+        }
+      } catch {
+        // Invalid cursor, ignore
+      }
+    }
+
+    // Parse file cursor (base64 of "createdAt_ISO_id")
+    const fileWhere: Record<string, unknown> = { ...filesWhere };
+    if (pagination.cursor) {
+      try {
+        const parsed = JSON.parse(
+          Buffer.from(pagination.cursor, 'base64').toString('utf-8'),
+        );
+        if (parsed.fc) {
+          const [timestamp, id] = parsed.fc.split('_');
+          fileWhere.OR = [
+            { createdAt: { lt: new Date(timestamp) } },
+            { createdAt: new Date(timestamp), id: { lt: id } },
+          ];
+        }
+      } catch {
+        // Invalid cursor, ignore
+      }
+    }
+
+    // Fetch folders
     const folders = await this.prisma.folder.findMany({
-      where: { parentId: folderId || null, userId, deletedAt: null },
-      orderBy: { createdAt: 'desc' },
+      where: parentWhere,
+      orderBy: { id: 'desc' },
       select: {
         id: true,
         name: true,
@@ -131,15 +198,21 @@ export class FolderService {
         createdAt: true,
         updatedAt: true,
       },
+      take: limit + 1,
     });
+
+    const folderHasNext = folders.length > limit;
+    const folderItems = folderHasNext ? folders.slice(0, -1) : folders;
+    const nextFolderCursor = folderHasNext
+      ? Buffer.from(
+          JSON.stringify({ f: (folderItems[folderItems.length - 1] as { id: string }).id }),
+        ).toString('base64')
+      : null;
+
+    // Fetch files
     const files = await this.prisma.fileRecord.findMany({
-      where: {
-        folderId: folderId || null,
-        userId,
-        status: { in: ['complete', 'uploading'] },
-        deletedAt: null,
-      },
-      orderBy: { createdAt: 'desc' },
+      where: fileWhere,
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: {
         id: true,
         filename: true,
@@ -154,8 +227,33 @@ export class FolderService {
         createdAt: true,
         updatedAt: true,
       },
+      take: limit + 1,
     });
-    return { folders, files };
+
+    const fileHasNext = files.length > limit;
+    const fileItems = fileHasNext ? files.slice(0, -1) : files;
+    const nextFileCursor = fileHasNext
+      ? Buffer.from(
+          JSON.stringify({
+            fc: `${(fileItems[fileItems.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(fileItems[fileItems.length - 1] as { id: string }).id}`,
+          }),
+        ).toString('base64')
+      : null;
+
+    // Count totals
+    const [totalFolders, totalFiles] = await Promise.all([
+      this.prisma.folder.count({ where: parentWhere }),
+      this.prisma.fileRecord.count({ where: fileWhere }),
+    ]);
+
+    return {
+      folders: folderItems,
+      files: fileItems,
+      nextFolderCursor,
+      nextFileCursor,
+      totalFolders,
+      totalFiles,
+    };
   }
 
   /**
@@ -364,7 +462,11 @@ export class FolderService {
    * Lấy nội dung folder được chia sẻ (public)
    * Xác minh targetFolderId có nằm trong nhánh của root shared folder không.
    */
-  async getSharedContent(token: string, targetFolderId?: string) {
+  async getSharedContent(
+    token: string,
+    targetFolderId?: string,
+    pagination?: PaginationQueryDto,
+  ) {
     const rootSharedFolder = await this.prisma.folder.findUnique({
       where: { shareToken: token },
       include: { user: { select: { username: true } } },
@@ -383,7 +485,145 @@ export class FolderService {
     if (!isChild)
       throw new BadRequestException('Folder is not part of this shared link');
 
-    // Fetch content of currentFolderId
+    if (pagination) {
+      const limit = pagination.limit ?? 50;
+      const folderWhere: Record<string, unknown> = {
+        parentId: currentFolderId,
+        deletedAt: null,
+      };
+      const filesWhere: Record<string, unknown> = {
+        folderId: currentFolderId,
+        status: 'complete',
+        deletedAt: null,
+      };
+
+      if (pagination.search) {
+        folderWhere['name'] = {
+          contains: pagination.search,
+          mode: 'insensitive' as const,
+        };
+        filesWhere['filename'] = {
+          contains: pagination.search,
+          mode: 'insensitive' as const,
+        };
+      }
+
+      // Parse cursor for combined pagination
+      if (pagination.cursor) {
+        try {
+          const parsed = JSON.parse(
+            Buffer.from(pagination.cursor, 'base64').toString('utf-8'),
+          );
+          if (parsed.f) {
+            folderWhere['id'] = { lt: parsed.f };
+          }
+          const fileWhere: Record<string, unknown> = { ...filesWhere };
+          if (parsed.fc) {
+            const [timestamp, id] = parsed.fc.split('_');
+            fileWhere.OR = [
+              { createdAt: { lt: new Date(timestamp) } },
+              { createdAt: new Date(timestamp), id: { lt: id } },
+            ];
+          }
+
+          const folders = await this.prisma.folder.findMany({
+            where: folderWhere,
+            orderBy: { id: 'desc' },
+            take: limit + 1,
+          });
+          const foldersHasNext = folders.length > limit;
+          const folderItems = foldersHasNext ? folders.slice(0, -1) : folders;
+          const nextFolderCursor = foldersHasNext
+            ? Buffer.from(
+                JSON.stringify({
+                  f: (folderItems[folderItems.length - 1] as { id: string }).id,
+                }),
+              ).toString('base64')
+            : null;
+
+          const files = await this.prisma.fileRecord.findMany({
+            where: fileWhere,
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: limit + 1,
+          });
+          const filesHasNext = files.length > limit;
+          const fileItems = filesHasNext ? files.slice(0, -1) : files;
+          const nextFileCursor = filesHasNext
+            ? Buffer.from(
+                JSON.stringify({
+                  fc: `${(fileItems[fileItems.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(fileItems[fileItems.length - 1] as { id: string }).id}`,
+                }),
+              ).toString('base64')
+            : null;
+
+          const breadcrumbs = await this.buildSharedBreadcrumbs(
+            currentFolderId,
+            rootSharedFolder,
+          );
+
+          return {
+            rootFolder: rootSharedFolder,
+            currentFolderId,
+            folders: folderItems,
+            files: fileItems,
+            nextFolderCursor,
+            nextFileCursor,
+            breadcrumbs,
+          };
+        } catch {
+          // Invalid cursor format, fall through to default fetch
+        }
+      }
+
+      // Default fetch without cursor
+      const folders = await this.prisma.folder.findMany({
+        where: folderWhere,
+        orderBy: { id: 'desc' },
+        take: limit + 1,
+      });
+      const foldersHasNext = folders.length > limit;
+      const folderItems = foldersHasNext ? folders.slice(0, -1) : folders;
+      const nextFolderCursor = foldersHasNext
+        ? Buffer.from(
+            JSON.stringify({
+              f: (folderItems[folderItems.length - 1] as { id: string }).id,
+            }),
+          ).toString('base64')
+        : null;
+
+      const fileWhere: Record<string, unknown> = { ...filesWhere };
+      const files = await this.prisma.fileRecord.findMany({
+        where: fileWhere,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take: limit + 1,
+      });
+      const filesHasNext = files.length > limit;
+      const fileItems = filesHasNext ? files.slice(0, -1) : files;
+      const nextFileCursor = filesHasNext
+        ? Buffer.from(
+            JSON.stringify({
+              fc: `${(fileItems[fileItems.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(fileItems[fileItems.length - 1] as { id: string }).id}`,
+            }),
+          ).toString('base64')
+        : null;
+
+      const breadcrumbs = await this.buildSharedBreadcrumbs(
+        currentFolderId,
+        rootSharedFolder,
+      );
+
+      return {
+        rootFolder: rootSharedFolder,
+        currentFolderId,
+        folders: folderItems,
+        files: fileItems,
+        nextFolderCursor,
+        nextFileCursor,
+        breadcrumbs,
+      };
+    }
+
+    // No pagination — fallback to old behavior
     const folders = await this.prisma.folder.findMany({
       where: { parentId: currentFolderId, deletedAt: null },
       orderBy: { createdAt: 'desc' },
@@ -393,7 +633,24 @@ export class FolderService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Build breadcrumbs relative to the shared root
+    const breadcrumbs = await this.buildSharedBreadcrumbs(
+      currentFolderId,
+      rootSharedFolder,
+    );
+
+    return {
+      rootFolder: rootSharedFolder,
+      currentFolderId,
+      folders,
+      files,
+      breadcrumbs,
+    };
+  }
+
+  private async buildSharedBreadcrumbs(
+    currentFolderId: string,
+    rootSharedFolder: { id: string; name: string },
+  ): Promise<{ id: string; name: string }[]> {
     const breadcrumbs = [];
     let bcId: string | null = currentFolderId;
     while (bcId && bcId !== rootSharedFolder.id) {
@@ -406,19 +663,11 @@ export class FolderService {
       breadcrumbs.unshift({ id: f.id, name: f.name });
       bcId = f.parentId;
     }
-    // Always add the root folder as the first breadcrumb
     breadcrumbs.unshift({
       id: rootSharedFolder.id,
       name: rootSharedFolder.name,
     });
-
-    return {
-      rootFolder: rootSharedFolder,
-      currentFolderId,
-      folders,
-      files,
-      breadcrumbs,
-    };
+    return breadcrumbs;
   }
 
   /**
@@ -651,16 +900,57 @@ export class FolderService {
    * Danh sách folders trong thùng rác — chỉ hiện top-level (folders bị xoá trực tiếp,
    * không hiện subfolders đã bị xoá theo cascade).
    */
-  async listTrash(userId: string) {
-    return this.prisma.folder.findMany({
-      where: {
-        userId,
-        deletedAt: { not: null },
-        // Chỉ hiện folder "gốc" trong trash: folder cha phải đang active hoặc là root
-        OR: [{ parentId: null }, { parent: { deletedAt: null } }],
-      },
-      orderBy: { deletedAt: 'desc' },
+  async listTrash(
+    userId: string,
+    pagination: PaginationQueryDto,
+  ): Promise<PaginatedResponse<unknown>> {
+    const limit = pagination.limit ?? 20;
+    const where: Record<string, unknown> = {
+      userId,
+      deletedAt: { not: null },
+      OR: [{ parentId: null }, { parent: { deletedAt: null } }],
+    };
+
+    if (pagination.search) {
+      where.name = { contains: pagination.search, mode: 'insensitive' };
+    }
+
+    if (pagination.cursor) {
+      try {
+        const decoded = Buffer.from(pagination.cursor, 'base64').toString(
+          'utf-8',
+        );
+        const [timestamp, id] = decoded.split('_');
+        where.deletedAt = {
+          lt: new Date(timestamp),
+        };
+        // Secondary sort by id for same timestamp
+        where.OR = [
+          { deletedAt: { lt: new Date(timestamp) } },
+          { deletedAt: new Date(timestamp), id: { lt: id } },
+        ];
+      } catch {
+        // Invalid cursor, ignore
+      }
+    }
+
+    const data = await this.prisma.folder.findMany({
+      where,
+      orderBy: [{ deletedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
     });
+
+    const hasNext = data.length > limit;
+    const items = hasNext ? data.slice(0, -1) : data;
+    const nextCursor = hasNext
+      ? Buffer.from(
+          `${(items[items.length - 1] as { deletedAt: Date }).deletedAt.toISOString()}_${(items[items.length - 1] as { id: string }).id}`,
+        ).toString('base64')
+      : null;
+
+    const total = await this.prisma.folder.count({ where });
+
+    return { data: items, nextCursor, total };
   }
 
   /**

@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import axios from 'axios';
-import { API_URL, abortUpload, createFolder } from '@/lib/api';
+import { API_URL, api, abortUpload, createFolder } from '@/lib/api';
 import { useAuth } from '@/components/auth-context';
 import { useAppSelector } from '@/lib/store';
 import { loadUploadConfig } from '@/lib/upload-config-slice';
@@ -100,7 +100,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       ? `${API_URL}/files/upload?onConflict=${item.conflictAction}`
       : `${API_URL}/files/upload`;
 
-    await axios.post(url, formData, {
+    await api.post(url, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       signal: abortController.signal,
       onUploadProgress: (progressEvent) => {
@@ -122,7 +122,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       ? `${API_URL}/files/upload/init?onConflict=${item.conflictAction}`
       : `${API_URL}/files/upload/init`;
 
-    const initRes = await axios.post(initUrl, {
+    const initRes = await api.post(initUrl, {
       filename: item.file.name,
       size: item.file.size,
       mimeType: item.file.type || 'application/octet-stream',
@@ -170,10 +170,11 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       const MAX_429_RETRIES = 5;
       for (let attempt = 0; ; attempt++) {
         try {
-          await axios.post(
+          await api.post(
             `${API_URL}/files/upload/${serverFileId}/chunk/${chunkIndex}`,
             chunkFormData,
             {
+              timeout: 0,
               headers: { 'Content-Type': 'multipart/form-data' },
               signal: abortController.signal,
               onUploadProgress: (progressEvent) => {
@@ -244,7 +245,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       throw new Error('Upload cancelled');
     }
 
-    await axios.post(`${API_URL}/files/upload/${serverFileId}/complete`);
+    await api.post(`${API_URL}/files/upload/${serverFileId}/complete`);
   }, [maxChunkSize, concurrency, updateItem]);
 
   // Process queue — pick next pending item and upload

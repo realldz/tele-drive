@@ -1,9 +1,10 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useI18n } from '@/components/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
-import { Menu, Loader2 } from 'lucide-react';
+import { useNavigation } from '@/components/navigation-loader';
+import { Menu, Loader2, Search } from 'lucide-react';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
 import type { AdminUser, AdminSetting, AdminUserFile } from '@/lib/types';
@@ -25,20 +26,35 @@ type Tab = 'USERS' | 'SETTINGS' | 'USER_FILES';
 
 export default function AdminDashboard() {
   const router = useRouter();
+  const { isNavigating } = useNavigation();
   const { isReady, user, logout } = useRequireAuth({ requiredRole: 'ADMIN' });
   const { t, locale } = useI18n();
   const [activeTab, setActiveTab] = useState<Tab>('USERS');
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
 
+  // Users list — paginated
   const [users, setUsers] = useState<AdminUser[]>([]);
-  const [settings, setSettings] = useState<AdminSetting[]>([]);
-  const [editingSettings, setEditingSettings] = useState<Record<string, string>>({});
+  const [usersCursor, setUsersCursor] = useState<string | null>(null);
+  const [usersHasMore, setUsersHasMore] = useState(true);
+  const [userSearch, setUserSearch] = useState('');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // User files — paginated
   const [selectedUser, setSelectedUser] = useState<AdminUser | null>(null);
   const [userFiles, setUserFiles] = useState<AdminUserFile[]>([]);
+  const [userFilesCursor, setUserFilesCursor] = useState<string | null>(null);
+  const [userFilesHasMore, setUserFilesHasMore] = useState(true);
+  const [fileSearch, setFileSearch] = useState('');
+  const fileDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const [settings, setSettings] = useState<AdminSetting[]>([]);
+  const [editingSettings, setEditingSettings] = useState<Record<string, string>>({});
 
   const [usersLoading, setUsersLoading] = useState(false);
+  const [usersLoadingMore, setUsersLoadingMore] = useState(false);
   const [usersError, setUsersError] = useState<string | null>(null);
   const [filesLoading, setFilesLoading] = useState(false);
+  const [filesLoadingMore, setFilesLoadingMore] = useState(false);
 
   const [editingUser, setEditingUser] = useState<AdminUser | null>(null);
   const [editForm, setEditForm] = useState<{ quotaGB: number | string; bandwidthLimitGB: number | string; role: string }>({ quotaGB: 15, bandwidthLimitGB: 0, role: 'USER' });
@@ -48,16 +64,99 @@ export default function AdminDashboard() {
 
   const [confirmDelete, setConfirmDelete] = useState<{ type: 'user' | 'file'; id: string; username?: string } | null>(null);
   const [confirmLoading, setConfirmLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<Set<string>>(new Set());
 
   const ONE_GB = 1024 ** 3;
 
-  const fetchUsers = async () => {
+  // Users — fetch first page
+  const fetchUsers = useCallback(async (search?: string) => {
     setUsersLoading(true);
     setUsersError(null);
-    try { setUsers(await fetchUsersApi()); }
-    catch (err: unknown) { setUsersError(getApiErrorMessage(err, t('admin.fetchUsersError'))); toast.error(t('admin.fetchUsersError')); }
-    finally { setUsersLoading(false); }
-  };
+    setUsersCursor(null);
+    setUsersHasMore(true);
+    try {
+      const res = await fetchUsersApi(undefined, search);
+      setUsers(res.data);
+      setUsersCursor(res.nextCursor);
+      setUsersHasMore(res.nextCursor !== null);
+    } catch (err: unknown) {
+      setUsersError(getApiErrorMessage(err, t('admin.fetchUsersError')));
+      toast.error(t('admin.fetchUsersError'));
+    } finally { setUsersLoading(false); }
+  }, [t]);
+
+  // Users — load more
+  const loadMoreUsers = useCallback(async () => {
+    if (!usersCursor || usersLoadingMore || !usersHasMore) return;
+    setUsersLoadingMore(true);
+    try {
+      const res = await fetchUsersApi(usersCursor, userSearch || undefined);
+      setUsers(prev => [...prev, ...res.data]);
+      setUsersCursor(res.nextCursor);
+      setUsersHasMore(res.nextCursor !== null);
+    } catch {
+      toast.error(t('admin.fetchUsersError'));
+    } finally { setUsersLoadingMore(false); }
+  }, [usersCursor, usersLoadingMore, usersHasMore, userSearch, t]);
+
+  // User files — fetch first page
+  const fetchUserFiles = useCallback(async (userId: string, search?: string) => {
+    setFilesLoading(true);
+    setUserFilesCursor(null);
+    setUserFilesHasMore(true);
+    try {
+      const res = await fetchUserFilesApi(userId, undefined, search);
+      setUserFiles(res.data);
+      setUserFilesCursor(res.nextCursor);
+      setUserFilesHasMore(res.nextCursor !== null);
+    } catch {
+      toast.error(t('admin.fetchUserFilesError'));
+    } finally { setFilesLoading(false); }
+  }, [t]);
+
+  // User files — load more
+  const loadMoreUserFiles = useCallback(async () => {
+    if (!userFilesCursor || filesLoadingMore || !userFilesHasMore || !selectedUser) return;
+    setFilesLoadingMore(true);
+    try {
+      const res = await fetchUserFilesApi(selectedUser.id, userFilesCursor, fileSearch || undefined);
+      setUserFiles(prev => [...prev, ...res.data]);
+      setUserFilesCursor(res.nextCursor);
+      setUserFilesHasMore(res.nextCursor !== null);
+    } catch {
+      toast.error(t('admin.fetchUserFilesError'));
+    } finally { setFilesLoadingMore(false); }
+  }, [userFilesCursor, filesLoadingMore, userFilesHasMore, selectedUser, fileSearch, t]);
+
+  // Debounced user search
+  const handleUserSearch = useCallback((value: string) => {
+    setUserSearch(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      fetchUsers(value.trim() || undefined);
+    }, 400);
+  }, [fetchUsers]);
+
+  // Debounced file search
+  const handleFileSearch = useCallback((value: string) => {
+    setFileSearch(value);
+    if (fileDebounceRef.current) clearTimeout(fileDebounceRef.current);
+    fileDebounceRef.current = setTimeout(() => {
+      if (selectedUser) {
+        fetchUserFiles(selectedUser.id, value.trim() || undefined);
+      }
+    }, 400);
+  }, [fetchUserFiles, selectedUser]);
+
+  useEffect(() => {
+    if (!isReady) return;
+    if (activeTab === 'USERS') fetchUsers();
+    if (activeTab === 'SETTINGS') fetchSettings();
+    if (activeTab === 'USER_FILES' && selectedUser) {
+      // Don't re-fetch when switching back, keep existing files
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isReady, activeTab]);
 
   const fetchSettings = async () => {
     try {
@@ -68,19 +167,6 @@ export default function AdminDashboard() {
       setEditingSettings(initial);
     } catch (err: unknown) { toast.error(getApiErrorMessage(err, t('admin.fetchSettingsError'))); }
   };
-
-  const fetchUserFiles = async (userId: string) => {
-    setFilesLoading(true);
-    try { setUserFiles(await fetchUserFilesApi(userId)); }
-    catch { toast.error(t('admin.fetchUserFilesError')); }
-    finally { setFilesLoading(false); }
-  };
-
-  useEffect(() => {
-    if (!isReady) return;
-    if (activeTab === 'USERS') fetchUsers();
-    if (activeTab === 'SETTINGS') fetchSettings();
-  }, [isReady, activeTab]);
 
   const handleUpdateSetting = async (key: string, value: string) => {
     try { await updateSetting(key, value); toast.success(t('admin.updateSettingSuccess')); fetchSettings(); }
@@ -99,7 +185,7 @@ export default function AdminDashboard() {
       await updateUserBandwidth(editingUser.id, bwBytes);
       toast.success(t('admin.updateUserSuccess'));
       setEditingUser(null);
-      fetchUsers();
+      fetchUsers(userSearch || undefined);
     } catch (err: unknown) { toast.error(getApiErrorMessage(err, t('admin.updateUserError'))); }
   };
 
@@ -109,7 +195,15 @@ export default function AdminDashboard() {
 
   const handleDeleteUserFile = async (fileId: string) => {
     if (!selectedUser) return;
-    setConfirmDelete({ type: 'file', id: fileId });
+    setActionLoading(prev => new Set(prev).add(fileId));
+    try {
+      await deleteUserFileApi(selectedUser.id, fileId);
+      setUserFiles(prev => prev.filter(f => f.id !== fileId));
+    } catch {
+      toast.error(t('admin.deleteFileError'));
+    } finally {
+      setActionLoading(prev => { const next = new Set(prev); next.delete(fileId); return next; });
+    }
   };
 
   const handleConfirmDelete = async () => {
@@ -119,11 +213,11 @@ export default function AdminDashboard() {
       if (confirmDelete.type === 'user') {
         await deleteUserApi(confirmDelete.id);
         toast.success(t('admin.deleteUserSuccess'));
-        fetchUsers();
+        fetchUsers(userSearch || undefined);
       } else if (confirmDelete.type === 'file' && selectedUser) {
         await deleteUserFileApi(selectedUser.id, confirmDelete.id);
         toast.success(t('admin.deleteFileSuccess'));
-        fetchUserFiles(selectedUser.id);
+        setUserFiles(prev => prev.filter(f => f.id !== confirmDelete.id));
       }
     } catch (err: unknown) {
       const fallback = confirmDelete.type === 'user' ? t('admin.deleteUserError') : t('admin.deleteFileError');
@@ -156,8 +250,8 @@ export default function AdminDashboard() {
         activeTab={activeTab}
         setActiveTab={(tab) => { setActiveTab(tab); setSelectedUser(null); setIsMobileSidebarOpen(false); }}
         user={user}
-        onLogout={() => { logout(); router.push('/login'); }}
-        onBackHome={() => router.push('/')}
+        onLogout={() => { if (!isNavigating) { logout(); router.push('/login'); } }}
+        onBackHome={() => { if (!isNavigating) { router.push('/'); } }}
         isMobileOpen={isMobileSidebarOpen}
         setIsMobileOpen={setIsMobileSidebarOpen}
       />
@@ -178,13 +272,20 @@ export default function AdminDashboard() {
           {(activeTab === 'USERS' || activeTab === 'USER_FILES') && (
             <UserManagement
               users={users} selectedUser={selectedUser} currentUserId={user?.id} locale={locale} t={t}
-              loading={usersLoading} error={usersError} filesLoading={filesLoading}
+              loading={usersLoading} loadingMore={usersLoadingMore} error={usersError} filesLoading={filesLoading} filesLoadingMore={filesLoadingMore}
+              usersHasMore={usersHasMore} filesHasMore={userFilesHasMore}
+              onLoadMoreUsers={loadMoreUsers} onLoadMoreUserFiles={loadMoreUserFiles}
+              userSearch={userSearch} onUserSearch={handleUserSearch}
+              fileSearch={fileSearch} onFileSearch={handleFileSearch}
+              userFiles={userFiles}
               onSelectUser={(u) => { setSelectedUser(u); setActiveTab('USER_FILES'); fetchUserFiles(u.id); }}
-              onBack={() => { setActiveTab('USERS'); setSelectedUser(null); }}
+              onResetSelectedUser={() => { setActiveTab('USERS'); setSelectedUser(null); setUserFiles([]); setUserFilesCursor(null); setUserFilesHasMore(true); setFileSearch(''); }}
               onEditUser={(u) => { setEditingUser(u); setEditForm({ quotaGB: Number(u.quota) / ONE_GB, bandwidthLimitGB: u.dailyBandwidthLimit ? Number(u.dailyBandwidthLimit) / ONE_GB : 0, role: u.role }); }}
               onResetPassword={(u) => { setResetPwUser(u); setResetPwForm({ newPassword: '', confirmPassword: '' }); }}
-              onDeleteUser={handleDeleteUser} userFiles={userFiles} onDeleteUserFile={handleDeleteUserFile}
-              onRetry={fetchUsers}
+              onDeleteUser={handleDeleteUser}
+              onDeleteUserFile={handleDeleteUserFile}
+              onRetry={() => fetchUsers(userSearch || undefined)}
+              actionLoading={actionLoading}
             />
           )}
         </div>

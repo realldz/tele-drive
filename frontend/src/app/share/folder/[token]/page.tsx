@@ -1,15 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams } from 'next/navigation';
-import axios from 'axios';
-import { Download, AlertCircle, Folder, ChevronRight, Home, UserCircle2 } from 'lucide-react';
+import { Download, AlertCircle, Folder, ChevronRight, Home, UserCircle2, FileSearch, Loader2 } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import { useAuth } from '@/components/auth-context';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import toast from 'react-hot-toast';
 
-import { API_URL, formatSize, requestShareFolderDownloadToken, parseBandwidthError } from '@/lib/api';
+import { API_URL, api, formatSize, requestShareFolderDownloadToken, parseBandwidthError, getApiErrorMessage } from '@/lib/api';
 import type { SharedFolderRoot, FolderRecord, FileRecord, BreadcrumbItem } from '@/lib/types';
 import SharedFolderPreviewModal from './shared-folder-preview-modal';
 import { getFileIcon } from '@/lib/file-icon';
@@ -24,36 +23,75 @@ export default function SharedFolderPage() {
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [folders, setFolders] = useState<FolderRecord[]>([]);
   const [files, setFiles] = useState<FileRecord[]>([]);
+  const [foldersCursor, setFoldersCursor] = useState<string | null>(null);
+  const [filesCursor, setFilesCursor] = useState<string | null>(null);
+  const [hasMoreFolders, setHasMoreFolders] = useState(true);
+  const [hasMoreFiles, setHasMoreFiles] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const observerRef = useRef<IntersectionObserver | null>(null);
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [previewFile, setPreviewFile] = useState<FileRecord | null>(null);
 
-  const fetchContent = useCallback(async () => {
+  const fetchContent = useCallback(async (isInitial = true) => {
     if (!token) return;
-    setIsLoading(true);
+    if (isInitial) {
+      setIsLoading(true);
+    } else {
+      setIsLoadingMore(true);
+    }
     setError(null);
     try {
       const url = currentFolderId
         ? `${API_URL}/folders/share/${token}?folderId=${currentFolderId}`
         : `${API_URL}/folders/share/${token}`;
-      const res = await axios.get(url);
+      const res = await api.get(url);
 
       setRootFolder(res.data.rootFolder);
-      setFolders(res.data.folders || []);
-      setFiles(res.data.files || []);
+      if (isInitial) {
+        setFolders(res.data.folders || []);
+        setFiles(res.data.files || []);
+      } else {
+        setFolders(prev => [...prev, ...(res.data.folders || [])]);
+        setFiles(prev => [...prev, ...(res.data.files || [])]);
+      }
+      setFoldersCursor(res.data.nextFolderCursor || null);
+      setFilesCursor(res.data.nextFileCursor || null);
+      setHasMoreFolders(res.data.nextFolderCursor !== null && res.data.nextFolderCursor !== undefined);
+      setHasMoreFiles(res.data.nextFileCursor !== null && res.data.nextFileCursor !== undefined);
       setBreadcrumbs(res.data.breadcrumbs || []);
     } catch (err: unknown) {
-      setError(axios.isAxiosError(err) ? err.response?.data?.message || t('shareFolder.folderNotFound') : t('shareFolder.folderNotFound'));
+      setError(getApiErrorMessage(err, t('shareFolder.folderNotFound')));
     } finally {
       setIsLoading(false);
+      setIsLoadingMore(false);
     }
   }, [token, currentFolderId, t]);
 
   useEffect(() => {
-    fetchContent();
+    fetchContent(true);
   }, [fetchContent]);
+
+  // IntersectionObserver for load more
+  useEffect(() => {
+    if (!loadMoreRef.current) return;
+    if (observerRef.current) observerRef.current.disconnect();
+
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && (hasMoreFolders || hasMoreFiles) && !isLoading && !isLoadingMore) {
+          fetchContent(false);
+        }
+      },
+      { rootMargin: '200px' },
+    );
+
+    observerRef.current.observe(loadMoreRef.current);
+    return () => { if (observerRef.current) observerRef.current.disconnect(); };
+  }, [hasMoreFolders, hasMoreFiles, isLoading, isLoadingMore, fetchContent]);
 
   const handleDownload = async (file: FileRecord) => {
     setDownloadingId(file.id);
@@ -194,6 +232,19 @@ export default function SharedFolderPage() {
                   </button>
                 </div>
               ))}
+            </div>
+          )}
+
+          {/* Load More */}
+          {(hasMoreFolders || hasMoreFiles) && !isLoading && (
+            <div ref={loadMoreRef} className="py-6 text-center">
+              {isLoadingMore ? (
+                <Loader2 className="animate-spin text-blue-500 mx-auto" size={20} />
+              ) : (
+                <button onClick={() => fetchContent(false)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-600 transition-colors flex items-center gap-2 mx-auto">
+                  <FileSearch size={16} /> {t('dashboard.loadMore')}
+                </button>
+              )}
             </div>
           )}
         </div>
