@@ -262,22 +262,22 @@ export async function clearStreamCookie(): Promise<void> {
 
 /** Build stream URL (cookie-based, no token in URL) */
 export function getStreamUrl(fileId: string): string {
-  return `/files/stream/${fileId}`;
+  return `${API_URL}/files/stream/${fileId}`;
 }
 
 /** Build share stream URL */
 export function getShareStreamUrl(shareToken: string): string {
-  return `/files/share/stream/${shareToken}`;
+  return `${API_URL}/files/share/stream/${shareToken}`;
 }
 
 /** Build share folder stream URL */
 export function getShareFolderStreamUrl(shareToken: string, fileId: string): string {
-  return `/folders/share/${shareToken}/stream/${fileId}`;
+  return `${API_URL}/folders/share/${shareToken}/stream/${fileId}`;
 }
 
 /** @deprecated — dùng requestDownloadToken thay thế */
 export function getDownloadUrl(fileId: string, token: string) {
-  return `/files/${fileId}/download?token=${token}`;
+  return `${API_URL}/files/${fileId}/download?token=${token}`;
 }
 
 // ── Share ────────────────────────────────────────────────────────────────────
