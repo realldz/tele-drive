@@ -46,8 +46,8 @@ export default function SharedFolderPage() {
     setError(null);
     try {
       const url = currentFolderId
-        ? `${API_URL}/folders/share/${token}?folderId=${currentFolderId}`
-        : `${API_URL}/folders/share/${token}`;
+        ? `/folders/share/${token}?folderId=${currentFolderId}`
+        : `/folders/share/${token}`;
       const res = await api.get(url);
 
       setRootFolder(res.data.rootFolder);
@@ -167,9 +167,8 @@ export default function SharedFolderPage() {
                 <ChevronRight size={16} className="mx-1 text-gray-400" />
                 <button
                   onClick={() => setCurrentFolderId(crumb.id)}
-                  className={`hover:text-blue-600 transition-colors ${
-                    index === breadcrumbs.length - 1 ? 'text-gray-900 font-semibold' : 'font-medium'
-                  }`}
+                  className={`hover:text-blue-600 transition-colors ${index === breadcrumbs.length - 1 ? 'text-gray-900 font-semibold' : 'font-medium'
+                    }`}
                 >
                   {crumb.name}
                 </button>

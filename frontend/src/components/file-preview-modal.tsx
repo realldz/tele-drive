@@ -43,7 +43,7 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
     setFileInfo(null);
 
     api
-      .get(`${API_URL}/files/${fileId}/info`)
+      .get(`/files/${fileId}/info`)
       .then(async (res) => {
         setFileInfo(res.data);
         await setupStream(getStreamUrl(fileId));
