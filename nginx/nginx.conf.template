@@ -14,75 +14,10 @@ server {
 # ─── Application HTTP server (for $APP_DOMAIN) ────────────────────────
 server {
     listen 80;
-    server_name ${APP_DOMAIN};  # Replace with your domain or remove to disable HTTP
+    server_name ${APP_DOMAIN};  # envsubst replaces this
 
-    # S3-compatible API via /api/s3 — preserve path for SigV4 verification
-    location = /api/s3 {
-        proxy_pass http://backend:3001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        client_max_body_size 2000m;
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
-        proxy_request_buffering off;
-    }
-
-    location /api/s3/ {
-        proxy_pass http://backend:3001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        client_max_body_size 2000m;
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
-        proxy_request_buffering off;
-    }
-
-    # Backend API — strip /api prefix and proxy to backend
-    location /api/ {
-        rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://backend:3001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        # Large file uploads
-        client_max_body_size 2000m;
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
-    }
-
-    # S3-compatible API — direct proxy (for aws-cli, s3cmd, etc.)
-    # Regex to match /s3 or /s3/* but NOT /s3-keys or other frontend routes
-    location ~ ^/s3(/|$) {
-        proxy_pass http://backend:3001;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-
-        client_max_body_size 2000m;
-        proxy_read_timeout 600s;
-        proxy_send_timeout 600s;
-        proxy_request_buffering off;
-    }
-
-    # Frontend — default route
-    location / {
-        proxy_pass http://frontend:3000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection $connection_upgrade;
-    }
+    # Redirect HTTP → HTTPS
+    return 301 https://$host$request_uri;
 }
 
 # ─── Default HTTPS catch-all (returns 404 for direct IP access) ───────
@@ -90,7 +25,6 @@ server {
     listen 443 ssl default_server;
     server_name _;
 
-    # Self-signed dummy cert
     ssl_certificate     /etc/nginx/ssl/dummy.crt;
     ssl_certificate_key /etc/nginx/ssl/dummy.key;
 
@@ -102,8 +36,8 @@ server {
     listen 443 ssl;
     server_name ${APP_DOMAIN};
 
-    ssl_certificate     /etc/nginx/ssl/${SSL_CERT_NAME:-fullchain}.pem;
-    ssl_certificate_key /etc/nginx/ssl/${SSL_CERT_NAME:-privkey}.pem;
+    ssl_certificate     /etc/nginx/ssl/${SSL_CERT_FILE:-cert.pem};
+    ssl_certificate_key /etc/nginx/ssl/${SSL_KEY_FILE:-key.pem};
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;

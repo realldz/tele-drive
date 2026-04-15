@@ -33,7 +33,9 @@ build/
 !.env.example
 *.pem
 *.key
+*.crt
 cert.pfx
+!/nginx/ssl/.gitkeep
 
 # Database
 *.db
