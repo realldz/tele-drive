@@ -130,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
-    const res = await api.post(`${API_URL}/auth/login`, { username, password });
+    const res = await api.post(`/auth/login`, { username, password });
     const { access_token, user: userData } = res.data;
     localStorage.setItem('token', access_token);
     localStorage.setItem('user', JSON.stringify(userData));
@@ -140,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const register = useCallback(async (username: string, password: string) => {
-    const res = await api.post(`${API_URL}/auth/register`, { username, password });
+    const res = await api.post(`/auth/register`, { username, password });
     const { access_token, user: userData } = res.data;
     localStorage.setItem('token', access_token);
     localStorage.setItem('user', JSON.stringify(userData));

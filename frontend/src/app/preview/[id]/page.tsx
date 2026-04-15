@@ -38,7 +38,7 @@ export default function FilePreviewPage() {
     setIsLoading(true);
     setError(null);
 
-    api.get(`${API_URL}/files/${fileId}/info`)
+    api.get(`/files/${fileId}/info`)
       .then(async (res) => {
         setFileInfo(res.data);
         await setupStream(getStreamUrl(fileId));

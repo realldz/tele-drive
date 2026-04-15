@@ -42,7 +42,7 @@ export default function SharePage() {
     if (!token) return;
     const fetchFileInfo = async () => {
       try {
-        const res = await api.get(`${API_URL}/files/share/${token}`);
+        const res = await api.get(`files/share/${token}`);
         const info = res.data;
         setFileInfo(info);
         if (isPreviewable(info.mimeType)) {
@@ -122,7 +122,7 @@ export default function SharePage() {
         ) : (
           <div className={showPreview ? "flex flex-col md:flex-row" : "p-8 flex flex-col items-center text-center"}>
 
-              {showPreview && (
+            {showPreview && (
               <div className="w-full md:w-2/3 h-[50vh] md:h-[60vh] bg-gray-100 border-b md:border-b-0 md:border-r border-gray-200 relative overflow-hidden">
                 {isStreamLoading ? (
                   <div className="flex h-full items-center justify-center">

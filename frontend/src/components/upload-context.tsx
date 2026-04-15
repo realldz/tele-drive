@@ -97,8 +97,8 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     if (item.targetFolderId) formData.append('folderId', item.targetFolderId);
 
     const url = item.conflictAction
-      ? `${API_URL}/files/upload?onConflict=${item.conflictAction}`
-      : `${API_URL}/files/upload`;
+      ? `/files/upload?onConflict=${item.conflictAction}`
+      : `/files/upload`;
 
     await api.post(url, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
@@ -119,8 +119,8 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     updateItem(item.id, { totalChunks });
 
     const initUrl = item.conflictAction
-      ? `${API_URL}/files/upload/init?onConflict=${item.conflictAction}`
-      : `${API_URL}/files/upload/init`;
+      ? `/files/upload/init?onConflict=${item.conflictAction}`
+      : `/files/upload/init`;
 
     const initRes = await api.post(initUrl, {
       filename: item.file.name,
@@ -171,7 +171,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       for (let attempt = 0; ; attempt++) {
         try {
           await api.post(
-            `${API_URL}/files/upload/${serverFileId}/chunk/${chunkIndex}`,
+            `/files/upload/${serverFileId}/chunk/${chunkIndex}`,
             chunkFormData,
             {
               timeout: 0,
@@ -245,7 +245,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       throw new Error('Upload cancelled');
     }
 
-    await api.post(`${API_URL}/files/upload/${serverFileId}/complete`);
+    await api.post(`/files/upload/${serverFileId}/complete`);
   }, [maxChunkSize, concurrency, updateItem]);
 
   // Process queue — pick next pending item and upload
