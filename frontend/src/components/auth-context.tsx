@@ -1,10 +1,8 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
-import axios from 'axios';
 
-import { API_URL, fetchCurrentUser } from '@/lib/api';
-import toast from 'react-hot-toast';
+import { API_URL, api, fetchCurrentUser } from '@/lib/api';
 
 interface User {
   id: string;
@@ -65,8 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
     if (savedToken && savedUser) {
-      // Set axios header NGAY trong cùng effect — trước khi child effects chạy
-      axios.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
+      api.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
     }
@@ -83,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Axios request interceptor: mọi request tự lấy token mới nhất từ localStorage.
   // Đây là safety net — nếu axios.defaults bị miss do timing, interceptor sẽ bắt lại.
   useEffect(() => {
-    requestInterceptorId.current = axios.interceptors.request.use((config) => {
+    requestInterceptorId.current = api.interceptors.request.use((config) => {
       const currentToken = localStorage.getItem('token');
       if (currentToken) {
         config.headers.Authorization = `Bearer ${currentToken}`;
@@ -95,7 +92,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       if (requestInterceptorId.current !== null) {
-        axios.interceptors.request.eject(requestInterceptorId.current);
+        api.interceptors.request.eject(requestInterceptorId.current);
       }
     };
   }, []);
@@ -103,20 +100,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Axios response interceptor: tự động xử lí 401 — clear auth state + redirect login.
   // Tập trung logic ở đây thay vì lặp try/catch 401 ở từng page.
   useEffect(() => {
-    responseInterceptorId.current = axios.interceptors.response.use(
+    responseInterceptorId.current = api.interceptors.response.use(
       (response) => response,
       (error) => {
         const url = error.config?.url || '';
         const isAuthRoute = url.includes('/auth/login') || url.includes('/auth/register');
-        
+
         if (error?.response?.status === 401 && !isAuthRoute) {
           localStorage.removeItem('token');
           localStorage.removeItem('user');
-          delete axios.defaults.headers.common['Authorization'];
+          delete api.defaults.headers.common['Authorization'];
           setToken(null);
           setUser(null);
           setQuotaInfo(null);
-          
+
           if (window.location.pathname !== '/login') {
             window.location.href = '/login';
           }
@@ -127,27 +124,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       if (responseInterceptorId.current !== null) {
-        axios.interceptors.response.eject(responseInterceptorId.current);
+        api.interceptors.response.eject(responseInterceptorId.current);
       }
     };
   }, []);
 
   const login = useCallback(async (username: string, password: string) => {
-    const res = await axios.post(`${API_URL}/auth/login`, { username, password });
+    const res = await api.post(`${API_URL}/auth/login`, { username, password });
     const { access_token, user: userData } = res.data;
     localStorage.setItem('token', access_token);
     localStorage.setItem('user', JSON.stringify(userData));
-    axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+    api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
     setToken(access_token);
     setUser(userData);
   }, []);
 
   const register = useCallback(async (username: string, password: string) => {
-    const res = await axios.post(`${API_URL}/auth/register`, { username, password });
+    const res = await api.post(`${API_URL}/auth/register`, { username, password });
     const { access_token, user: userData } = res.data;
     localStorage.setItem('token', access_token);
     localStorage.setItem('user', JSON.stringify(userData));
-    axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+    api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
     setToken(access_token);
     setUser(userData);
   }, []);
@@ -158,7 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setQuotaInfo(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    delete axios.defaults.headers.common['Authorization'];
+    delete api.defaults.headers.common['Authorization'];
   }, []);
 
   return (

@@ -42,15 +42,15 @@ export default function AdminSidebar({
         </div>
         <nav className="flex-1 px-4 space-y-2 overflow-y-auto mt-2">
           <button onClick={() => setActiveTab('USERS')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${activeTab === 'USERS' || activeTab === 'USER_FILES' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
+            className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${activeTab === 'USERS' || activeTab === 'USER_FILES' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
             <Users size={20} /> {t('admin.users')}
           </button>
           <button onClick={() => setActiveTab('SETTINGS')}
-            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${activeTab === 'SETTINGS' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
+            className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${activeTab === 'SETTINGS' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
             <Settings size={20} /> {t('admin.systemSettings')}
           </button>
           <div className="pt-4 mt-4 border-t border-slate-800" />
-          <button onClick={onBackHome} className="w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium text-slate-300 hover:bg-white/5 hover:text-white transition-colors">
+          <button onClick={onBackHome} className="w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium text-slate-300 hover:bg-white/5 hover:text-white transition-colors">
             <ArrowLeft size={20} /> {t('admin.backHome')}
           </button>
         </nav>

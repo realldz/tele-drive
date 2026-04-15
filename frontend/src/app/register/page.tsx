@@ -5,12 +5,14 @@ import { useAuth } from '@/components/auth-context';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useI18n } from '@/components/i18n-context';
+import { useNavigation } from '@/components/navigation-loader';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import { UserPlus, Loader2 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api';
 
 export default function RegisterPage() {
   const { register } = useAuth();
+  const { isNavigating } = useNavigation();
   const router = useRouter();
   const { t } = useI18n();
   const [username, setUsername] = useState('');
@@ -21,7 +23,7 @@ export default function RegisterPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!username.trim() || !password.trim()) return;
+    if (isNavigating || !username.trim() || !password.trim()) return;
 
     if (password !== confirmPassword) {
       setError(t('register.passwordMismatch'));

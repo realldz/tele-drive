@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import axios from 'axios';
 import { Download, FileText, AlertCircle, Loader2, UserCircle2 } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import { useAuth } from '@/components/auth-context';
@@ -10,7 +9,7 @@ import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
 
-import { API_URL, formatSize, requestShareDownloadToken, parseBandwidthError, getShareStreamUrl } from '@/lib/api';
+import { API_URL, api, formatSize, requestShareDownloadToken, parseBandwidthError, getShareStreamUrl, getApiErrorMessage } from '@/lib/api';
 import { useGuestStream } from '@/hooks/use-stream';
 import type { SharedFileInfo } from '@/lib/types';
 
@@ -43,14 +42,14 @@ export default function SharePage() {
     if (!token) return;
     const fetchFileInfo = async () => {
       try {
-        const res = await axios.get(`${API_URL}/files/share/${token}`);
+        const res = await api.get(`${API_URL}/files/share/${token}`);
         const info = res.data;
         setFileInfo(info);
         if (isPreviewable(info.mimeType)) {
           await setupStream(getShareStreamUrl(token));
         }
       } catch (err: unknown) {
-        setError(axios.isAxiosError(err) ? err.response?.data?.message || t('sharePage.fileNotFound') : t('sharePage.fileNotFound'));
+        setError(getApiErrorMessage(err, t('sharePage.fileNotFound')));
       }
     };
     fetchFileInfo();

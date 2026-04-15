@@ -25,6 +25,7 @@ interface DashboardContentProps {
     isSelected: (id: string) => boolean;
   };
   downloadingFiles: Set<string>;
+  actionLoading: Set<string>;
   dragOverFolderId: string | null;
   hasMore: boolean;
   loadMoreRef: React.RefObject<HTMLDivElement | null>;
@@ -53,6 +54,7 @@ export default function DashboardContent({
   onSort,
   selection,
   downloadingFiles,
+  actionLoading,
   dragOverFolderId,
   hasMore,
   loadMoreRef,
@@ -216,8 +218,8 @@ export default function DashboardContent({
                   </div>
                   <div className="flex gap-2 mt-auto">
                     {file.status === 'uploading' ? (
-                      <button onClick={(e) => onDeleteStuckFile(e, file.id)} className="w-full p-2 text-red-500 bg-red-50 rounded-lg hover:bg-red-100 transition-colors flex items-center justify-center gap-1 text-sm font-medium">
-                        <Trash2 size={14} /> {t('dashboard.stuckDelete')}
+                      <button onClick={(e) => onDeleteStuckFile(e, file.id)} disabled={actionLoading.has(file.id)} className="w-full p-2 text-red-500 bg-red-50 rounded-lg hover:bg-red-100 transition-colors flex items-center justify-center gap-1 text-sm font-medium disabled:opacity-50">
+                        {actionLoading.has(file.id) ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} {t('dashboard.stuckDelete')}
                       </button>
                     ) : (
                       <>
@@ -277,7 +279,9 @@ export default function DashboardContent({
                       <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">{formatDate(file.createdAt)}</td>
                       <td className="p-3 md:p-4 text-right whitespace-nowrap">
                         {file.status === 'uploading' ? (
-                          <button onClick={(e) => onDeleteStuckFile(e, file.id)} className="p-1.5 text-red-500 bg-red-50 hover:bg-red-100 rounded-md transition-colors"><Trash2 size={16} /></button>
+                          <button onClick={(e) => onDeleteStuckFile(e, file.id)} disabled={actionLoading.has(file.id)} className="p-1.5 text-red-500 bg-red-50 hover:bg-red-100 rounded-md transition-colors disabled:opacity-50">
+                            {actionLoading.has(file.id) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                          </button>
                         ) : (
                           <div className="flex justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                             <button onClick={(e) => { e.stopPropagation(); if (!downloadingFiles.has(file.id)) onDownload(file.id, file.filename); }}

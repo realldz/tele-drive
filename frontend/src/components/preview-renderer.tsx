@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import axios from 'axios';
+import { api, getApiErrorMessage } from '@/lib/api';
 import { Download, Loader2, FileIcon, AudioLines } from 'lucide-react';
 // import 'plyr/dist/plyr.css';
 import { Document, Page, pdfjs } from 'react-pdf';
@@ -244,7 +244,7 @@ function CodeViewer({ url, filename }: { url: string; filename: string }) {
   useEffect(() => {
     setIsLoading(true);
     highlightedRef.current = false;
-    axios.get(url, { responseType: 'text', withCredentials: true, transformResponse: [(data: any) => data] })
+    api.get(url, { responseType: 'text', withCredentials: true, transformResponse: [(data: any) => data] })
       .then(res => setContent(res.data))
       .catch(() => setContent('Failed to load file content'))
       .finally(() => setIsLoading(false));

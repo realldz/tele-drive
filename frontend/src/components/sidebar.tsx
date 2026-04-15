@@ -91,7 +91,7 @@ export default function Sidebar({ children }: SidebarProps) {
               <button
                 key={item.href}
                 onClick={() => { router.push(item.href); setIsMobileOpen(false); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${isActive ? 'bg-white/10 text-white' : 'hover:bg-white/5 text-slate-300'}`}
+                className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${isActive ? 'bg-white/10 text-white' : 'hover:bg-white/5 text-slate-300'}`}
               >
                 <item.icon size={20} /> {item.label}
               </button>
@@ -101,10 +101,10 @@ export default function Sidebar({ children }: SidebarProps) {
           {user?.role === 'ADMIN' && (
             <>
               <div className="pt-4 mt-4 border-t border-slate-800"></div>
-              <button
-                onClick={() => { router.push('/admin'); setIsMobileOpen(false); }}
-                className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${pathname === '/admin' ? 'bg-white/10 text-amber-400' : 'hover:bg-white/5 text-amber-400'}`}
-              >
+            <button
+              onClick={() => { router.push('/admin'); setIsMobileOpen(false); }}
+              className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${pathname === '/admin' ? 'bg-white/10 text-amber-400' : 'hover:bg-white/5 text-amber-400'}`}
+            >
                 <ShieldAlert size={20} /> {t('sidebar.adminPanel')}
               </button>
             </>
@@ -162,7 +162,7 @@ export default function Sidebar({ children }: SidebarProps) {
 
       {/* Change Password Modal */}
       {showChangePassword && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
           <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden relative">
             <div className="p-6 border-b border-gray-100">
               <h3 className="text-lg font-bold text-gray-800">{t('password.changeTitle')}</h3>

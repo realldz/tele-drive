@@ -13,6 +13,8 @@ import { TelegramService } from '../telegram/telegram.service';
 import { fetchWithRetry } from '../telegram/telegram.service';
 import { Transform, TransformCallback, Readable } from 'stream';
 import Busboy from 'busboy';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse } from '../common/types/paginated-response.type';
 import * as crypto from 'crypto';
 import type { Response } from 'express';
 import { CryptoService } from '../crypto/crypto.service';
@@ -2330,15 +2332,63 @@ export class FileService {
    * Danh sách file trong thùng rác của user.
    * Chỉ hiển thị các file trực tiếp bị xoá (không hiển thị các file con của 1 folder đã bị xoá).
    */
-  async listTrash(userId: string) {
-    return this.prisma.fileRecord.findMany({
-      where: {
-        userId,
-        deletedAt: { not: null },
-        OR: [{ folderId: null }, { folder: { deletedAt: null } }],
+  async listTrash(
+    userId: string,
+    pagination: PaginationQueryDto,
+  ): Promise<PaginatedResponse<unknown>> {
+    const limit = pagination.limit ?? 20;
+    const where: Record<string, unknown> = {
+      userId,
+      deletedAt: { not: null },
+      OR: [{ folderId: null }, { folder: { deletedAt: null } }],
+    };
+
+    if (pagination.search) {
+      where.filename = { contains: pagination.search, mode: 'insensitive' };
+    }
+
+    if (pagination.cursor) {
+      try {
+        const decoded = Buffer.from(pagination.cursor, 'base64').toString(
+          'utf-8',
+        );
+        const [timestamp, id] = decoded.split('_');
+        where.OR = [
+          { deletedAt: { lt: new Date(timestamp) } },
+          { deletedAt: new Date(timestamp), id: { lt: id } },
+        ];
+      } catch {
+        // Invalid cursor, ignore
+      }
+    }
+
+    const data = await this.prisma.fileRecord.findMany({
+      where,
+      orderBy: [{ deletedAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
+      select: {
+        id: true,
+        filename: true,
+        size: true,
+        mimeType: true,
+        deletedAt: true,
+        createdAt: true,
+        folderId: true,
+        userId: true,
       },
-      orderBy: { deletedAt: 'desc' },
     });
+
+    const hasNext = data.length > limit;
+    const items = hasNext ? data.slice(0, -1) : data;
+    const nextCursor = hasNext
+      ? Buffer.from(
+          `${(items[items.length - 1] as { deletedAt: Date }).deletedAt.toISOString()}_${(items[items.length - 1] as { id: string }).id}`,
+        ).toString('base64')
+      : null;
+
+    const total = await this.prisma.fileRecord.count({ where });
+
+    return { data: items, nextCursor, total };
   }
 
   /**

@@ -31,6 +31,7 @@ import { Public } from '../auth/public.decorator';
 import { OptionalJwtGuard } from '../auth/optional-jwt.guard';
 import { AdminGuard } from '../auth/admin.guard';
 import { InitUploadDto } from './dto/init-upload.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { getClientIp } from '../common/utils/get-client-ip';
 import type { AuthenticatedRequest } from '../common/types/request';
 import type { Response, Request } from 'express';
@@ -449,8 +450,11 @@ export class FileController {
   }
 
   @Get('trash/list')
-  listTrash(@Req() req: AuthenticatedRequest) {
-    return this.fileService.listTrash(req.user.userId);
+  listTrash(
+    @Query() pagination: PaginationQueryDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.fileService.listTrash(req.user.userId, pagination);
   }
 
   @Patch(':id/restore')

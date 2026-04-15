@@ -62,6 +62,7 @@
   "dashboard.new": "新建",
   "dashboard.createdDate": "创建日期",
   "dashboard.loadingContent": "正在加载内容...",
+  "dashboard.loadMore": "加载更多",
   "createFolder.title": "新建文件夹",
   "createFolder.placeholder": "输入文件夹名称...",
   "createFolder.create": "创建",

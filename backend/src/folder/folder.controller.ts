@@ -20,6 +20,7 @@ import { OptionalJwtGuard } from '../auth/optional-jwt.guard';
 import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
 import { StreamCookieGuard } from '../common/guards/stream-cookie.guard';
 import { CreateFolderDto } from './dto/create-folder.dto';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import type { AuthenticatedRequest } from '../common/types/request';
 import type { Response, Request } from 'express';
 import type { ConflictAction } from '../common/name-conflict.service';
@@ -53,15 +54,18 @@ export class FolderController {
 
   @Get('content')
   getContent(
-    @Query('folderId') folderId: string | undefined,
+    @Query() pagination: PaginationQueryDto,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.folderService.getContent(req.user.userId, folderId);
+    return this.folderService.getContent(req.user.userId, pagination.folderId, pagination);
   }
 
   @Get('trash/list')
-  listTrash(@Req() req: AuthenticatedRequest) {
-    return this.folderService.listTrash(req.user.userId);
+  listTrash(
+    @Query() pagination: PaginationQueryDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.folderService.listTrash(req.user.userId, pagination);
   }
 
   @Get()
@@ -157,9 +161,9 @@ export class FolderController {
   @Get('share/:token')
   getSharedContent(
     @Param('token') token: string,
-    @Query('folderId') folderId?: string,
+    @Query() pagination: PaginationQueryDto,
   ) {
-    return this.folderService.getSharedContent(token, folderId);
+    return this.folderService.getSharedContent(token, pagination.folderId, pagination);
   }
 
   @Public()

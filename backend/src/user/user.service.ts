@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { FileService } from '../file/file.service';
+import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { PaginatedResponse } from '../common/types/paginated-response.type';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -41,10 +43,24 @@ export class UserService {
   }
 
   /**
-   * GET /users — Danh sách tất cả user (Admin only)
+   * GET /users — Danh sách tất cả user (Admin only), hỗ trợ pagination + search
    */
-  async findAll() {
-    return this.prisma.user.findMany({
+  async findAll(
+    pagination: PaginationQueryDto,
+  ): Promise<PaginatedResponse<unknown>> {
+    const limit = pagination.limit ?? 20;
+    const where: Record<string, unknown> = {};
+
+    if (pagination.search) {
+      where.username = { contains: pagination.search, mode: 'insensitive' };
+    }
+
+    if (pagination.cursor) {
+      where.id = { gt: pagination.cursor };
+    }
+
+    const data = await this.prisma.user.findMany({
+      where,
       select: {
         id: true,
         username: true,
@@ -57,8 +73,19 @@ export class UserService {
         createdAt: true,
         updatedAt: true,
       },
-      orderBy: { createdAt: 'asc' },
+      orderBy: { id: 'asc' },
+      take: limit + 1,
     });
+
+    const hasNext = data.length > limit;
+    const items = hasNext ? data.slice(0, -1) : data;
+    const nextCursor = hasNext
+      ? (items[items.length - 1] as { id: string }).id
+      : null;
+
+    const total = await this.prisma.user.count({ where });
+
+    return { data: items, nextCursor, total };
   }
 
   /**
@@ -188,11 +215,43 @@ export class UserService {
 
   /**
    * GET /users/:id/files — Lấy danh sách metadata các file của user (Admin only)
-   * Lưu ý không trả về stream hay download urls
+   * Hỗ trợ pagination + search
    */
-  async getUserFiles(targetUserId: string) {
-    return this.prisma.fileRecord.findMany({
-      where: { userId: targetUserId, deletedAt: null },
+  async getUserFiles(
+    targetUserId: string,
+    pagination: PaginationQueryDto,
+  ): Promise<PaginatedResponse<unknown>> {
+    const limit = pagination.limit ?? 20;
+    const where: Record<string, unknown> = {
+      userId: targetUserId,
+      deletedAt: null,
+    };
+
+    if (pagination.search) {
+      where.filename = {
+        contains: pagination.search,
+        mode: 'insensitive',
+      };
+    }
+
+    // Parse cursor: format is "timestamp_id" base64 encoded
+    if (pagination.cursor) {
+      try {
+        const decoded = Buffer.from(pagination.cursor, 'base64').toString(
+          'utf-8',
+        );
+        const [timestamp, id] = decoded.split('_');
+        where.OR = [
+          { createdAt: { lt: new Date(timestamp) } },
+          { createdAt: new Date(timestamp), id: { lt: id } },
+        ];
+      } catch {
+        // Invalid cursor, ignore
+      }
+    }
+
+    const data = await this.prisma.fileRecord.findMany({
+      where,
       select: {
         id: true,
         filename: true,
@@ -201,10 +260,23 @@ export class UserService {
         createdAt: true,
         updatedAt: true,
         isEncrypted: true,
-        telegramFileId: true, // Cho phép admin xem info cơ bản
+        telegramFileId: true,
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      take: limit + 1,
     });
+
+    const hasNext = data.length > limit;
+    const items = hasNext ? data.slice(0, -1) : data;
+    const nextCursor = hasNext
+      ? Buffer.from(
+          `${(items[items.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(items[items.length - 1] as { id: string }).id}`,
+        ).toString('base64')
+      : null;
+
+    const total = await this.prisma.fileRecord.count({ where });
+
+    return { data: items, nextCursor, total };
   }
 
   /**

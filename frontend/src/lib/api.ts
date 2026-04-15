@@ -1,6 +1,7 @@
-import axios from 'axios';
+import axios, { type AxiosInstance } from 'axios';
 import type { FileRecord, FolderRecord, BreadcrumbItem, TrashedFile, TrashedFolder, AdminUser, AdminSetting, AdminUserFile } from './types';
 import toast from 'react-hot-toast';
+import { incPendingCount, decPendingCount } from './request-tracker';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
@@ -12,11 +13,45 @@ export function getAbsoluteApiUrl(): string {
 }
 
 /**
- * Pre-configured axios instance.
+ * Pre-configured axios instance with timeout and request tracking.
  * Auth headers are handled globally by the axios interceptor in auth-context.tsx,
  * so callers don't need to pass tokens manually.
  */
-const api = axios;
+export const api: AxiosInstance = axios.create({
+  baseURL: API_URL,
+  timeout: 30000,
+});
+
+// Request interceptor: track pending count for loading overlay
+api.interceptors.request.use(
+  (config) => {
+    incPendingCount();
+    return config;
+  },
+  (error) => {
+    decPendingCount();
+    return Promise.reject(error);
+  },
+);
+
+// Response interceptor: decrement pending count + handle timeout/network errors
+api.interceptors.response.use(
+  (response) => {
+    decPendingCount();
+    return response;
+  },
+  (error) => {
+    decPendingCount();
+    if (axios.isAxiosError(error)) {
+      if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
+        toast.error('Yêu cầu hết thời gian. Vui lòng thử lại.');
+      } else if (!error.response) {
+        toast.error('Lỗi kết nối. Kiểm tra mạng của bạn.');
+      }
+    }
+    return Promise.reject(error);
+  },
+);
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -42,11 +77,81 @@ export async function fetchCurrentUser() {
 
 // ── Folder Content ───────────────────────────────────────────────────────────
 
-export async function fetchFolderContent(folderId?: string): Promise<{ folders: FolderRecord[]; files: FileRecord[] }> {
-  const url = folderId
-    ? `${API_URL}/folders/content?folderId=${folderId}`
-    : `${API_URL}/folders/content`;
-  const res = await api.get(url);
+export interface PaginatedResponse<T> {
+  data: T[];
+  nextCursor: string | null;
+  total: number;
+}
+
+export interface PaginatedFolderContent {
+  folders: FolderRecord[];
+  files: FileRecord[];
+  nextFolderCursor: string | null;
+  nextFileCursor: string | null;
+  totalFolders: number;
+  totalFiles: number;
+}
+
+export async function fetchFolderContent(
+  folderId?: string,
+  cursor?: string,
+  search?: string,
+): Promise<PaginatedFolderContent & { data: FolderRecord[] | FileRecord[] }> {
+  const params = new URLSearchParams();
+  if (folderId) params.set('folderId', folderId);
+  if (cursor) params.set('cursor', cursor);
+  if (search) params.set('search', search);
+  params.set('limit', '50');
+  const res = await api.get(`${API_URL}/folders/content?${params}`);
+  const result = res.data;
+  // Flatten folders + files for useServerPagination
+  return {
+    data: [...(result.folders || []), ...(result.files || [])] as FolderRecord[] | FileRecord[],
+    nextCursor: result.nextFolderCursor || result.nextFileCursor || null,
+    total: (result.totalFolders || 0) + (result.totalFiles || 0),
+    folders: result.folders || [],
+    files: result.files || [],
+    nextFolderCursor: result.nextFolderCursor,
+    nextFileCursor: result.nextFileCursor,
+    totalFolders: result.totalFolders || 0,
+    totalFiles: result.totalFiles || 0,
+  } as PaginatedFolderContent & { data: FolderRecord[] | FileRecord[] };
+}
+
+export async function fetchFolderContentInitial(
+  folderId?: string,
+  search?: string,
+): Promise<PaginatedFolderContent> {
+  const params = new URLSearchParams();
+  if (folderId) params.set('folderId', folderId);
+  if (search) params.set('search', search);
+  params.set('limit', '50');
+  const res = await api.get(`${API_URL}/folders/content?${params}`);
+  const result = res.data;
+  return {
+    folders: result.folders || [],
+    files: result.files || [],
+    nextFolderCursor: result.nextFolderCursor,
+    nextFileCursor: result.nextFileCursor,
+    totalFolders: result.totalFolders || 0,
+    totalFiles: result.totalFiles || 0,
+  };
+}
+
+export async function fetchFolderContentNextPage(
+  folderId: string | undefined,
+  nextFolderCursor: string | null,
+  nextFileCursor: string | null,
+  search?: string,
+): Promise<{ folders: FolderRecord[]; files: FileRecord[]; nextFolderCursor: string | null; nextFileCursor: string | null }> {
+  const params = new URLSearchParams();
+  if (folderId) params.set('folderId', folderId);
+  // Use both cursors - backend parses the combined cursor
+  const combinedCursor = nextFolderCursor || nextFileCursor;
+  if (combinedCursor) params.set('cursor', combinedCursor);
+  if (search) params.set('search', search);
+  params.set('limit', '50');
+  const res = await api.get(`${API_URL}/folders/content?${params}`);
   return res.data;
 }
 
@@ -189,12 +294,28 @@ export async function unshareItem(type: 'file' | 'folder', id: string) {
 
 // ── Trash ────────────────────────────────────────────────────────────────────
 
-export async function fetchTrash(): Promise<{ files: TrashedFile[]; folders: TrashedFolder[] }> {
-  const [filesRes, foldersRes] = await Promise.all([
-    api.get(`${API_URL}/files/trash/list`),
-    api.get(`${API_URL}/folders/trash/list`),
-  ]);
-  return { files: filesRes.data, folders: foldersRes.data };
+export async function fetchTrashFolders(
+  cursor?: string,
+  search?: string,
+): Promise<PaginatedResponse<TrashedFolder>> {
+  const params = new URLSearchParams();
+  if (cursor) params.set('cursor', cursor);
+  if (search) params.set('search', search);
+  params.set('limit', '20');
+  const res = await api.get(`${API_URL}/folders/trash/list?${params}`);
+  return res.data;
+}
+
+export async function fetchTrashFiles(
+  cursor?: string,
+  search?: string,
+): Promise<PaginatedResponse<TrashedFile>> {
+  const params = new URLSearchParams();
+  if (cursor) params.set('cursor', cursor);
+  if (search) params.set('search', search);
+  params.set('limit', '20');
+  const res = await api.get(`${API_URL}/files/trash/list?${params}`);
+  return res.data;
 }
 
 export async function emptyTrash() {
@@ -203,8 +324,15 @@ export async function emptyTrash() {
 
 // ── Admin ────────────────────────────────────────────────────────────────────
 
-export async function fetchUsers(): Promise<AdminUser[]> {
-  const res = await api.get(`${API_URL}/users`);
+export async function fetchUsers(
+  cursor?: string,
+  search?: string,
+): Promise<PaginatedResponse<AdminUser>> {
+  const params = new URLSearchParams();
+  if (cursor) params.set('cursor', cursor);
+  if (search) params.set('search', search);
+  params.set('limit', '20');
+  const res = await api.get(`${API_URL}/users?${params}`);
   return res.data;
 }
 
@@ -243,8 +371,16 @@ export async function deleteUser(userId: string) {
   return api.delete(`${API_URL}/users/${userId}`);
 }
 
-export async function fetchUserFiles(userId: string): Promise<AdminUserFile[]> {
-  const res = await api.get(`${API_URL}/users/${userId}/files`);
+export async function fetchUserFiles(
+  userId: string,
+  cursor?: string,
+  search?: string,
+): Promise<PaginatedResponse<AdminUserFile>> {
+  const params = new URLSearchParams();
+  if (cursor) params.set('cursor', cursor);
+  if (search) params.set('search', search);
+  params.set('limit', '20');
+  const res = await api.get(`${API_URL}/users/${userId}/files?${params}`);
   return res.data;
 }
 

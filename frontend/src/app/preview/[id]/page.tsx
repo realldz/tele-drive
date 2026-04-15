@@ -4,10 +4,9 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useI18n } from '@/components/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
-import axios from 'axios';
 import { FileIcon, Download, ArrowLeft, Loader2 } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
-import { API_URL, requestDownloadToken, parseBandwidthError, getStreamUrl, getApiErrorMessage } from '@/lib/api';
+import { API_URL, api, requestDownloadToken, parseBandwidthError, getStreamUrl, getApiErrorMessage } from '@/lib/api';
 import { useStream } from '@/hooks/use-stream';
 import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
@@ -39,7 +38,7 @@ export default function FilePreviewPage() {
     setIsLoading(true);
     setError(null);
 
-    axios.get(`${API_URL}/files/${fileId}/info`)
+    api.get(`${API_URL}/files/${fileId}/info`)
       .then(async (res) => {
         setFileInfo(res.data);
         await setupStream(getStreamUrl(fileId));

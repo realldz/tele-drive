@@ -1,11 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { ArrowLeft, Trash2, Loader2, Search, Info, AlertCircle, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Trash2, Loader2, Search, Info, AlertCircle, RefreshCw, FileSearch } from 'lucide-react';
 import { LOCALE_DATE_MAP } from '@/components/i18n-context';
 import { formatBytes } from '@/lib/api';
 import { getFileIcon } from '@/lib/file-icon';
-import { useLazyLoad } from '@/hooks/use-lazy-load';
 import FileDetailsDialog from '@/components/file-details-dialog';
 import type { FileRecord, AdminUser, AdminUserFile } from '@/lib/types';
 
@@ -16,33 +15,40 @@ interface UserManagementProps {
   locale: string;
   t: (key: string, params?: Record<string, string | number>) => string;
   loading: boolean;
+  loadingMore: boolean;
   error: string | null;
   filesLoading: boolean;
+  filesLoadingMore: boolean;
+  usersHasMore: boolean;
+  filesHasMore: boolean;
+  onLoadMoreUsers: () => void;
+  onLoadMoreUserFiles: () => void;
+  userSearch: string;
+  onUserSearch: (v: string) => void;
+  fileSearch: string;
+  onFileSearch: (v: string) => void;
   onSelectUser: (user: AdminUser) => void;
-  onBack: () => void;
+  onResetSelectedUser: () => void;
   onEditUser: (user: AdminUser) => void;
   onResetPassword: (user: AdminUser) => void;
   onDeleteUser: (id: string, username: string) => void;
   userFiles: AdminUserFile[];
   onDeleteUserFile: (fileId: string) => void;
   onRetry: () => void;
+  actionLoading: Set<string>;
 }
 
 export default function UserManagement({
   users, selectedUser, currentUserId, locale, t,
-  loading, error, filesLoading,
-  onSelectUser, onBack, onEditUser, onResetPassword, onDeleteUser,
+  loading, loadingMore, error, filesLoading, filesLoadingMore,
+  usersHasMore, filesHasMore,
+  onLoadMoreUsers, onLoadMoreUserFiles,
+  userSearch, onUserSearch, fileSearch, onFileSearch,
+  onSelectUser, onResetSelectedUser, onEditUser, onResetPassword, onDeleteUser,
   userFiles, onDeleteUserFile, onRetry,
+  actionLoading,
 }: UserManagementProps) {
-  const [fileSearch, setFileSearch] = useState('');
   const [detailFile, setDetailFile] = useState<AdminUserFile | null>(null);
-
-  const filteredFiles = userFiles.filter(f =>
-    f.filename.toLowerCase().includes(fileSearch.toLowerCase())
-  );
-
-  const { visibleCount: usersVisible, hasMore: usersHasMore, loadMoreRef: usersLoadMoreRef } = useLazyLoad(users.length);
-  const { visibleCount: filesVisible, hasMore: filesHasMore, loadMoreRef: filesLoadMoreRef } = useLazyLoad(filteredFiles.length);
 
   const detailFileAsRecord: FileRecord | null = detailFile ? {
     id: detailFile.id,
@@ -63,7 +69,7 @@ export default function UserManagement({
     return (
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center gap-4 mb-6">
-          <button onClick={onBack} className="p-2 bg-gray-200 hover:bg-gray-300 rounded-full transition-colors">
+          <button onClick={onResetSelectedUser} className="p-2 bg-gray-200 hover:bg-gray-300 rounded-full transition-colors">
             <ArrowLeft size={20} />
           </button>
           <div>
@@ -74,7 +80,7 @@ export default function UserManagement({
 
         <div className="relative mb-4 max-w-md">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
-          <input type="text" placeholder={t('admin.searchFiles')} value={fileSearch} onChange={(e) => setFileSearch(e.target.value)}
+          <input type="text" placeholder={t('admin.searchFiles')} value={fileSearch} onChange={(e) => onFileSearch(e.target.value)}
             className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg outline-none focus:ring focus:ring-blue-100 text-sm" />
         </div>
 
@@ -90,7 +96,7 @@ export default function UserManagement({
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredFiles.slice(0, filesVisible).map((file) => (
+              {userFiles.map((file) => (
                 <tr key={file.id} className="hover:bg-gray-50">
                   <td className="p-4 font-medium text-gray-800 flex items-center gap-2">
                     {getFileIcon(file.mimeType, 'w-5 h-5')}
@@ -104,8 +110,8 @@ export default function UserManagement({
                     <button onClick={() => setDetailFile(file)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-colors inline-block mr-1" title={t('admin.fileDetails')} aria-label={t('admin.fileDetails')}>
                       <Info size={18} />
                     </button>
-                    <button onClick={() => onDeleteUserFile(file.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors inline-block" title={t('admin.deletePermanent')} aria-label={t('admin.deletePermanent')}>
-                      <Trash2 size={18} />
+                    <button onClick={() => onDeleteUserFile(file.id)} disabled={actionLoading.has(file.id)} className="p-2 text-red-500 hover:bg-red-50 rounded-lg transition-colors inline-block disabled:opacity-50" title={t('admin.deletePermanent')} aria-label={t('admin.deletePermanent')}>
+                      {actionLoading.has(file.id) ? <Loader2 size={18} className="animate-spin" /> : <Trash2 size={18} />}
                     </button>
                   </td>
                 </tr>
@@ -113,12 +119,21 @@ export default function UserManagement({
               {filesLoading && (
                 <tr><td colSpan={5} className="p-8 text-center"><Loader2 className="animate-spin text-blue-500 mx-auto" size={24} /></td></tr>
               )}
-              {!filesLoading && filteredFiles.length === 0 && (
+              {!filesLoading && userFiles.length === 0 && (
                 <tr><td colSpan={5} className="p-8 text-center text-gray-500 italic">{t('admin.noFiles')}</td></tr>
               )}
             </tbody>
           </table>
-          {filesHasMore && <div ref={filesLoadMoreRef} className="py-3 text-center text-gray-400 text-sm">{t('dashboard.loading')}</div>}
+          {filesLoadingMore && (
+            <div className="py-3 text-center"><Loader2 className="animate-spin text-blue-500 mx-auto" size={16} /></div>
+          )}
+          {filesHasMore && !filesLoadingMore && userFiles.length > 0 && (
+            <div className="py-3 text-center">
+              <button onClick={onLoadMoreUserFiles} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-600 transition-colors flex items-center gap-2 mx-auto">
+                <FileSearch size={16} /> {t('dashboard.loadMore')}
+              </button>
+            </div>
+          )}
         </div>
 
         <FileDetailsDialog isOpen={!!detailFile} onClose={() => setDetailFile(null)} item={detailFileAsRecord} itemType="file" />
@@ -143,7 +158,13 @@ export default function UserManagement({
 
   return (
     <div className="max-w-6xl mx-auto">
-      <h2 className="text-2xl font-bold mb-6 text-gray-800">{t('admin.userList')}</h2>
+      <div className="relative mb-4 max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={16} />
+        <input type="text" placeholder={t('admin.searchUsers')} value={userSearch} onChange={(e) => onUserSearch(e.target.value)}
+          className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-lg outline-none focus:ring focus:ring-blue-100 text-sm" />
+      </div>
+
+      <h2 className="text-2xl font-bold mb-4 text-gray-800">{t('admin.userList')}</h2>
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden overflow-x-auto">
         <table className="w-full text-left border-collapse min-w-[800px]">
           <thead>
@@ -157,7 +178,7 @@ export default function UserManagement({
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {users.slice(0, usersVisible).map((u) => (
+            {users.map((u) => (
               <tr key={u.id} className="hover:bg-gray-50">
                 <td className="p-4 font-medium text-gray-800">{u.username}</td>
                 <td className="p-4 text-sm">
@@ -190,7 +211,16 @@ export default function UserManagement({
             )}
           </tbody>
         </table>
-        {usersHasMore && <div ref={usersLoadMoreRef} className="py-3 text-center text-gray-400 text-sm">{t('dashboard.loading')}</div>}
+        {loadingMore && (
+          <div className="py-3 text-center"><Loader2 className="animate-spin text-blue-500 mx-auto" size={16} /></div>
+        )}
+        {usersHasMore && !loadingMore && users.length > 0 && (
+          <div className="py-3 text-center">
+            <button onClick={onLoadMoreUsers} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-600 transition-colors flex items-center gap-2 mx-auto">
+              <FileSearch size={16} /> {t('dashboard.loadMore')}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
