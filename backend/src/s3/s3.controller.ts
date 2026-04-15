@@ -124,7 +124,7 @@ export class S3Controller {
     this.logger.debug(`S3 CreateBucket: ${userId}, ${bucket}`);
     await this.s3Service.createBucket(userId, bucket);
     this.setRequestId(res);
-    res.setHeader('Location', `/${bucket.replace(/^[\/\\]+/, '')}`);
+    res.setHeader('Location', this.safeBucketLocation(bucket));
     res.status(200).end();
   }
 
@@ -1020,5 +1020,18 @@ export class S3Controller {
     if (value === undefined || value === null) return '';
     if (Array.isArray(value)) return String(value[0] ?? '');
     return String(value);
+  }
+
+  /**
+   * Produce a safe Location header value from a bucket name.
+   * Validates against S3 bucket naming rules (lowercase alphanumeric, dots,
+   * hyphens, 3-63 chars). Returns `'/'` if the name is invalid or empty.
+   */
+  private safeBucketLocation(bucket: string): string {
+    const trimmed = (bucket || '').replace(/^[\/\\]+/, '').trim();
+    if (!trimmed || !/^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$/.test(trimmed)) {
+      return '/';
+    }
+    return `/${trimmed}`;
   }
 }
