@@ -83,7 +83,7 @@ export class S3Controller {
     private readonly telegramService: TelegramService,
     private readonly cryptoService: CryptoService,
     private readonly prisma: PrismaService,
-  ) {}
+  ) { }
 
   // ---------------------------------------------------------------------------
   // GET /s3/ → ListBuckets
@@ -124,7 +124,7 @@ export class S3Controller {
     this.logger.debug(`S3 CreateBucket: ${userId}, ${bucket}`);
     await this.s3Service.createBucket(userId, bucket);
     this.setRequestId(res);
-    res.setHeader('Location', `/${bucket}`);
+    res.setHeader('Location', `/${bucket.replace(/^[\/\\]+/, '')}`);
     res.status(200).end();
   }
 
@@ -184,10 +184,9 @@ export class S3Controller {
   ) {
     const userId = req.s3UserId;
     this.logger.debug(`S3 ListObjects: ${userId}, ${bucket}`);
-    const query = req.query as Record<string, string>;
-    const prefix = query['prefix'] || '';
-    const delimiter = query['delimiter'] || '';
-    const maxKeys = Math.min(parseInt(query['max-keys'] || '1000', 10), 1000);
+    const prefix = this.qstr(req.query['prefix']);
+    const delimiter = this.qstr(req.query['delimiter']);
+    const maxKeys = Math.min(parseInt(this.qstr(req.query['max-keys']) || '1000', 10), 1000);
 
     this.setRequestId(res);
     try {
@@ -228,12 +227,11 @@ export class S3Controller {
   ) {
     const userId = req.s3UserId;
     this.logger.debug(`S3 handleBucketPost: ${userId}, ${bucket}`);
-    const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
 
     // --- DeleteObjects ---
-    if ('delete' in query) {
+    if ('delete' in req.query) {
       try {
         const { stream } = wrapRequestStream(req);
         const bodyBuf = await this.readBody(stream);
@@ -314,7 +312,6 @@ export class S3Controller {
       `S3 handlePut: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
     );
     const key = this.getObjectKey(bucket, params, req);
-    const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
 
@@ -329,8 +326,8 @@ export class S3Controller {
     }
 
     // --- UploadPart ---
-    const uploadId = query['uploadId'];
-    const partNumberStr = query['partNumber'];
+    const uploadId = this.qstr(req.query['uploadId']);
+    const partNumberStr = this.qstr(req.query['partNumber']);
     if (uploadId && partNumberStr) {
       const partNumber = parseInt(partNumberStr, 10);
       const { stream } = wrapRequestStream(req);
@@ -382,12 +379,11 @@ export class S3Controller {
       `S3 handlePost: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
     );
     const key = this.getObjectKey(bucket, params, req);
-    const query = req.query as Record<string, string>;
 
     this.setRequestId(res);
 
     // --- CreateMultipartUpload ---
-    if ('uploads' in query) {
+    if ('uploads' in req.query) {
       const contentType =
         (req.headers['content-type'] as string) || 'application/octet-stream';
       try {
@@ -418,7 +414,7 @@ export class S3Controller {
     }
 
     // --- CompleteMultipartUpload ---
-    const uploadId = query['uploadId'];
+    const uploadId = this.qstr(req.query['uploadId']);
     if (uploadId) {
       try {
         this.logger.debug(
@@ -482,12 +478,12 @@ export class S3Controller {
       `S3 handleGet: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
     );
     const key = this.getObjectKey(bucket, params, req);
-    const query = req.query as Record<string, string>;
+
 
     this.setRequestId(res);
 
     // --- ListParts ---
-    const uploadId = query['uploadId'];
+    const uploadId = this.qstr(req.query['uploadId']);
     if (uploadId) {
       try {
         this.logger.debug(
@@ -602,12 +598,12 @@ export class S3Controller {
       `S3 handleDelete: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
     );
     const key = this.getObjectKey(bucket, params, req);
-    const query = req.query as Record<string, string>;
+
 
     this.setRequestId(res);
 
     // --- AbortMultipartUpload ---
-    const uploadId = query['uploadId'];
+    const uploadId = this.qstr(req.query['uploadId']);
     if (uploadId) {
       try {
         await this.s3Multipart.abortMultipartUpload(uploadId, userId);
@@ -1013,5 +1009,16 @@ export class S3Controller {
           message || 'An internal error occurred.',
         ),
       );
+  }
+
+  /**
+   * Safely coerce a query-string value to a plain string.
+   * Express `req.query` values may be string | string[] | ParsedQs | ParsedQs[].
+   * If an array is provided (parameter repeated), only the first element is used.
+   */
+  private qstr(value: unknown): string {
+    if (value === undefined || value === null) return '';
+    if (Array.isArray(value)) return String(value[0] ?? '');
+    return String(value);
   }
 }
