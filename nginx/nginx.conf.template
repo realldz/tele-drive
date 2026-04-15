@@ -36,8 +36,8 @@ server {
     listen 443 ssl;
     server_name ${APP_DOMAIN};
 
-    ssl_certificate     /etc/nginx/ssl/${SSL_CERT_FILE:-cert.pem};
-    ssl_certificate_key /etc/nginx/ssl/${SSL_KEY_FILE:-key.pem};
+    ssl_certificate     /etc/nginx/ssl/${SSL_CERT_FILE};
+    ssl_certificate_key /etc/nginx/ssl/${SSL_KEY_FILE};
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
