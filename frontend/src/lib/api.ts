@@ -71,7 +71,7 @@ export const formatSize = formatBytes;
 // ── User / Quota ─────────────────────────────────────────────────────────────
 
 export async function fetchCurrentUser() {
-  const res = await api.get(`${API_URL}/users/me`);
+  const res = await api.get(`/users/me`);
   return res.data;
 }
 
@@ -102,7 +102,7 @@ export async function fetchFolderContent(
   if (cursor) params.set('cursor', cursor);
   if (search) params.set('search', search);
   params.set('limit', '50');
-  const res = await api.get(`${API_URL}/folders/content?${params}`);
+  const res = await api.get(`/folders/content?${params}`);
   const result = res.data;
   // Flatten folders + files for useServerPagination
   return {
@@ -126,7 +126,7 @@ export async function fetchFolderContentInitial(
   if (folderId) params.set('folderId', folderId);
   if (search) params.set('search', search);
   params.set('limit', '50');
-  const res = await api.get(`${API_URL}/folders/content?${params}`);
+  const res = await api.get(`/folders/content?${params}`);
   const result = res.data;
   return {
     folders: result.folders || [],
@@ -151,42 +151,42 @@ export async function fetchFolderContentNextPage(
   if (combinedCursor) params.set('cursor', combinedCursor);
   if (search) params.set('search', search);
   params.set('limit', '50');
-  const res = await api.get(`${API_URL}/folders/content?${params}`);
+  const res = await api.get(`/folders/content?${params}`);
   return res.data;
 }
 
 export async function fetchBreadcrumbs(folderId: string): Promise<BreadcrumbItem[]> {
-  const res = await api.get(`${API_URL}/folders/${folderId}/breadcrumbs`);
+  const res = await api.get(`/folders/${folderId}/breadcrumbs`);
   return res.data;
 }
 
 // ── Folder CRUD ──────────────────────────────────────────────────────────────
 
 export async function createFolder(name: string, parentId?: string) {
-  const res = await api.post(`${API_URL}/folders`, { name, parentId });
+  const res = await api.post(`/folders`, { name, parentId });
   return res.data;
 }
 
 export async function deleteFolder(id: string) {
-  return api.delete(`${API_URL}/folders/${id}`);
+  return api.delete(`/folders/${id}`);
 }
 
 export async function restoreFolder(id: string) {
-  return api.patch(`${API_URL}/folders/${id}/restore`);
+  return api.patch(`/folders/${id}/restore`);
 }
 
 export async function permanentDeleteFolder(id: string) {
-  return api.delete(`${API_URL}/folders/${id}/permanent`);
+  return api.delete(`/folders/${id}/permanent`);
 }
 
 export async function renameItem(type: 'file' | 'folder', id: string, name: string) {
   const endpoint = type === 'folder' ? 'folders' : 'files';
-  return api.patch(`${API_URL}/${endpoint}/${id}/rename`, { name });
+  return api.patch(`/${endpoint}/${id}/rename`, { name });
 }
 
 export async function moveItem(type: 'file' | 'folder', id: string, destinationId: string | null, conflictAction?: 'overwrite' | 'rename' | 'skip' | 'merge' | 'error') {
   const endpoint = type === 'folder' ? 'folders' : 'files';
-  return api.patch(`${API_URL}/${endpoint}/${id}/move`, {
+  return api.patch(`/${endpoint}/${id}/move`, {
     folderId: destinationId,
     parentId: destinationId,
     conflictAction,
@@ -196,19 +196,19 @@ export async function moveItem(type: 'file' | 'folder', id: string, destinationI
 // ── File Operations ──────────────────────────────────────────────────────────
 
 export async function deleteFile(id: string) {
-  return api.delete(`${API_URL}/files/${id}`);
+  return api.delete(`/files/${id}`);
 }
 
 export async function restoreFile(id: string) {
-  return api.patch(`${API_URL}/files/${id}/restore`);
+  return api.patch(`/files/${id}/restore`);
 }
 
 export async function permanentDeleteFile(id: string) {
-  return api.delete(`${API_URL}/files/${id}/permanent`);
+  return api.delete(`/files/${id}/permanent`);
 }
 
 export async function abortUpload(fileId: string) {
-  return api.post(`${API_URL}/files/upload/${fileId}/abort`);
+  return api.post(`/files/upload/${fileId}/abort`);
 }
 
 // ── Signed Download URL ─────────────────────────────────────────────────────
@@ -225,19 +225,19 @@ export interface StreamCookieResponse {
 
 /** Lấy signed download URL cho user (auth required) */
 export async function requestDownloadToken(fileId: string): Promise<SignedDownloadUrl> {
-  const res = await api.post(`${API_URL}/files/${fileId}/download-token`);
+  const res = await api.post(`/files/${fileId}/download-token`);
   return res.data;
 }
 
 /** Lấy signed download URL cho shared file (public) */
 export async function requestShareDownloadToken(shareToken: string): Promise<SignedDownloadUrl> {
-  const res = await api.post(`${API_URL}/files/share/${shareToken}/download-token`);
+  const res = await api.post(`/files/share/${shareToken}/download-token`);
   return res.data;
 }
 
 /** Lấy signed download URL cho file trong shared folder (public) */
 export async function requestShareFolderDownloadToken(shareToken: string, fileId: string): Promise<SignedDownloadUrl> {
-  const res = await api.post(`${API_URL}/folders/share/${shareToken}/download-token/${fileId}`);
+  const res = await api.post(`/folders/share/${shareToken}/download-token/${fileId}`);
   return res.data;
 }
 
@@ -245,51 +245,51 @@ export async function requestShareFolderDownloadToken(shareToken: string, fileId
 
 /** Yêu cầu stream cookie (auth required) — backend set HttpOnly cookie */
 export async function requestStreamCookie(): Promise<StreamCookieResponse> {
-  const res = await api.post(`${API_URL}/files/stream-cookie`, {}, { withCredentials: true });
+  const res = await api.post(`/files/stream-cookie`, {}, { withCredentials: true });
   return res.data;
 }
 
 /** Yêu cầu guest stream cookie (public) */
 export async function requestGuestStreamCookie(): Promise<StreamCookieResponse> {
-  const res = await api.post(`${API_URL}/files/stream-cookie/guest`, {}, { withCredentials: true });
+  const res = await api.post(`/files/stream-cookie/guest`, {}, { withCredentials: true });
   return res.data;
 }
 
 /** Xoá stream cookie */
 export async function clearStreamCookie(): Promise<void> {
-  await api.delete(`${API_URL}/files/stream-cookie`, { withCredentials: true });
+  await api.delete(`/files/stream-cookie`, { withCredentials: true });
 }
 
 /** Build stream URL (cookie-based, no token in URL) */
 export function getStreamUrl(fileId: string): string {
-  return `${API_URL}/files/stream/${fileId}`;
+  return `/files/stream/${fileId}`;
 }
 
 /** Build share stream URL */
 export function getShareStreamUrl(shareToken: string): string {
-  return `${API_URL}/files/share/stream/${shareToken}`;
+  return `/files/share/stream/${shareToken}`;
 }
 
 /** Build share folder stream URL */
 export function getShareFolderStreamUrl(shareToken: string, fileId: string): string {
-  return `${API_URL}/folders/share/${shareToken}/stream/${fileId}`;
+  return `/folders/share/${shareToken}/stream/${fileId}`;
 }
 
 /** @deprecated — dùng requestDownloadToken thay thế */
 export function getDownloadUrl(fileId: string, token: string) {
-  return `${API_URL}/files/${fileId}/download?token=${token}`;
+  return `/files/${fileId}/download?token=${token}`;
 }
 
 // ── Share ────────────────────────────────────────────────────────────────────
 
 export async function shareItem(type: 'file' | 'folder', id: string) {
   const endpoint = type === 'folder' ? 'folders' : 'files';
-  return api.post(`${API_URL}/${endpoint}/${id}/share`);
+  return api.post(`/${endpoint}/${id}/share`);
 }
 
 export async function unshareItem(type: 'file' | 'folder', id: string) {
   const endpoint = type === 'folder' ? 'folders' : 'files';
-  return api.post(`${API_URL}/${endpoint}/${id}/unshare`);
+  return api.post(`/${endpoint}/${id}/unshare`);
 }
 
 // ── Trash ────────────────────────────────────────────────────────────────────
@@ -302,7 +302,7 @@ export async function fetchTrashFolders(
   if (cursor) params.set('cursor', cursor);
   if (search) params.set('search', search);
   params.set('limit', '20');
-  const res = await api.get(`${API_URL}/folders/trash/list?${params}`);
+  const res = await api.get(`/folders/trash/list?${params}`);
   return res.data;
 }
 
@@ -314,12 +314,12 @@ export async function fetchTrashFiles(
   if (cursor) params.set('cursor', cursor);
   if (search) params.set('search', search);
   params.set('limit', '20');
-  const res = await api.get(`${API_URL}/files/trash/list?${params}`);
+  const res = await api.get(`/files/trash/list?${params}`);
   return res.data;
 }
 
 export async function emptyTrash() {
-  return api.delete(`${API_URL}/files/trash/empty`);
+  return api.delete(`/files/trash/empty`);
 }
 
 // ── Admin ────────────────────────────────────────────────────────────────────
@@ -332,43 +332,43 @@ export async function fetchUsers(
   if (cursor) params.set('cursor', cursor);
   if (search) params.set('search', search);
   params.set('limit', '20');
-  const res = await api.get(`${API_URL}/users?${params}`);
+  const res = await api.get(`/users?${params}`);
   return res.data;
 }
 
 // ── Password Management ─────────────────────────────────────────────────────
 
 export async function changePassword(currentPassword: string, newPassword: string) {
-  return api.patch(`${API_URL}/users/me/password`, { currentPassword, newPassword });
+  return api.patch(`/users/me/password`, { currentPassword, newPassword });
 }
 
 export async function adminResetPassword(userId: string, newPassword: string) {
-  return api.patch(`${API_URL}/users/${userId}/password`, { newPassword });
+  return api.patch(`/users/${userId}/password`, { newPassword });
 }
 
 export async function fetchSettings(): Promise<AdminSetting[]> {
-  const res = await api.get(`${API_URL}/settings`);
+  const res = await api.get(`/settings`);
   return res.data;
 }
 
 export async function updateSetting(key: string, value: string) {
-  return api.put(`${API_URL}/settings/${key}`, { value });
+  return api.put(`/settings/${key}`, { value });
 }
 
 export async function updateUserRole(userId: string, role: string) {
-  return api.patch(`${API_URL}/users/${userId}/role`, { role });
+  return api.patch(`/users/${userId}/role`, { role });
 }
 
 export async function updateUserQuota(userId: string, quota: string) {
-  return api.patch(`${API_URL}/users/${userId}/quota`, { quota });
+  return api.patch(`/users/${userId}/quota`, { quota });
 }
 
 export async function updateUserBandwidth(userId: string, dailyBandwidthLimit: string | null) {
-  return api.patch(`${API_URL}/users/${userId}/bandwidth-limit`, { dailyBandwidthLimit });
+  return api.patch(`/users/${userId}/bandwidth-limit`, { dailyBandwidthLimit });
 }
 
 export async function deleteUser(userId: string) {
-  return api.delete(`${API_URL}/users/${userId}`);
+  return api.delete(`/users/${userId}`);
 }
 
 export async function fetchUserFiles(
@@ -380,34 +380,34 @@ export async function fetchUserFiles(
   if (cursor) params.set('cursor', cursor);
   if (search) params.set('search', search);
   params.set('limit', '20');
-  const res = await api.get(`${API_URL}/users/${userId}/files?${params}`);
+  const res = await api.get(`/users/${userId}/files?${params}`);
   return res.data;
 }
 
 export async function deleteUserFile(userId: string, fileId: string) {
-  return api.delete(`${API_URL}/users/${userId}/files/${fileId}`);
+  return api.delete(`/users/${userId}/files/${fileId}`);
 }
 
 // ── S3 Credentials ──────────────────────────────────────────────────────────
 
 export async function fetchS3Credentials() {
-  const res = await api.get(`${API_URL}/s3-credentials`);
+  const res = await api.get(`/s3-credentials`);
   return res.data;
 }
 
 export async function createS3Credential(label: string) {
-  const res = await api.post(`${API_URL}/s3-credentials`, { label });
+  const res = await api.post(`/s3-credentials`, { label });
   return res.data;
 }
 
 export async function deleteS3Credential(id: string) {
-  return api.delete(`${API_URL}/s3-credentials/${id}`);
+  return api.delete(`/s3-credentials/${id}`);
 }
 
 // ── Upload Config ────────────────────────────────────────────────────────────
 
 export async function fetchUploadConfig() {
-  const res = await api.get(`${API_URL}/files/config`);
+  const res = await api.get(`/files/config`);
   return res.data;
 }
 
@@ -487,11 +487,11 @@ export interface TrashCleanupStatus {
 
 /** Lấy trạng thái dọn dẹp thùng rác */
 export async function getCleanupStatus(): Promise<TrashCleanupStatus> {
-  const res = await api.get(`${API_URL}/files/trash/cleanup-status`);
+  const res = await api.get(`/files/trash/cleanup-status`);
   return res.data;
 }
 
 /** Bắt đầu dọn dẹp thùng rác bất đồng bộ (trả 202) */
 export async function startCleanup(): Promise<void> {
-  await api.post(`${API_URL}/files/trash/cleanup`);
+  await api.post(`/files/trash/cleanup`);
 }
