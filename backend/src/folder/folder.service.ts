@@ -153,6 +153,7 @@ export class FolderService {
 
     // Parse folder cursor
     let isQueryNextFolder = false;
+    const fileWhere: Record<string, unknown> = { ...filesWhere };
     if (pagination.cursor) {
       try {
         const parsed = JSON.parse(
@@ -162,33 +163,35 @@ export class FolderService {
           (parentWhere as Record<string, unknown>)['id'] = { lt: parsed.f };
           isQueryNextFolder = true;
         }
-      } catch {
-        // Invalid cursor, ignore
-      }
-    }
-
-    // Parse file cursor (base64 of "createdAt_ISO_id")
-    let isQueryNextFile = false;
-    const fileWhere: Record<string, unknown> = { ...filesWhere };
-    if (pagination.cursor) {
-      try {
-        const parsed = JSON.parse(
-          Buffer.from(pagination.cursor, 'base64').toString('utf-8'),
-        );
+        // Parse file cursor (base64 JSON with "fc" key)
         if (parsed.fc) {
           const [timestamp, id] = parsed.fc.split('_');
           fileWhere.OR = [
             { createdAt: { lt: new Date(timestamp) } },
             { createdAt: new Date(timestamp), id: { lt: id } },
           ];
-          isQueryNextFile = true;
         }
       } catch {
         // Invalid cursor, ignore
       }
     }
 
-    // Fetch folders
+    // Determine if cursor is a file-only cursor (has fc but no f)
+    let isQueryNextFile = false;
+    if (pagination.cursor) {
+      try {
+        const parsed = JSON.parse(
+          Buffer.from(pagination.cursor, 'base64').toString('utf-8'),
+        );
+        if (parsed.fc && !parsed.f) {
+          isQueryNextFile = true;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    // Fetch folders (skip only when we are exclusively paginating files)
     const folders = isQueryNextFile ? [] : await this.prisma.folder.findMany({
       where: parentWhere,
       orderBy: { id: 'desc' },
@@ -213,8 +216,12 @@ export class FolderService {
       ).toString('base64')
       : null;
 
-    // Fetch files
-    const files = isQueryNextFolder ? [] : await this.prisma.fileRecord.findMany({
+    // Fetch files:
+    // - Always fetch when NOT paginating folders (initial load or file-only cursor)
+    // - Also fetch when paginating folders but this is the LAST folder page (folderHasNext = false),
+    //   so the frontend receives the first page of files and nextFileCursor if needed.
+    const shouldFetchFiles = !isQueryNextFolder || !folderHasNext;
+    const files = shouldFetchFiles ? await this.prisma.fileRecord.findMany({
       where: fileWhere,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: {
@@ -232,7 +239,7 @@ export class FolderService {
         updatedAt: true,
       },
       take: limit + 1,
-    });
+    }) : [];
 
     const fileHasNext = files.length > limit;
     const fileItems = fileHasNext ? files.slice(0, -1) : files;
