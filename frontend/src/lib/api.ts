@@ -88,8 +88,8 @@ export interface PaginatedFolderContent {
   files: FileRecord[];
   nextFolderCursor: string | null;
   nextFileCursor: string | null;
-  totalFolders: number;
-  totalFiles: number;
+  totalFolders: number | 0;
+  totalFiles: number | 0;
 }
 
 export async function fetchFolderContent(
@@ -128,14 +128,7 @@ export async function fetchFolderContentInitial(
   params.set('limit', '50');
   const res = await api.get(`/folders/content?${params}`);
   const result = res.data;
-  return {
-    folders: result.folders || [],
-    files: result.files || [],
-    nextFolderCursor: result.nextFolderCursor,
-    nextFileCursor: result.nextFileCursor,
-    totalFolders: result.totalFolders || 0,
-    totalFiles: result.totalFiles || 0,
-  };
+  return result;
 }
 
 export async function fetchFolderContentNextPage(
@@ -146,9 +139,8 @@ export async function fetchFolderContentNextPage(
 ): Promise<{ folders: FolderRecord[]; files: FileRecord[]; nextFolderCursor: string | null; nextFileCursor: string | null }> {
   const params = new URLSearchParams();
   if (folderId) params.set('folderId', folderId);
-  // Use both cursors - backend parses the combined cursor
-  const combinedCursor = nextFolderCursor || nextFileCursor;
-  if (combinedCursor) params.set('cursor', combinedCursor);
+  const cursor = nextFolderCursor ? nextFolderCursor : nextFileCursor;
+  if (cursor) params.set('cursor', cursor);
   if (search) params.set('search', search);
   params.set('limit', '50');
   const res = await api.get(`/folders/content?${params}`);

@@ -17,10 +17,11 @@ import DashboardDialogs from '@/components/dashboard/dashboard-dialogs';
 import toast from 'react-hot-toast';
 import axios from 'axios';
 import {
-  fetchFolderContent, fetchBreadcrumbs,
+  fetchBreadcrumbs,
   createFolder, deleteFolder, restoreFolder, deleteFile, restoreFile,
   abortUpload, requestDownloadToken, moveItem, formatBandwidthResetTime, API_URL,
   isConflictError, parseConflictResponse,
+  fetchFolderContentNextPage,
 } from '@/lib/api';
 import ConflictDialog from '@/components/conflict-dialog';
 import type { ConflictInfo } from '@/lib/api';
@@ -45,6 +46,8 @@ export default function Dashboard() {
   const [isLoadMore, setIsLoadMore] = useState(false);
   const [hasMoreFolders, setHasMoreFolders] = useState(true);
   const [hasMoreFiles, setHasMoreFiles] = useState(true);
+  const nextFileCursor = useRef<string | null>(null);
+  const nextFolderCursor = useRef<string | null>(null);
 
   // Conflict dialog state
   interface PendingConflict {
@@ -194,7 +197,7 @@ export default function Dashboard() {
     if (!isLoadMoreCall) setIsLoadingContent(true);
     if (isLoadMoreCall) setIsLoadMore(true);
     try {
-      const data = await fetchFolderContent(currentFolderId);
+      const data = await fetchFolderContentNextPage(currentFolderId, nextFileCursor.current, nextFolderCursor.current);
       if (isLoadMoreCall) {
         setFolders(prev => [...prev, ...data.folders]);
         setFiles(prev => [...prev, ...data.files]);
@@ -204,6 +207,8 @@ export default function Dashboard() {
       }
       setHasMoreFolders(data.nextFolderCursor !== null);
       setHasMoreFiles(data.nextFileCursor !== null);
+      nextFileCursor.current = data.nextFileCursor;
+      nextFolderCursor.current = data.nextFolderCursor;
       if (!isLoadMoreCall && currentFolderId) {
         const bc = await fetchBreadcrumbs(currentFolderId);
         setBreadcrumbs(bc);
@@ -440,7 +445,7 @@ export default function Dashboard() {
           toast.success(
             action === 'overwrite' ? t('conflict.overwriteSuccess')
               : action === 'keepBoth' ? t('conflict.renamed')
-              : t('conflict.merged'),
+                : t('conflict.merged'),
           );
         } else {
           toast.success(t('conflict.skipped'));
@@ -505,7 +510,7 @@ export default function Dashboard() {
     e.preventDefault(); e.stopPropagation();
     if (!selection.isSelected(item.id)) {
       selection.clearSelection();
-      selection.handleSelect(item.id, { ...e, ctrlKey: false, metaKey: false, shiftKey: false, stopPropagation: () => {} } as React.MouseEvent, orderedIds);
+      selection.handleSelect(item.id, { ...e, ctrlKey: false, metaKey: false, shiftKey: false, stopPropagation: () => { } } as React.MouseEvent, orderedIds);
     }
     setTimeout(() => setContextMenu({ isOpen: true, x: e.clientX, y: e.clientY, item, type }), 0);
   }, [selection, orderedIds]);
