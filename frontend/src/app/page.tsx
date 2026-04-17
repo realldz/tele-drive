@@ -199,8 +199,14 @@ export default function Dashboard() {
     try {
       const data = await fetchFolderContentNextPage(currentFolderId, nextFileCursor.current, nextFolderCursor.current);
       if (isLoadMoreCall) {
-        setFolders(prev => [...prev, ...data.folders]);
-        setFiles(prev => [...prev, ...data.files]);
+        setFolders(prev => {
+          const existingIds = new Set(prev.map(f => f.id));
+          return [...prev, ...data.folders.filter(f => !existingIds.has(f.id))];
+        });
+        setFiles(prev => {
+          const existingIds = new Set(prev.map(f => f.id));
+          return [...prev, ...data.files.filter(f => !existingIds.has(f.id))];
+        });
       } else {
         setFolders(data.folders);
         setFiles(data.files);
