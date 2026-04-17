@@ -25,7 +25,7 @@ export class FolderService {
     private readonly fileService: FileService,
     private readonly cryptoService: CryptoService,
     private readonly nameConflictService: NameConflictService,
-  ) {}
+  ) { }
 
   /**
    * Tạo folder mới — userId lấy từ JWT
@@ -152,6 +152,7 @@ export class FolderService {
     }
 
     // Parse folder cursor
+    let isQueryNextFolder = false;
     if (pagination.cursor) {
       try {
         const parsed = JSON.parse(
@@ -159,6 +160,7 @@ export class FolderService {
         );
         if (parsed.f) {
           (parentWhere as Record<string, unknown>)['id'] = { lt: parsed.f };
+          isQueryNextFolder = true;
         }
       } catch {
         // Invalid cursor, ignore
@@ -166,6 +168,7 @@ export class FolderService {
     }
 
     // Parse file cursor (base64 of "createdAt_ISO_id")
+    let isQueryNextFile = false;
     const fileWhere: Record<string, unknown> = { ...filesWhere };
     if (pagination.cursor) {
       try {
@@ -178,6 +181,7 @@ export class FolderService {
             { createdAt: { lt: new Date(timestamp) } },
             { createdAt: new Date(timestamp), id: { lt: id } },
           ];
+          isQueryNextFile = true;
         }
       } catch {
         // Invalid cursor, ignore
@@ -185,7 +189,7 @@ export class FolderService {
     }
 
     // Fetch folders
-    const folders = await this.prisma.folder.findMany({
+    const folders = isQueryNextFile ? [] : await this.prisma.folder.findMany({
       where: parentWhere,
       orderBy: { id: 'desc' },
       select: {
@@ -205,12 +209,12 @@ export class FolderService {
     const folderItems = folderHasNext ? folders.slice(0, -1) : folders;
     const nextFolderCursor = folderHasNext
       ? Buffer.from(
-          JSON.stringify({ f: (folderItems[folderItems.length - 1] as { id: string }).id }),
-        ).toString('base64')
+        JSON.stringify({ f: (folderItems[folderItems.length - 1] as { id: string }).id }),
+      ).toString('base64')
       : null;
 
     // Fetch files
-    const files = await this.prisma.fileRecord.findMany({
+    const files = isQueryNextFolder ? [] : await this.prisma.fileRecord.findMany({
       where: fileWhere,
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       select: {
@@ -234,10 +238,10 @@ export class FolderService {
     const fileItems = fileHasNext ? files.slice(0, -1) : files;
     const nextFileCursor = fileHasNext
       ? Buffer.from(
-          JSON.stringify({
-            fc: `${(fileItems[fileItems.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(fileItems[fileItems.length - 1] as { id: string }).id}`,
-          }),
-        ).toString('base64')
+        JSON.stringify({
+          fc: `${(fileItems[fileItems.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(fileItems[fileItems.length - 1] as { id: string }).id}`,
+        }),
+      ).toString('base64')
       : null;
 
     // Count totals
@@ -535,10 +539,10 @@ export class FolderService {
           const folderItems = foldersHasNext ? folders.slice(0, -1) : folders;
           const nextFolderCursor = foldersHasNext
             ? Buffer.from(
-                JSON.stringify({
-                  f: (folderItems[folderItems.length - 1] as { id: string }).id,
-                }),
-              ).toString('base64')
+              JSON.stringify({
+                f: (folderItems[folderItems.length - 1] as { id: string }).id,
+              }),
+            ).toString('base64')
             : null;
 
           const files = await this.prisma.fileRecord.findMany({
@@ -550,10 +554,10 @@ export class FolderService {
           const fileItems = filesHasNext ? files.slice(0, -1) : files;
           const nextFileCursor = filesHasNext
             ? Buffer.from(
-                JSON.stringify({
-                  fc: `${(fileItems[fileItems.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(fileItems[fileItems.length - 1] as { id: string }).id}`,
-                }),
-              ).toString('base64')
+              JSON.stringify({
+                fc: `${(fileItems[fileItems.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(fileItems[fileItems.length - 1] as { id: string }).id}`,
+              }),
+            ).toString('base64')
             : null;
 
           const breadcrumbs = await this.buildSharedBreadcrumbs(
@@ -585,10 +589,10 @@ export class FolderService {
       const folderItems = foldersHasNext ? folders.slice(0, -1) : folders;
       const nextFolderCursor = foldersHasNext
         ? Buffer.from(
-            JSON.stringify({
-              f: (folderItems[folderItems.length - 1] as { id: string }).id,
-            }),
-          ).toString('base64')
+          JSON.stringify({
+            f: (folderItems[folderItems.length - 1] as { id: string }).id,
+          }),
+        ).toString('base64')
         : null;
 
       const fileWhere: Record<string, unknown> = { ...filesWhere };
@@ -601,10 +605,10 @@ export class FolderService {
       const fileItems = filesHasNext ? files.slice(0, -1) : files;
       const nextFileCursor = filesHasNext
         ? Buffer.from(
-            JSON.stringify({
-              fc: `${(fileItems[fileItems.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(fileItems[fileItems.length - 1] as { id: string }).id}`,
-            }),
-          ).toString('base64')
+          JSON.stringify({
+            fc: `${(fileItems[fileItems.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(fileItems[fileItems.length - 1] as { id: string }).id}`,
+          }),
+        ).toString('base64')
         : null;
 
       const breadcrumbs = await this.buildSharedBreadcrumbs(
@@ -944,8 +948,8 @@ export class FolderService {
     const items = hasNext ? data.slice(0, -1) : data;
     const nextCursor = hasNext
       ? Buffer.from(
-          `${(items[items.length - 1] as { deletedAt: Date }).deletedAt.toISOString()}_${(items[items.length - 1] as { id: string }).id}`,
-        ).toString('base64')
+        `${(items[items.length - 1] as { deletedAt: Date }).deletedAt.toISOString()}_${(items[items.length - 1] as { id: string }).id}`,
+      ).toString('base64')
       : null;
 
     const total = await this.prisma.folder.count({ where });
