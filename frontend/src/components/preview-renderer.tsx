@@ -29,6 +29,7 @@ import Player from 'xgplayer';
 import 'xgplayer/dist/index.min.css';
 import MusicPreset, { Analyze } from 'xgplayer-music';
 import 'xgplayer-music/dist/index.min.css';
+import axios from 'axios';
 
 // Register highlight.js languages
 hljs.registerLanguage('javascript', javascript);
@@ -244,7 +245,7 @@ function CodeViewer({ url, filename }: { url: string; filename: string }) {
   useEffect(() => {
     setIsLoading(true);
     highlightedRef.current = false;
-    api.get(url, { responseType: 'text', withCredentials: true, transformResponse: [(data: any) => data] })
+    axios.get(url, { responseType: 'text', withCredentials: true, transformResponse: [(data: any) => data] })
       .then(res => setContent(res.data))
       .catch(() => setContent('Failed to load file content'))
       .finally(() => setIsLoading(false));
