@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import {
   ArrowLeft,
   FileSearch,
@@ -137,8 +137,8 @@ export default function AdminUserFilesList({
               const isDeleting = actionLoading.has(`delete:${file.id}`);
 
               return (
-                <>
-                  <tr key={file.id} className="hover:bg-gray-50">
+                <Fragment key={file.id}>
+                  <tr className="hover:bg-gray-50">
                     <td className="p-4 font-medium text-gray-800">
                       <div className="flex items-center gap-2">
                         {getFileIcon(file.mimeType, 'w-5 h-5')}
@@ -264,7 +264,7 @@ export default function AdminUserFilesList({
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               );
             })}
 
