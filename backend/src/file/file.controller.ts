@@ -22,7 +22,6 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
-import { FileService } from './file.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { MAX_CHUNK_SIZE } from '../config/upload.config';
 import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
@@ -38,6 +37,11 @@ import type { Response, Request } from 'express';
 import { SkipThrottle } from '@nestjs/throttler';
 import type { ConflictAction } from '../common/name-conflict.service';
 import { TrashCleanupService } from '../common/trash-cleanup.service';
+import { TransferReadService } from './transfer-read.service';
+import { UploadSessionService } from './upload-session.service';
+import { FileMetadataService } from './file-metadata.service';
+import { FileLifecycleService } from './file-lifecycle.service';
+import { FileMaintenanceService } from './file-maintenance.service';
 
 const multerOptions = {
   storage: memoryStorage(),
@@ -50,7 +54,11 @@ export class FileController {
   private readonly logger = new Logger(FileController.name);
 
   constructor(
-    private readonly fileService: FileService,
+    private readonly fileMetadataService: FileMetadataService,
+    private readonly fileLifecycleService: FileLifecycleService,
+    private readonly fileMaintenanceService: FileMaintenanceService,
+    private readonly transferReadService: TransferReadService,
+    private readonly uploadSessionService: UploadSessionService,
     private readonly cryptoService: CryptoService,
     private readonly trashCleanupService: TrashCleanupService,
   ) {}
@@ -60,7 +68,7 @@ export class FileController {
   async getConfig() {
     return {
       maxChunkSize: MAX_CHUNK_SIZE,
-      maxConcurrentChunks: await this.fileService.getMaxConcurrentChunks(),
+      maxConcurrentChunks: await this.uploadSessionService.getMaxConcurrentChunks(),
     };
   }
 
@@ -73,7 +81,7 @@ export class FileController {
     onConflict: 'overwrite' | 'rename' | 'error' | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    const result = await this.fileService.uploadFile(
+    const result = await this.uploadSessionService.uploadFile(
       file,
       req.user.userId,
       folderId,
@@ -92,7 +100,7 @@ export class FileController {
     onConflict: 'overwrite' | 'rename' | 'error' | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.fileService.initChunkedUpload(
+    return this.uploadSessionService.initChunkedUpload(
       body.filename,
       body.size,
       body.mimeType,
@@ -109,7 +117,7 @@ export class FileController {
     @Param('index', ParseIntPipe) index: number,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.fileService.uploadChunkStream(
+    return this.uploadSessionService.uploadChunkStream(
       fileId,
       index,
       req.user.userId,
@@ -122,7 +130,7 @@ export class FileController {
     @Param('fileId') fileId: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    const result = await this.fileService.completeChunkedUpload(
+    const result = await this.uploadSessionService.completeChunkedUpload(
       fileId,
       req.user.userId,
     );
@@ -137,7 +145,10 @@ export class FileController {
     @Param('fileId') fileId: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    const result = await this.fileService.abortUpload(fileId, req.user.userId);
+    const result = await this.uploadSessionService.abortUpload(
+      fileId,
+      req.user.userId,
+    );
     this.logger.log(
       `Upload aborted: fileId=${fileId}, userId=${req.user.userId}`,
     );
@@ -149,12 +160,12 @@ export class FileController {
     @Param('fileId') fileId: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.fileService.getUploadedChunks(fileId, req.user.userId);
+    return this.uploadSessionService.getUploadedChunks(fileId, req.user.userId);
   }
 
   @Get(':id/info')
   getFileInfo(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.fileService.getFileInfo(id, req.user.userId);
+    return this.fileMetadataService.getFileInfo(id, req.user.userId);
   }
 
   // ── Signed Download Token ──────────────────────────────────────────────
@@ -166,7 +177,7 @@ export class FileController {
     @Param('id') id: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.fileService.generateDownloadToken(id, req.user.userId);
+    return this.transferReadService.generateDownloadToken(id, req.user.userId);
   }
 
   @Public()
@@ -175,7 +186,7 @@ export class FileController {
   @UseInterceptors(BandwidthInterceptor)
   @SetMetadata('BANDWIDTH_CHECK_ONLY', true)
   async generateShareDownloadToken(@Param('token') token: string) {
-    return this.fileService.generateShareDownloadToken(token);
+    return this.transferReadService.generateShareDownloadToken(token);
   }
 
   @Public()
@@ -187,8 +198,10 @@ export class FileController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const downloadInfo = await this.fileService.downloadBySignedToken(token);
-    return this.fileService.processDownload(
+    const downloadInfo = await this.transferReadService.downloadBySignedToken(
+      token,
+    );
+    return this.transferReadService.processDownload(
       downloadInfo,
       res,
       req.headers.range,
@@ -214,7 +227,7 @@ export class FileController {
     @Req() req: AuthenticatedRequest,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const ttl = await this.fileService.getStreamTtl();
+    const ttl = await this.transferReadService.getStreamTtl();
     const token = this.cryptoService.createStreamCookieToken(
       req.user.userId,
       ttl,
@@ -241,7 +254,7 @@ export class FileController {
     @Res({ passthrough: true }) res: Response,
   ) {
     const typedReq = req as unknown as AuthenticatedRequest;
-    const ttl = await this.fileService.getStreamTtl();
+    const ttl = await this.transferReadService.getStreamTtl();
     const subject = typedReq.user?.userId ?? `guest:${getClientIp(req)}`;
     const token = this.cryptoService.createStreamCookieToken(subject, ttl);
     res.cookie('stream_token', token, {
@@ -274,10 +287,14 @@ export class FileController {
 
     // User stream: verify ownership. Guest stream: allow if subject starts with 'guest:'
     const downloadInfo = sub.startsWith('guest:')
-      ? await this.fileService.getStreamInfoByGuest(id)
-      : await this.fileService.getStreamInfoByOwner(id, sub);
+      ? await this.transferReadService.getStreamInfoByGuest(id)
+      : await this.transferReadService.getStreamInfoByOwner(id, sub);
 
-    return this.fileService.processStream(downloadInfo, req.headers.range, res);
+    return this.transferReadService.processStream(
+      downloadInfo,
+      req.headers.range,
+      res,
+    );
   }
 
   @Public()
@@ -290,8 +307,13 @@ export class FileController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const downloadInfo = await this.fileService.getShareStreamInfo(shareToken);
-    return this.fileService.processStream(downloadInfo, req.headers.range, res);
+    const downloadInfo =
+      await this.transferReadService.getShareStreamInfo(shareToken);
+    return this.transferReadService.processStream(
+      downloadInfo,
+      req.headers.range,
+      res,
+    );
   }
 
   // ── Legacy routes (kept for backwards compatibility) ───────────────────
@@ -303,11 +325,11 @@ export class FileController {
     @Req() req: AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const downloadInfo = await this.fileService.getDownloadInfo(
+    const downloadInfo = await this.transferReadService.getDownloadInfo(
       id,
       req.user.userId,
     );
-    return this.fileService.processDownload(
+    return this.transferReadService.processDownload(
       downloadInfo,
       res,
       req.headers.range,
@@ -321,7 +343,7 @@ export class FileController {
     @Req() req: AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    await this.fileService.getFileInfo(id, req.user.userId);
+    await this.fileMetadataService.getFileInfo(id, req.user.userId);
     res.status(200).end();
   }
 
@@ -332,11 +354,15 @@ export class FileController {
     @Req() req: AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const downloadInfo = await this.fileService.getDownloadInfo(
+    const downloadInfo = await this.transferReadService.getDownloadInfo(
       id,
       req.user.userId,
     );
-    return this.fileService.processStream(downloadInfo, req.headers.range, res);
+    return this.transferReadService.processStream(
+      downloadInfo,
+      req.headers.range,
+      res,
+    );
   }
 
   @Public()
@@ -348,8 +374,10 @@ export class FileController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const downloadInfo = await this.fileService.getDownloadInfoByToken(token);
-    return this.fileService.processDownload(
+    const downloadInfo = await this.transferReadService.getDownloadInfoByToken(
+      token,
+    );
+    return this.transferReadService.processDownload(
       downloadInfo,
       res,
       req.headers.range,
@@ -365,8 +393,14 @@ export class FileController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const downloadInfo = await this.fileService.getDownloadInfoByToken(token);
-    return this.fileService.processStream(downloadInfo, req.headers.range, res);
+    const downloadInfo = await this.transferReadService.getDownloadInfoByToken(
+      token,
+    );
+    return this.transferReadService.processStream(
+      downloadInfo,
+      req.headers.range,
+      res,
+    );
   }
 
   // ── File CRUD ──────────────────────────────────────────────────────────
@@ -377,7 +411,11 @@ export class FileController {
     @Body('name') name: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    const result = await this.fileService.rename(id, name, req.user.userId);
+    const result = await this.fileMetadataService.rename(
+      id,
+      name,
+      req.user.userId,
+    );
     this.logger.log(
       `File renamed: id=${id}, userId=${req.user.userId}, name="${name}"`,
     );
@@ -391,7 +429,7 @@ export class FileController {
     @Body('conflictAction') conflictAction: ConflictAction | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
-    const result = await this.fileService.move(
+    const result = await this.fileMetadataService.move(
       id,
       folderId,
       req.user.userId,
@@ -405,14 +443,14 @@ export class FileController {
 
   @Post(':id/share')
   async share(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    const result = await this.fileService.share(id, req.user.userId);
+    const result = await this.fileMetadataService.share(id, req.user.userId);
     this.logger.log(`File shared: id=${id}, userId=${req.user.userId}`);
     return result;
   }
 
   @Post(':id/unshare')
   async unshare(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    const result = await this.fileService.unshare(id, req.user.userId);
+    const result = await this.fileMetadataService.unshare(id, req.user.userId);
     this.logger.log(`File unshared: id=${id}, userId=${req.user.userId}`);
     return result;
   }
@@ -421,12 +459,12 @@ export class FileController {
   @UseGuards(OptionalJwtGuard)
   @Get('share/:token')
   getSharedFile(@Param('token') token: string, @Req() req: Request) {
-    return this.fileService.getSharedFileInfo(token);
+    return this.fileMetadataService.getSharedFileInfo(token);
   }
 
   @Delete('trash/empty')
   async emptyTrash(@Req() req: AuthenticatedRequest) {
-    const result = await this.fileService.emptyTrash(req.user.userId);
+    const result = await this.fileLifecycleService.emptyTrash(req.user.userId);
     this.logger.log(`Trash emptied: userId=${req.user.userId}`);
     return result;
   }
@@ -444,7 +482,10 @@ export class FileController {
 
   @Delete(':id')
   async softDelete(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    const result = await this.fileService.softDelete(id, req.user.userId);
+    const result = await this.fileMetadataService.softDelete(
+      id,
+      req.user.userId,
+    );
     this.logger.log(`File soft-deleted: id=${id}, userId=${req.user.userId}`);
     return result;
   }
@@ -454,12 +495,12 @@ export class FileController {
     @Query() pagination: PaginationQueryDto,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.fileService.listTrash(req.user.userId, pagination);
+    return this.fileMetadataService.listTrash(req.user.userId, pagination);
   }
 
   @Patch(':id/restore')
   async restore(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    const result = await this.fileService.restore(id, req.user.userId);
+    const result = await this.fileMetadataService.restore(id, req.user.userId);
     this.logger.log(`File restored: id=${id}, userId=${req.user.userId}`);
     return result;
   }
@@ -469,7 +510,10 @@ export class FileController {
     @Param('id') id: string,
     @Req() req: AuthenticatedRequest,
   ) {
-    const result = await this.fileService.permanentDelete(id, req.user.userId);
+    const result = await this.fileLifecycleService.permanentDelete(
+      id,
+      req.user.userId,
+    );
     this.logger.log(
       `File permanently deleted: id=${id}, userId=${req.user.userId}`,
     );
@@ -479,6 +523,6 @@ export class FileController {
   @UseGuards(AdminGuard)
   @Post('admin/reindex-bots')
   async reindexBots() {
-    return this.fileService.reindexUnavailableBots();
+    return this.fileMaintenanceService.reindexUnavailableBots();
   }
 }

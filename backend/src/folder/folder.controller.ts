@@ -15,7 +15,7 @@ import {
   SetMetadata,
 } from '@nestjs/common';
 import { FolderService } from './folder.service';
-import { FileService } from '../file/file.service';
+import { TransferReadService } from '../file/transfer-read.service';
 import { Public } from '../auth/public.decorator';
 import { OptionalJwtGuard } from '../auth/optional-jwt.guard';
 import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
@@ -32,7 +32,7 @@ export class FolderController {
 
   constructor(
     private readonly folderService: FolderService,
-    private readonly fileService: FileService,
+    private readonly transferReadService: TransferReadService,
   ) {}
 
   @Post()
@@ -201,7 +201,7 @@ export class FolderController {
       token,
       fileId,
     );
-    return this.fileService.processDownload(
+    return this.transferReadService.processDownload(
       downloadInfo,
       res,
       req.headers.range,
@@ -223,6 +223,10 @@ export class FolderController {
       token,
       fileId,
     );
-    return this.fileService.processStream(downloadInfo, req.headers.range, res);
+    return this.transferReadService.processStream(
+      downloadInfo,
+      req.headers.range,
+      res,
+    );
   }
 }

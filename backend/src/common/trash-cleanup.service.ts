@@ -1,7 +1,7 @@
 import { Injectable, Logger, ConflictException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
-import { FileService } from '../file/file.service';
+import { FileLifecycleService } from '../file/file-lifecycle.service';
 
 interface CleanupResult {
   deletedCount: number;
@@ -20,7 +20,7 @@ export class TrashCleanupService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly fileService: FileService,
+    private readonly fileLifecycleService: FileLifecycleService,
   ) {}
 
   /**
@@ -134,7 +134,7 @@ export class TrashCleanupService {
 
       for (const file of trashFiles) {
         try {
-          await this.fileService.purgeFilesFromTelegram([file]);
+          await this.fileLifecycleService.purgeFilesFromTelegram([file]);
           await this.prisma.$transaction(async (tx) => {
             await tx.fileRecord.delete({ where: { id: file.id } });
             if (file.status === 'complete') {
@@ -221,7 +221,7 @@ export class TrashCleanupService {
       let filesDeleted = 0;
       for (const file of expiredFiles) {
         try {
-          await this.fileService.purgeFilesFromTelegram([file]);
+          await this.fileLifecycleService.purgeFilesFromTelegram([file]);
           await this.prisma.$transaction(async (tx) => {
             await tx.fileRecord.delete({ where: { id: file.id } });
             if (file.status === 'complete') {

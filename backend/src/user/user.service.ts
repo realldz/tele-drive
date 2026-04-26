@@ -6,7 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { FileService } from '../file/file.service';
+import { FileLifecycleService } from '../file/file-lifecycle.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse } from '../common/types/paginated-response.type';
 import * as bcrypt from 'bcrypt';
@@ -17,7 +17,7 @@ export class UserService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly fileService: FileService,
+    private readonly fileLifecycleService: FileLifecycleService,
   ) {}
 
   /**
@@ -165,7 +165,7 @@ export class UserService {
     });
 
     for (const file of files) {
-      await this.fileService
+      await this.fileLifecycleService
         .delete(file.id)
         .catch((err) =>
           this.logger.warn(
@@ -364,7 +364,7 @@ export class UserService {
     this.logger.warn(
       `Admin deleting file: "${file.filename}" (id: ${fileId}) of user ${targetUserId}`,
     );
-    return this.fileService.delete(fileId);
+    return this.fileLifecycleService.delete(fileId);
   }
 
   /**

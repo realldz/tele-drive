@@ -8,7 +8,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { S3Service } from './s3.service';
-import { FileService } from '../file/file.service';
 import { Transform, Readable } from 'stream';
 import * as crypto from 'crypto';
 import { escapeXml } from '../common/utils/xml';
@@ -43,7 +42,6 @@ export class S3MultipartService {
     private readonly telegramService: TelegramService,
     private readonly cryptoService: CryptoService,
     private readonly s3Service: S3Service,
-    private readonly fileService: FileService,
   ) {}
 
   // ---------------------------------------------------------------------------
