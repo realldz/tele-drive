@@ -21,6 +21,7 @@ import {
   createFolder, deleteFolder, restoreFolder, deleteFile, restoreFile,
   abortUpload, requestDownloadToken, moveItem, formatBandwidthResetTime, API_URL,
   isConflictError, parseConflictResponse,
+  fetchFolderContentInitial,
   fetchFolderContentNextPage,
 } from '@/lib/api';
 import ConflictDialog from '@/components/conflict-dialog';
@@ -191,13 +192,27 @@ export default function Dashboard() {
   // Clear selection when folder changes
   useEffect(() => { selection.clearSelection(); }, [currentFolderId, selection.clearSelection]);
 
+  useEffect(() => {
+    nextFileCursor.current = null;
+    nextFolderCursor.current = null;
+    setHasMoreFolders(true);
+    setHasMoreFiles(true);
+  }, [currentFolderId]);
+
   // Fetch content
   const fetchContent = useCallback(async (isLoadMoreCall = false) => {
     if (!token) return;
     if (!isLoadMoreCall) setIsLoadingContent(true);
     if (isLoadMoreCall) setIsLoadMore(true);
     try {
-      const data = await fetchFolderContentNextPage(currentFolderId, nextFileCursor.current, nextFolderCursor.current);
+      const data = isLoadMoreCall
+        ? await fetchFolderContentNextPage(
+            currentFolderId,
+            nextFileCursor.current,
+            nextFolderCursor.current,
+          )
+        : await fetchFolderContentInitial(currentFolderId);
+
       if (isLoadMoreCall) {
         setFolders(prev => {
           const existingIds = new Set(prev.map(f => f.id));

@@ -45,8 +45,16 @@ export default function SharedFolderPage() {
     }
     setError(null);
     try {
-      const url = currentFolderId
-        ? `/folders/share/${token}?folderId=${currentFolderId}`
+      const params = new URLSearchParams();
+      if (currentFolderId) params.set('folderId', currentFolderId);
+      if (!isInitial) {
+        const cursor = foldersCursor || filesCursor;
+        if (cursor) params.set('cursor', cursor);
+      }
+
+      const query = params.toString();
+      const url = query
+        ? `/folders/share/${token}?${query}`
         : `/folders/share/${token}`;
       const res = await api.get(url);
 
@@ -69,7 +77,14 @@ export default function SharedFolderPage() {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [token, currentFolderId, t]);
+  }, [token, currentFolderId, foldersCursor, filesCursor, t]);
+
+  useEffect(() => {
+    setFoldersCursor(null);
+    setFilesCursor(null);
+    setHasMoreFolders(true);
+    setHasMoreFiles(true);
+  }, [currentFolderId, token]);
 
   useEffect(() => {
     fetchContent(true);
