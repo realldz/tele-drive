@@ -362,7 +362,10 @@ export class S3MultipartService {
     await Promise.allSettled(
       fileRecord.chunks.map(async (chunk) => {
         if (chunk.telegramMessageId) {
-          await this.telegramService.deleteMessage(chunk.telegramMessageId);
+          await this.telegramService.deleteMessage(
+            chunk.telegramMessageId,
+            chunk.botId,
+          );
         }
       }),
     );

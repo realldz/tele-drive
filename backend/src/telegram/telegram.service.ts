@@ -68,6 +68,22 @@ function isRetryable(err: any): boolean {
   return false;
 }
 
+function isBenignDeleteError(err: unknown): boolean {
+  const description = String(
+    (err as { response?: { description?: string }; description?: string; message?: string })
+      ?.response?.description ??
+      (err as { description?: string; message?: string })?.description ??
+      (err as { message?: string })?.message ??
+      '',
+  ).toLowerCase();
+
+  return (
+    description.includes("message can't be deleted") ||
+    description.includes('message to delete not found') ||
+    description.includes('message identifier is not specified')
+  );
+}
+
 @Injectable()
 export class TelegramService implements OnModuleInit {
   private readonly logger = new Logger(TelegramService.name);
@@ -536,15 +552,27 @@ export class TelegramService implements OnModuleInit {
 
   // ─── Delete ────────────────────────────────────────────────────────
 
-  async deleteMessage(messageId: number): Promise<void> {
+  async deleteMessage(messageId: number, botId?: bigint): Promise<void> {
+    const targetBotId = botId && this.botMap.has(botId) ? botId : this.mainBotId;
+    const botClient = this.botMap.get(targetBotId) ?? this.bot.telegram;
+
     try {
       await this.withRetry('deleteMessage', () =>
-        this.bot.telegram.deleteMessage(this.chatId, messageId),
+        botClient.deleteMessage(this.chatId, messageId),
       );
-      this.logger.debug(`Deleted Telegram message: ${messageId}`);
+      this.logger.debug(
+        `Deleted Telegram message: ${messageId} via bot ${targetBotId}`,
+      );
     } catch (error) {
+      if (isBenignDeleteError(error)) {
+        this.logger.debug(
+          `Skipped Telegram message delete ${messageId} via bot ${targetBotId}: ${error}`,
+        );
+        return;
+      }
+
       this.logger.warn(
-        `Failed to delete Telegram message ${messageId}: ${error}`,
+        `Failed to delete Telegram message ${messageId} via bot ${targetBotId}: ${error}`,
       );
     }
   }

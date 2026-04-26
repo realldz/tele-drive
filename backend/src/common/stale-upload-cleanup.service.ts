@@ -41,7 +41,10 @@ export class StaleUploadCleanupService {
         for (const chunk of file.chunks) {
           if (chunk.telegramMessageId) {
             try {
-              await this.telegram.deleteMessage(chunk.telegramMessageId);
+              await this.telegram.deleteMessage(
+                chunk.telegramMessageId,
+                chunk.botId,
+              );
             } catch {
               // Chunk may already be deleted, continue
             }
@@ -51,7 +54,10 @@ export class StaleUploadCleanupService {
         // Delete non-chunked file from Telegram
         if (file.telegramMessageId) {
           try {
-            await this.telegram.deleteMessage(file.telegramMessageId);
+            await this.telegram.deleteMessage(
+              file.telegramMessageId,
+              file.botId,
+            );
           } catch {
             // Message may already be deleted
           }
