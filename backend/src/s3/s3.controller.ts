@@ -26,6 +26,8 @@ import { Readable, Transform } from 'stream';
 import * as crypto from 'crypto';
 import { wrapRequestStream } from './s3-stream.utils';
 import { SkipThrottle } from '@nestjs/throttler';
+import { UseInterceptors } from '@nestjs/common';
+import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
 
 /**
  * S3Controller — S3-compatible API Gateway.
@@ -471,6 +473,7 @@ export class S3Controller {
   // GET /s3/:bucket/* — GetObject / ListParts
   // ---------------------------------------------------------------------------
 
+  @UseInterceptors(BandwidthInterceptor)
   @Get(':bucket/*key')
   async handleGet(
     @Param('bucket') bucket: string,

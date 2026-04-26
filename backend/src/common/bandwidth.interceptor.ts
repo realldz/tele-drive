@@ -20,23 +20,33 @@ interface BandwidthReconcileData {
   estimatedSize: bigint;
   requiresReset: boolean;
   ip: string;
+  countAsDownload: boolean;
 }
 
 type ExpressRequest = {
   params?: Record<string, string>;
   user?: Record<string, unknown>;
   cookies?: Record<string, string>;
+  query?: Record<string, string | string[] | undefined>;
   headers: Record<string, string | undefined>;
+  path?: string;
   requestId?: string;
+  s3UserId?: string;
 };
 
 type ExpressResponse = {
   on: (event: string, cb: () => void) => void;
   getHeader: (name: string) => string | number | undefined;
   setHeader: (name: string, value: string) => void;
-  socket?: { bytesWritten?: number };
+  write: (...args: unknown[]) => boolean;
+  end: (...args: unknown[]) => unknown;
   _bwReconciled?: boolean;
 };
+
+interface ResponseByteCounter {
+  actualBytes: bigint;
+  restore: () => void;
+}
 
 /**
  * Parse Range header để tính bytes cần lock.
@@ -137,9 +147,11 @@ export class BandwidthInterceptor implements NestInterceptor {
     });
     if (!file) return next.handle();
 
+    const estimatedSize = parseRangeSize(req.headers.range, file.size);
+
     // Per-file quota check
     try {
-      this.checkFileQuota(file, isCheckOnly, fileId, res);
+      this.checkFileQuota(file, estimatedSize, isCheckOnly, fileId, res);
     } catch (err) {
       if (err instanceof HttpException) {
         this.logger.warn(
@@ -152,7 +164,6 @@ export class BandwidthInterceptor implements NestInterceptor {
     if (isCheckOnly) return next.handle();
 
     // Parse Range → lock only the requested bytes
-    const estimatedSize = parseRangeSize(req.headers.range, file.size);
     const ip = getClientIp(req);
 
     try {
@@ -172,6 +183,7 @@ export class BandwidthInterceptor implements NestInterceptor {
           estimatedSize,
           requiresReset,
           ip,
+          countAsDownload: !req.headers.range,
         },
         req.requestId,
       );
@@ -231,7 +243,81 @@ export class BandwidthInterceptor implements NestInterceptor {
       }
     }
 
+    if (!fileId && req.s3UserId && !this.hasS3UploadId(req)) {
+      const s3File = await this.resolveS3Object(req.s3UserId, req);
+      if (s3File) {
+        fileId = s3File.id;
+        userId = req.s3UserId;
+      }
+    }
+
     return { fileId, userId };
+  }
+
+  private hasS3UploadId(req: ExpressRequest): boolean {
+    const uploadId = req.query?.uploadId;
+    if (Array.isArray(uploadId)) return uploadId.length > 0;
+    return typeof uploadId === 'string' && uploadId.length > 0;
+  }
+
+  private getS3ObjectKey(req: ExpressRequest): string | null {
+    const bucket = req.params?.bucket;
+    if (!bucket) return null;
+
+    const path = req.path || '';
+    const base = `/s3/${bucket}/`;
+    if (path.startsWith(base)) {
+      const rawKey = path.substring(base.length);
+      if (rawKey.length > 0) return decodeURIComponent(rawKey);
+    }
+
+    const paramKey = req.params?.key;
+    return paramKey ? String(paramKey) : null;
+  }
+
+  private async resolveS3Object(
+    userId: string,
+    req: ExpressRequest,
+  ): Promise<{ id: string } | null> {
+    const bucket = req.params?.bucket;
+    const key = this.getS3ObjectKey(req);
+    if (!bucket || !key) return null;
+
+    const parts = key.split('/').filter(Boolean);
+    if (parts.length === 0) return null;
+
+    const bucketFolder = await this.prisma.folder.findFirst({
+      where: { userId, name: bucket, parentId: null, deletedAt: null },
+      select: { id: true },
+    });
+    if (!bucketFolder) return null;
+
+    let currentFolderId = bucketFolder.id;
+    for (const part of parts.slice(0, -1)) {
+      const folder = await this.prisma.folder.findFirst({
+        where: {
+          name: part,
+          parentId: currentFolderId,
+          userId,
+          deletedAt: null,
+        },
+        select: { id: true },
+      });
+      if (!folder) return null;
+      currentFolderId = folder.id;
+    }
+
+    const filename = parts[parts.length - 1];
+    return this.prisma.fileRecord.findFirst({
+      where: {
+        folderId: currentFolderId,
+        filename,
+        userId,
+        deletedAt: null,
+        status: 'complete',
+      },
+      select: { id: true },
+    });
   }
 
   private checkFileQuota(
@@ -243,6 +329,7 @@ export class BandwidthInterceptor implements NestInterceptor {
       bandwidthUsed24h: bigint;
       lastDownloadReset: Date;
     },
+    estimatedSize: bigint,
     isCheckOnly: boolean,
     fileId: string,
     res: ExpressResponse,
@@ -278,7 +365,7 @@ export class BandwidthInterceptor implements NestInterceptor {
     }
     if (
       file.bandwidthLimit24h !== null &&
-      file.bandwidthUsed24h + file.size > file.bandwidthLimit24h
+      file.bandwidthUsed24h + estimatedSize > file.bandwidthLimit24h
     ) {
       res.setHeader('X-Bandwidth-Reset', resetAt);
       throw new HttpException(
@@ -293,17 +380,22 @@ export class BandwidthInterceptor implements NestInterceptor {
     data: BandwidthReconcileData,
     requestId?: string,
   ): void {
+    const counter = this.attachResponseByteCounter(res);
     res.on('close', () => {
       if (res._bwReconciled) return;
       res._bwReconciled = true;
+      counter.restore();
 
       const actualBytes =
-        res.socket?.bytesWritten !== undefined
-          ? BigInt(res.socket.bytesWritten)
+        counter.actualBytes < data.estimatedSize
+          ? counter.actualBytes
+          : data.estimatedSize;
+      const refund =
+        actualBytes < data.estimatedSize
+          ? data.estimatedSize - actualBytes
           : 0n;
 
-      if (actualBytes < data.estimatedSize) {
-        const refund = data.estimatedSize - actualBytes;
+      if (refund > 0n) {
         void this.lockService.refundBandwidth(
           {
             userId: data.userId,
@@ -314,14 +406,84 @@ export class BandwidthInterceptor implements NestInterceptor {
           data.requiresReset,
         );
         this.logger.debug(
-          `[${requestId || 'unknown'}] Bandwidth reconciled: userId=${data.userId || 'guest'}, refunded=${formatBytes(refund)}, actual=${formatBytes(actualBytes)}, locked=${formatBytes(data.estimatedSize)}`,
+          `[${requestId || 'unknown'}] Bandwidth reconciled: fileId=${data.fileId}, userId=${data.userId || 'guest'}, locked=${formatBytes(data.estimatedSize)}, actual=${formatBytes(actualBytes)}, refunded=${formatBytes(refund)}`,
+        );
+      } else {
+        this.logger.debug(
+          `[${requestId || 'unknown'}] Bandwidth reconciled: fileId=${data.fileId}, userId=${data.userId || 'guest'}, locked=${formatBytes(data.estimatedSize)}, actual=${formatBytes(actualBytes)}, refunded=0 B`,
         );
       }
       void this.lockService.reconcilePerFileCounters(
         data.fileId,
         actualBytes,
         data.estimatedSize,
+        data.countAsDownload,
       );
     });
+  }
+
+  private attachResponseByteCounter(res: ExpressResponse): ResponseByteCounter {
+    let actualBytes = 0n;
+    const originalWrite = res.write.bind(res);
+    const originalEnd = res.end.bind(res);
+
+    const countChunk = (chunk: unknown, encoding?: unknown): void => {
+      if (chunk === undefined || chunk === null) return;
+      if (typeof chunk === 'string') {
+        actualBytes += BigInt(
+          Buffer.byteLength(chunk, this.normalizeEncoding(encoding)),
+        );
+        return;
+      }
+      if (Buffer.isBuffer(chunk)) {
+        actualBytes += BigInt(chunk.length);
+        return;
+      }
+      if (chunk instanceof Uint8Array) {
+        actualBytes += BigInt(chunk.byteLength);
+      }
+    };
+
+    res.write = ((chunk: unknown, encoding?: unknown, cb?: unknown) => {
+      countChunk(chunk, encoding);
+      return originalWrite(chunk, encoding, cb);
+    }) as ExpressResponse['write'];
+
+    res.end = ((chunk?: unknown, encoding?: unknown, cb?: unknown) => {
+      countChunk(chunk, encoding);
+      return originalEnd(chunk, encoding, cb);
+    }) as ExpressResponse['end'];
+
+    return {
+      get actualBytes() {
+        return actualBytes;
+      },
+      restore: () => {
+        res.write = originalWrite;
+        res.end = originalEnd;
+      },
+    };
+  }
+
+  private normalizeEncoding(encoding: unknown): BufferEncoding | undefined {
+    if (typeof encoding !== 'string') return undefined;
+    switch (encoding) {
+      case 'ascii':
+      case 'utf8':
+      case 'utf16le':
+      case 'ucs2':
+      case 'base64':
+      case 'base64url':
+      case 'latin1':
+      case 'binary':
+      case 'hex':
+        return encoding;
+      case 'utf-8':
+        return 'utf8';
+      case 'ucs-2':
+        return 'ucs2';
+      default:
+        return undefined;
+    }
   }
 }
