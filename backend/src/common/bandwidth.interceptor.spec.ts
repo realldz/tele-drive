@@ -415,7 +415,7 @@ describe('BandwidthInterceptor', () => {
       interceptor.intercept(context, {
         handle: () => of(null),
       }),
-    ).rejects.toMatchObject<HttpException>({
+    ).rejects.toMatchObject({
       status: HttpStatus.TOO_MANY_REQUESTS,
     });
 

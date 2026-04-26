@@ -14,7 +14,9 @@ import {
 import { S3AuthGuard } from './s3-auth.guard';
 import { S3Service } from './s3.service';
 import { S3MultipartService } from './s3-multipart.service';
-import { FileService } from '../file/file.service';
+import { FileLifecycleService } from '../file/file-lifecycle.service';
+import { FileStorageUploadService } from '../file/file-storage-upload.service';
+import { TransferReadService } from '../file/transfer-read.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -81,7 +83,9 @@ export class S3Controller {
   constructor(
     private readonly s3Service: S3Service,
     private readonly s3Multipart: S3MultipartService,
-    private readonly fileService: FileService,
+    private readonly fileLifecycleService: FileLifecycleService,
+    private readonly fileStorageUploadService: FileStorageUploadService,
+    private readonly transferReadService: TransferReadService,
     private readonly telegramService: TelegramService,
     private readonly cryptoService: CryptoService,
     private readonly prisma: PrismaService,
@@ -260,7 +264,7 @@ export class S3Controller {
             }
 
             const file = await this.s3Service.findObject(userId, bucket, key);
-            await this.fileService.delete(file.id, userId);
+            await this.fileLifecycleService.delete(file.id, userId);
             await this.s3Service.cleanupEmptyFolders(userId, file.folderId);
             deleted.push({ key });
           } catch (err: unknown) {
@@ -516,7 +520,7 @@ export class S3Controller {
     try {
       this.logger.debug(`S3 GetObject: ${userId}, ${bucket}, ${key}`);
       const file = await this.s3Service.findObject(userId, bucket, key);
-      const downloadInfo = this.fileService.getDownloadMetadata(file);
+      const downloadInfo = this.transferReadService.getDownloadMetadata(file);
 
       const etag = file.etag || `"${file.id}"`;
       res.setHeader(
@@ -530,9 +534,13 @@ export class S3Controller {
 
       const rangeHeader = req.headers['range'];
       if (rangeHeader) {
-        return this.fileService.processStream(downloadInfo, rangeHeader, res);
+        return this.transferReadService.processStream(
+          downloadInfo,
+          rangeHeader,
+          res,
+        );
       }
-      return this.fileService.processDownload(downloadInfo, res);
+      return this.transferReadService.processDownload(downloadInfo, res);
     } catch (err: unknown) {
       this.logger.error(
         `S3 GetObject error: ${err instanceof Error ? err.message : err}`,
@@ -631,7 +639,7 @@ export class S3Controller {
       }
 
       const file = await this.s3Service.findObject(userId, bucket, key);
-      await this.fileService.delete(file.id, userId);
+      await this.fileLifecycleService.delete(file.id, userId);
       await this.s3Service.cleanupEmptyFolders(userId, file.folderId);
       res.status(204).end();
     } catch (err: unknown) {
@@ -723,7 +731,7 @@ export class S3Controller {
 
         const etag = `"${computedMd5Hex}"`;
 
-        await this.fileService.uploadFromBuffer({
+        await this.fileStorageUploadService.uploadFromBuffer({
           buffer: bodyBuffer,
           filename,
           mimeType: contentType,
@@ -754,27 +762,6 @@ export class S3Controller {
         res.status(200).end();
       } else {
         // ── Large file: streaming path — compute MD5 on the fly ─────────────
-        await (this.fileService as any).checkQuota(userId, contentLength || 0);
-
-        const dek = this.cryptoService.generateFileKey();
-        const iv = this.cryptoService.generateIv();
-        const encryptedKey = this.cryptoService.encryptKey(dek);
-
-        const record = await this.prisma.fileRecord.create({
-          data: {
-            filename,
-            size: contentLength || 0,
-            mimeType: contentType,
-            status: 'uploading',
-            isEncrypted: true,
-            encryptionAlgo: 'aes-256-ctr',
-            encryptionIv: iv.toString('hex'),
-            encryptedKey,
-            folderId: folderId || null,
-            userId,
-          },
-        });
-
         let totalBytes = 0;
         const md5 = crypto.createHash('md5');
 
@@ -786,45 +773,28 @@ export class S3Controller {
           },
         });
 
-        const cipherStream = this.cryptoService.createEncryptStream(dek, iv);
-        const uploadStream = stream.pipe(counterTransform).pipe(cipherStream);
-
-        const {
-          fileId: telegramFileId,
-          messageId: telegramMessageId,
-          botId,
-        } = await this.telegramService.uploadStream(uploadStream, record.id);
-
         const etag = `"${md5.digest('hex')}"`;
 
-        await this.prisma.$transaction(async (tx) => {
-          await tx.fileRecord.update({
-            where: { id: record.id },
-            data: {
-              telegramFileId,
-              telegramMessageId,
-              botId,
-              status: 'complete',
-              size: totalBytes,
-              etag,
-            },
-          });
-          await tx.user.update({
-            where: { id: userId },
-            data: { usedSpace: { increment: totalBytes } },
-          });
-
-          if (existingFiles.length > 0) {
-            await tx.fileRecord.updateMany({
-              where: {
-                id: { in: existingFiles.map((file) => file.id) },
-                userId,
-                deletedAt: null,
-              },
-              data: { deletedAt: new Date() },
-            });
-          }
+        await this.fileStorageUploadService.uploadFromStream({
+          stream: stream.pipe(counterTransform),
+          filename,
+          mimeType: contentType,
+          size: contentLength || 0,
+          userId,
+          folderId,
+          etag,
         });
+
+        if (existingFiles.length > 0) {
+          await this.prisma.fileRecord.updateMany({
+            where: {
+              id: { in: existingFiles.map((file) => file.id) },
+              userId,
+              deletedAt: null,
+            },
+            data: { deletedAt: new Date() },
+          });
+        }
 
         if (existingFiles.length > 0) {
           this.logger.log(

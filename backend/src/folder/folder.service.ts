@@ -6,7 +6,8 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { FileService } from '../file/file.service';
+import { TransferReadService } from '../file/transfer-read.service';
+import { FileLifecycleService } from '../file/file-lifecycle.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { NameConflictService } from '../common/name-conflict.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
@@ -22,7 +23,8 @@ export class FolderService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly fileService: FileService,
+    private readonly transferReadService: TransferReadService,
+    private readonly fileLifecycleService: FileLifecycleService,
     private readonly cryptoService: CryptoService,
     private readonly nameConflictService: NameConflictService,
   ) {}
@@ -716,7 +718,7 @@ export class FolderService {
     if (!isChild)
       throw new BadRequestException('File is not part of this shared link');
 
-    return this.fileService.getDownloadMetadata(fileRecord);
+    return this.transferReadService.getDownloadMetadata(fileRecord);
   }
 
   /**
@@ -764,7 +766,7 @@ export class FolderService {
     const allFileIds = await this.collectAllFileIds(id);
 
     // Atomically delete all files inside the folder tree before deleting the folder
-    await this.fileService.bulkPermanentDeleteFiles(allFileIds, userId);
+    await this.fileLifecycleService.bulkPermanentDeleteFiles(allFileIds, userId);
 
     await this.prisma.folder.delete({ where: { id } });
 
@@ -1028,7 +1030,7 @@ export class FolderService {
     if (!isChild)
       throw new BadRequestException('File is not part of this shared link');
 
-    const ttl = await this.fileService.getDownloadTtl();
+    const ttl = await this.transferReadService.getDownloadTtl();
     const token = this.cryptoService.createSignedToken(fileId, 'sf', ttl);
     const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
 

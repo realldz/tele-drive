@@ -585,7 +585,7 @@ export class TelegramService implements OnModuleInit {
 }
 
 /**
- * Retry helper for raw fetch() calls (used by FileService to download from Telegram CDN URLs).
+ * Retry helper for raw fetch() calls used by transfer read paths to download from Telegram CDN URLs.
  * - On 429: reads the Retry-After header and waits the specified duration
  * - On other transient errors: exponential backoff
  */
