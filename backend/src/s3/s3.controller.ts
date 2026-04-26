@@ -83,7 +83,7 @@ export class S3Controller {
     private readonly telegramService: TelegramService,
     private readonly cryptoService: CryptoService,
     private readonly prisma: PrismaService,
-  ) { }
+  ) {}
 
   // ---------------------------------------------------------------------------
   // GET /s3/ → ListBuckets
@@ -186,7 +186,10 @@ export class S3Controller {
     this.logger.debug(`S3 ListObjects: ${userId}, ${bucket}`);
     const prefix = this.qstr(req.query['prefix']);
     const delimiter = this.qstr(req.query['delimiter']);
-    const maxKeys = Math.min(parseInt(this.qstr(req.query['max-keys']) || '1000', 10), 1000);
+    const maxKeys = Math.min(
+      parseInt(this.qstr(req.query['max-keys']) || '1000', 10),
+      1000,
+    );
 
     this.setRequestId(res);
     try {
@@ -481,7 +484,6 @@ export class S3Controller {
     );
     const key = this.getObjectKey(bucket, params, req);
 
-
     this.setRequestId(res);
 
     // --- ListParts ---
@@ -600,7 +602,6 @@ export class S3Controller {
       `S3 handleDelete: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
     );
     const key = this.getObjectKey(bucket, params, req);
-
 
     this.setRequestId(res);
 
