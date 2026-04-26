@@ -314,6 +314,52 @@ export class S3Service {
     return file;
   }
 
+  async findObjectRecords(
+    userId: string,
+    bucketName: string,
+    key: string,
+  ): Promise<
+    Array<{
+      id: string;
+      size: bigint;
+      status: string;
+      folderId: string | null;
+      filename: string;
+    }>
+  > {
+    try {
+      const { folderId, filename } = await this.resolveKey(
+        userId,
+        bucketName,
+        key,
+        false,
+      );
+
+      return await this.prisma.fileRecord.findMany({
+        where: {
+          folderId,
+          filename,
+          userId,
+          deletedAt: null,
+        },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          size: true,
+          status: true,
+          folderId: true,
+          filename: true,
+        },
+      });
+    } catch (err: unknown) {
+      if (err instanceof NotFoundException) {
+        return [];
+      }
+
+      throw err;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // ListObjectsV2 — prefix-based listing
   // ---------------------------------------------------------------------------
