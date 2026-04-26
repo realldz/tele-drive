@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
-import type { FileRecord, FolderRecord, BreadcrumbItem, TrashedFile, TrashedFolder, AdminUser, AdminSetting, AdminUserFile } from './types';
+import type { FileRecord, FolderRecord, BreadcrumbItem, TrashedFile, TrashedFolder, AdminUser, AdminSetting, AdminUserFile, AdminLogFile, ReadAdminLogsResponse } from './types';
 import toast from 'react-hot-toast';
 import { incPendingCount, decPendingCount } from './request-tracker';
 
@@ -378,6 +378,27 @@ export async function fetchUserFiles(
 
 export async function deleteUserFile(userId: string, fileId: string) {
   return api.delete(`/users/${userId}/files/${fileId}`);
+}
+
+export async function fetchAdminLogFiles(): Promise<AdminLogFile[]> {
+  const res = await api.get('/admin/logs/files');
+  return res.data;
+}
+
+export async function readAdminLogs(params: {
+  file: string;
+  limit?: number;
+  level?: string;
+  search?: string;
+}): Promise<ReadAdminLogsResponse> {
+  const query = new URLSearchParams();
+  query.set('file', params.file);
+  if (params.limit) query.set('limit', String(params.limit));
+  if (params.level) query.set('level', params.level);
+  if (params.search) query.set('search', params.search);
+
+  const res = await api.get(`/admin/logs/read?${query}`);
+  return res.data;
 }
 
 // ── S3 Credentials ──────────────────────────────────────────────────────────

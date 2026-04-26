@@ -1,6 +1,6 @@
 'use client';
 
-import { ShieldAlert, X, LogOut, User, Users, Settings, ArrowLeft } from 'lucide-react';
+import { ShieldAlert, X, LogOut, User, Users, Settings, ArrowLeft, Logs } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import type { UserRole } from '@/lib/types';
 
@@ -11,8 +11,8 @@ interface UserInfo {
 }
 
 interface AdminSidebarProps {
-  activeTab: 'USERS' | 'SETTINGS' | 'USER_FILES';
-  setActiveTab: (tab: 'USERS' | 'SETTINGS' | 'USER_FILES') => void;
+  activeTab: 'USERS' | 'SETTINGS' | 'USER_FILES' | 'LOGS';
+  setActiveTab: (tab: 'USERS' | 'SETTINGS' | 'USER_FILES' | 'LOGS') => void;
   user: UserInfo | null;
   onLogout: () => void;
   onBackHome: () => void;
@@ -48,6 +48,10 @@ export default function AdminSidebar({
           <button onClick={() => setActiveTab('SETTINGS')}
             className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${activeTab === 'SETTINGS' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
             <Settings size={20} /> {t('admin.systemSettings')}
+          </button>
+          <button onClick={() => setActiveTab('LOGS')}
+            className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${activeTab === 'LOGS' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
+            <Logs size={20} /> {t('admin.logs')}
           </button>
           <div className="pt-4 mt-4 border-t border-slate-800" />
           <button onClick={onBackHome} className="w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium text-slate-300 hover:bg-white/5 hover:text-white transition-colors">

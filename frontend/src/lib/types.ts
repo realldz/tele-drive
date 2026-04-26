@@ -71,6 +71,30 @@ export interface AdminUserFile {
   isEncrypted: boolean;
 }
 
+export interface AdminLogFile {
+  name: string;
+  kind: 'combined' | 'error' | 'unknown';
+  compressed: boolean;
+  sizeBytes: number;
+  modifiedAt: string;
+}
+
+export interface AdminLogEntry {
+  timestamp?: string;
+  level?: string;
+  context?: string;
+  message: string;
+  stack?: string;
+  ms?: string;
+  raw?: unknown;
+}
+
+export interface ReadAdminLogsResponse {
+  file: string;
+  compressed: boolean;
+  entries: AdminLogEntry[];
+}
+
 /** Shared file info from /files/share/:token */
 export interface SharedFileInfo {
   id: string;
