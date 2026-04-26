@@ -260,7 +260,11 @@ export class UserService {
         createdAt: true,
         updatedAt: true,
         isEncrypted: true,
-        telegramFileId: true,
+        downloads24h: true,
+        downloadLimit24h: true,
+        bandwidthUsed24h: true,
+        bandwidthLimit24h: true,
+        lastDownloadReset: true,
       },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
@@ -277,6 +281,75 @@ export class UserService {
     const total = await this.prisma.fileRecord.count({ where });
 
     return { data: items, nextCursor, total };
+  }
+
+  async getUserBasic(targetUserId: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: {
+        id: true,
+        username: true,
+        role: true,
+        usedSpace: true,
+        quota: true,
+      },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+    return user;
+  }
+
+  async updateFileDownloadPolicy(
+    targetUserId: string,
+    fileId: string,
+    data: {
+      downloadLimit24h?: number | null;
+      bandwidthLimit24h?: string | null;
+    },
+  ) {
+    const file = await this.prisma.fileRecord.findFirst({
+      where: { id: fileId, userId: targetUserId, deletedAt: null },
+      select: { id: true, filename: true },
+    });
+    if (!file) throw new NotFoundException('File not found for this user');
+
+    const updateData: {
+      downloadLimit24h?: number | null;
+      bandwidthLimit24h?: bigint | null;
+    } = {};
+
+    if (Object.prototype.hasOwnProperty.call(data, 'downloadLimit24h')) {
+      updateData.downloadLimit24h = data.downloadLimit24h ?? null;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(data, 'bandwidthLimit24h')) {
+      updateData.bandwidthLimit24h =
+        data.bandwidthLimit24h === null ||
+        data.bandwidthLimit24h === undefined ||
+        data.bandwidthLimit24h === ''
+          ? null
+          : BigInt(data.bandwidthLimit24h);
+    }
+
+    const updated = await this.prisma.fileRecord.update({
+      where: { id: fileId },
+      data: updateData,
+      select: {
+        id: true,
+        filename: true,
+        downloadLimit24h: true,
+        downloads24h: true,
+        bandwidthLimit24h: true,
+        bandwidthUsed24h: true,
+        lastDownloadReset: true,
+      },
+    });
+
+    this.logger.log(
+      `File download policy updated: file "${file.filename}" (id: ${fileId}) for user ${targetUserId}`,
+    );
+
+    return updated;
   }
 
   /**

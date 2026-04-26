@@ -16,6 +16,7 @@ import { UpdateQuotaDto } from './dto/update-quota.dto';
 import { UpdateBandwidthDto } from './dto/update-bandwidth.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { UpdateFileDownloadPolicyDto } from './dto/update-file-download-policy.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import type { AuthenticatedRequest } from '../common/types/request';
 
@@ -83,12 +84,28 @@ export class UserController {
   }
 
   @UseGuards(AdminGuard)
+  @Get(':id/basic')
+  getUserBasic(@Param('id') id: string) {
+    return this.userService.getUserBasic(id);
+  }
+
+  @UseGuards(AdminGuard)
   @Get(':id/files')
   getUserFiles(
     @Param('id') id: string,
     @Query() pagination: PaginationQueryDto,
   ) {
     return this.userService.getUserFiles(id, pagination);
+  }
+
+  @UseGuards(AdminGuard)
+  @Patch(':id/files/:fileId/download-policy')
+  updateFileDownloadPolicy(
+    @Param('id') id: string,
+    @Param('fileId') fileId: string,
+    @Body() body: UpdateFileDownloadPolicyDto,
+  ) {
+    return this.userService.updateFileDownloadPolicy(id, fileId, body);
   }
 
   @UseGuards(AdminGuard)
