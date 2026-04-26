@@ -429,6 +429,8 @@ export class S3Controller {
           await this.s3Multipart.completeMultipartUpload(
             uploadId,
             userId,
+            bucket,
+            key,
             partCount,
           );
 
@@ -679,11 +681,11 @@ export class S3Controller {
         key,
         true,
       );
-      await (this.fileService as any).checkQuota(userId, contentLength || 0);
-
-      const dek = this.cryptoService.generateFileKey();
-      const iv = this.cryptoService.generateIv();
-      const encryptedKey = this.cryptoService.encryptKey(dek);
+      const existingFiles = await this.s3Service.findObjectRecords(
+        userId,
+        bucket,
+        key,
+      );
 
       if (contentLength > 0 && contentLength <= MAX_CHUNK_SIZE) {
         // ── Small file path: buffer → verify Content-MD5 → encrypt → upload ──
@@ -717,49 +719,29 @@ export class S3Controller {
 
         const etag = `"${computedMd5Hex}"`;
 
-        const cipher = this.cryptoService.createEncryptStream(dek, iv);
-        const encryptedBuffer = Buffer.concat([
-          cipher.update(bodyBuffer),
-          cipher.final(),
-        ]);
-
-        const record = await this.prisma.fileRecord.create({
-          data: {
-            filename,
-            size: bodyBuffer.length,
-            mimeType: contentType,
-            status: 'uploading',
-            isEncrypted: true,
-            encryptionAlgo: 'aes-256-ctr',
-            encryptionIv: iv.toString('hex'),
-            encryptedKey,
-            etag,
-            folderId: folderId || null,
-            userId,
-          },
+        await this.fileService.uploadFromBuffer({
+          buffer: bodyBuffer,
+          filename,
+          mimeType: contentType,
+          userId,
+          folderId,
+          etag,
         });
 
-        const {
-          fileId: telegramFileId,
-          messageId: telegramMessageId,
-          botId,
-        } = await this.telegramService.uploadFile(encryptedBuffer, record.id);
-
-        await this.prisma.$transaction(async (tx) => {
-          await tx.fileRecord.update({
-            where: { id: record.id },
-            data: {
-              telegramFileId,
-              telegramMessageId,
-              botId,
-              status: 'complete',
+        if (existingFiles.length > 0) {
+          await this.prisma.fileRecord.updateMany({
+            where: {
+              id: { in: existingFiles.map((file) => file.id) },
+              userId,
+              deletedAt: null,
             },
+            data: { deletedAt: new Date() },
           });
-          await tx.user.update({
-            where: { id: userId },
-            data: { usedSpace: { increment: bodyBuffer.length } },
-          });
-        });
+
+          this.logger.log(
+            `S3 PutObject overwrite moved ${existingFiles.length} existing object(s) to trash after successful upload: s3://${bucket}/${key}`,
+          );
+        }
 
         this.logger.log(
           `S3 PutObject complete: s3://${bucket}/${key} (${bodyBuffer.length} bytes, ETag: ${etag})`,
@@ -768,6 +750,12 @@ export class S3Controller {
         res.status(200).end();
       } else {
         // ── Large file: streaming path — compute MD5 on the fly ─────────────
+        await (this.fileService as any).checkQuota(userId, contentLength || 0);
+
+        const dek = this.cryptoService.generateFileKey();
+        const iv = this.cryptoService.generateIv();
+        const encryptedKey = this.cryptoService.encryptKey(dek);
+
         const record = await this.prisma.fileRecord.create({
           data: {
             filename,
@@ -821,7 +809,24 @@ export class S3Controller {
             where: { id: userId },
             data: { usedSpace: { increment: totalBytes } },
           });
+
+          if (existingFiles.length > 0) {
+            await tx.fileRecord.updateMany({
+              where: {
+                id: { in: existingFiles.map((file) => file.id) },
+                userId,
+                deletedAt: null,
+              },
+              data: { deletedAt: new Date() },
+            });
+          }
         });
+
+        if (existingFiles.length > 0) {
+          this.logger.log(
+            `S3 PutObject overwrite moved ${existingFiles.length} existing object(s) to trash after successful upload: s3://${bucket}/${key}`,
+          );
+        }
 
         this.logger.log(
           `S3 PutObject streamed: s3://${bucket}/${key} (${totalBytes} bytes, ETag: ${etag})`,

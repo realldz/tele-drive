@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { S3Service } from './s3.service';
+import { FileService } from '../file/file.service';
 import { Transform, Readable } from 'stream';
 import * as crypto from 'crypto';
 import { escapeXml } from '../common/utils/xml';
@@ -42,6 +43,7 @@ export class S3MultipartService {
     private readonly telegramService: TelegramService,
     private readonly cryptoService: CryptoService,
     private readonly s3Service: S3Service,
+    private readonly fileService: FileService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -225,6 +227,8 @@ export class S3MultipartService {
   async completeMultipartUpload(
     uploadId: string,
     userId: string,
+    bucket: string,
+    key: string,
     declaredPartCount: number,
   ): Promise<{ location: string; etag: string }> {
     this.logger.log(
@@ -275,6 +279,14 @@ export class S3MultipartService {
       .update(Buffer.concat(partMd5Buffers))
       .digest('hex');
     const finalEtag = `"${multipartMd5}-${uploadedCount}"`;
+    const existingRecords = await this.s3Service.findObjectRecords(
+      userId,
+      bucket,
+      key,
+    );
+    const replacedRecordIds = existingRecords
+      .map((file) => file.id)
+      .filter((id) => id !== uploadId);
 
     // Update totalChunks to actual value + mark complete + store ETag + update usedSpace
     await this.prisma.$transaction(async (tx) => {
@@ -292,7 +304,24 @@ export class S3MultipartService {
         where: { id: userId },
         data: { usedSpace: { increment: totalSize } },
       });
+
+      if (replacedRecordIds.length > 0) {
+        await tx.fileRecord.updateMany({
+          where: {
+            id: { in: replacedRecordIds },
+            userId,
+            deletedAt: null,
+          },
+          data: { deletedAt: new Date() },
+        });
+      }
     });
+
+    if (replacedRecordIds.length > 0) {
+      this.logger.log(
+        `S3 Multipart overwrite moved ${replacedRecordIds.length} existing object(s) to trash after complete: s3://${bucket}/${key}`,
+      );
+    }
 
     this.logger.log(
       `S3 CompleteMultipartUpload done: uploadId=${uploadId}, parts=${uploadedCount}, size=${totalSize}, ETag=${finalEtag}`,

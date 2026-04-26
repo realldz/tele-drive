@@ -2027,6 +2027,7 @@ export class FileService {
     userId: string;
     folderId?: string | null;
     existingFileId?: string;
+    etag?: string;
     signal?: AbortSignal;
   }) {
     const {
@@ -2036,10 +2037,21 @@ export class FileService {
       userId,
       folderId,
       existingFileId,
+      etag,
       signal,
     } = params;
 
-    await this.checkQuota(userId, buffer.length);
+    const oldRecord = existingFileId
+      ? await this.prisma.fileRecord.findUnique({
+          where: { id: existingFileId },
+          include: { chunks: true },
+        })
+      : null;
+
+    const quotaDelta = BigInt(buffer.length) - (oldRecord?.size ?? 0n);
+    if (quotaDelta > 0n) {
+      await this.checkQuota(userId, quotaDelta);
+    }
 
     const dek = this.cryptoService.generateFileKey();
     const iv = this.cryptoService.generateIv();
@@ -2054,11 +2066,6 @@ export class FileService {
 
     if (existingFileId) {
       // Update existing file (S3 overwrite)
-      const oldRecord = await this.prisma.fileRecord.findUnique({
-        where: { id: existingFileId },
-        include: { chunks: true },
-      });
-
       // Upload to Telegram
       const {
         fileId: telegramFileId,
@@ -2097,6 +2104,7 @@ export class FileService {
             encryptionAlgo: 'aes-256-ctr',
             encryptionIv: iv.toString('hex'),
             encryptedKey,
+            etag,
           },
         });
 
@@ -2130,6 +2138,7 @@ export class FileService {
           encryptionAlgo: 'aes-256-ctr',
           encryptionIv: iv.toString('hex'),
           encryptedKey,
+          etag,
           folderId: folderId || null,
           userId,
         },
@@ -2199,7 +2208,17 @@ export class FileService {
       signal,
     } = params;
 
-    await this.checkQuota(userId, size);
+    const oldRecord = existingFileId
+      ? await this.prisma.fileRecord.findUnique({
+          where: { id: existingFileId },
+          include: { chunks: true },
+        })
+      : null;
+
+    const quotaDelta = BigInt(size) - (oldRecord?.size ?? 0n);
+    if (quotaDelta > 0n) {
+      await this.checkQuota(userId, quotaDelta);
+    }
 
     const dek = this.cryptoService.generateFileKey();
     const iv = this.cryptoService.generateIv();
@@ -2210,11 +2229,6 @@ export class FileService {
     const encryptedStream = stream.pipe(cipher);
 
     if (existingFileId) {
-      const oldRecord = await this.prisma.fileRecord.findUnique({
-        where: { id: existingFileId },
-        include: { chunks: true },
-      });
-
       const {
         fileId: telegramFileId,
         messageId: telegramMessageId,
