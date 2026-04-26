@@ -21,6 +21,7 @@ import { S3Module } from './s3/s3.module';
 import { AppLoggerModule } from './common/logger/logger.module';
 import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
 import { AdminLogModule } from './admin-log/admin-log.module';
+import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { AdminLogModule } from './admin-log/admin-log.module';
     BandwidthModule,
     S3Module,
     AdminLogModule,
+    AdminDashboardModule,
   ],
   controllers: [AppController],
   providers: [

@@ -3,6 +3,7 @@
 import { ShieldAlert, X, LogOut, User, Users, Settings, ArrowLeft, Logs } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import type { UserRole } from '@/lib/types';
+import { usePathname, useRouter } from 'next/navigation';
 
 interface UserInfo {
   id: string;
@@ -11,8 +12,6 @@ interface UserInfo {
 }
 
 interface AdminSidebarProps {
-  activeTab: 'USERS' | 'SETTINGS' | 'USER_FILES' | 'LOGS';
-  setActiveTab: (tab: 'USERS' | 'SETTINGS' | 'USER_FILES' | 'LOGS') => void;
   user: UserInfo | null;
   onLogout: () => void;
   onBackHome: () => void;
@@ -21,10 +20,22 @@ interface AdminSidebarProps {
 }
 
 export default function AdminSidebar({
-  activeTab, setActiveTab, user, onLogout, onBackHome,
+  user, onLogout, onBackHome,
   isMobileOpen, setIsMobileOpen,
 }: AdminSidebarProps) {
   const { t } = useI18n();
+  const pathname = usePathname();
+  const router = useRouter();
+
+  const isDashboard = pathname === '/admin';
+  const isUsers = pathname.startsWith('/admin/users');
+  const isSettings = pathname === '/admin/settings';
+  const isLogs = pathname === '/admin/logs';
+
+  const navigate = (href: string) => {
+    setIsMobileOpen(false);
+    router.push(href);
+  };
 
   return (
     <>
@@ -41,16 +52,20 @@ export default function AdminSidebar({
           </div>
         </div>
         <nav className="flex-1 px-4 space-y-2 overflow-y-auto mt-2">
-          <button onClick={() => setActiveTab('USERS')}
-            className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${activeTab === 'USERS' || activeTab === 'USER_FILES' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
+          <button onClick={() => navigate('/admin')}
+            className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${isDashboard ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
+            <ShieldAlert size={20} /> {t('admin.dashboard')}
+          </button>
+          <button onClick={() => navigate('/admin/users')}
+            className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${isUsers ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
             <Users size={20} /> {t('admin.users')}
           </button>
-          <button onClick={() => setActiveTab('SETTINGS')}
-            className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${activeTab === 'SETTINGS' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
+          <button onClick={() => navigate('/admin/settings')}
+            className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${isSettings ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
             <Settings size={20} /> {t('admin.systemSettings')}
           </button>
-          <button onClick={() => setActiveTab('LOGS')}
-            className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${activeTab === 'LOGS' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
+          <button onClick={() => navigate('/admin/logs')}
+            className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${isLogs ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-300 hover:bg-white/5 hover:text-white'}`}>
             <Logs size={20} /> {t('admin.logs')}
           </button>
           <div className="pt-4 mt-4 border-t border-slate-800" />

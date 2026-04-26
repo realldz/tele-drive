@@ -68,7 +68,35 @@ export interface AdminUserFile {
   size: string;
   mimeType: string;
   createdAt: string;
+  updatedAt: string;
   isEncrypted: boolean;
+  downloads24h: number;
+  downloadLimit24h: number | null;
+  bandwidthUsed24h: string;
+  bandwidthLimit24h: string | null;
+  lastDownloadReset: string;
+}
+
+export interface AdminUserBasic {
+  id: string;
+  username: string;
+  role: UserRole;
+  usedSpace: string;
+  quota: string;
+}
+
+export interface AdminDashboardSummary {
+  totalUsers: number;
+  totalAdmins: number;
+  totalFiles: number;
+  totalFolders: number;
+  totalTrashFiles: number;
+  totalTrashFolders: number;
+  totalUploadsInProgress: number;
+  totalS3Credentials: number;
+  totalUsedSpace: string;
+  totalQuota: string;
+  topUsersByUsage: AdminUserBasic[];
 }
 
 export interface AdminLogFile {

@@ -1,5 +1,5 @@
 import axios, { type AxiosInstance } from 'axios';
-import type { FileRecord, FolderRecord, BreadcrumbItem, TrashedFile, TrashedFolder, AdminUser, AdminSetting, AdminUserFile, AdminLogFile, ReadAdminLogsResponse } from './types';
+import type { FileRecord, FolderRecord, BreadcrumbItem, TrashedFile, TrashedFolder, AdminUser, AdminSetting, AdminUserFile, AdminLogFile, ReadAdminLogsResponse, AdminDashboardSummary, AdminUserBasic } from './types';
 import toast from 'react-hot-toast';
 import { incPendingCount, decPendingCount } from './request-tracker';
 
@@ -328,6 +328,11 @@ export async function fetchUsers(
   return res.data;
 }
 
+export async function fetchAdminDashboardSummary(): Promise<AdminDashboardSummary> {
+  const res = await api.get('/admin/dashboard');
+  return res.data;
+}
+
 // ── Password Management ─────────────────────────────────────────────────────
 
 export async function changePassword(currentPassword: string, newPassword: string) {
@@ -363,6 +368,11 @@ export async function deleteUser(userId: string) {
   return api.delete(`/users/${userId}`);
 }
 
+export async function fetchAdminUserBasic(userId: string): Promise<AdminUserBasic> {
+  const res = await api.get(`/users/${userId}/basic`);
+  return res.data;
+}
+
 export async function fetchUserFiles(
   userId: string,
   cursor?: string,
@@ -378,6 +388,18 @@ export async function fetchUserFiles(
 
 export async function deleteUserFile(userId: string, fileId: string) {
   return api.delete(`/users/${userId}/files/${fileId}`);
+}
+
+export async function updateAdminUserFileDownloadPolicy(
+  userId: string,
+  fileId: string,
+  body: {
+    downloadLimit24h: number | null;
+    bandwidthLimit24h: string | null;
+  },
+) {
+  const res = await api.patch(`/users/${userId}/files/${fileId}/download-policy`, body);
+  return res.data;
 }
 
 export async function fetchAdminLogFiles(): Promise<AdminLogFile[]> {
