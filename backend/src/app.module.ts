@@ -20,6 +20,7 @@ import { BandwidthModule } from './common/bandwidth.module';
 import { S3Module } from './s3/s3.module';
 import { AppLoggerModule } from './common/logger/logger.module';
 import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
+import { AdminLogModule } from './admin-log/admin-log.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { RequestLoggingInterceptor } from './common/interceptors/request-logging
     CryptoModule,
     BandwidthModule,
     S3Module,
+    AdminLogModule,
   ],
   controllers: [AppController],
   providers: [

@@ -21,8 +21,9 @@ import ConfirmModal from './components/confirm-modal';
 
 const UserManagement = dynamic(() => import('./components/user-management'), { loading: () => <Loader2 className="animate-spin text-blue-500 mx-auto mt-8" size={24} /> });
 const SystemSettings = dynamic(() => import('./components/system-settings'), { loading: () => <Loader2 className="animate-spin text-blue-500 mx-auto mt-8" size={24} /> });
+const LogViewer = dynamic(() => import('./components/log-viewer'), { loading: () => <Loader2 className="animate-spin text-blue-500 mx-auto mt-8" size={24} /> });
 
-type Tab = 'USERS' | 'SETTINGS' | 'USER_FILES';
+type Tab = 'USERS' | 'SETTINGS' | 'USER_FILES' | 'LOGS';
 
 export default function AdminDashboard() {
   const router = useRouter();
@@ -268,6 +269,8 @@ export default function AdminDashboard() {
               onSettingChange={(key, value) => setEditingSettings({ ...editingSettings, [key]: value })}
               onUpdateSetting={handleUpdateSetting} />
           )}
+
+          {activeTab === 'LOGS' && <LogViewer t={t} />}
 
           {(activeTab === 'USERS' || activeTab === 'USER_FILES') && (
             <UserManagement
