@@ -2,18 +2,18 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/components/auth-context';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
+import AppLink from '@/components/app-link';
 import { useI18n } from '@/components/i18n-context';
 import { useNavigation } from '@/components/navigation-loader';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import { LogIn, Loader2 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api';
+import { useAppNavigate } from '@/hooks/use-app-navigate';
 
 export default function LoginPage() {
   const { login } = useAuth();
   const { isNavigating } = useNavigation();
-  const router = useRouter();
+  const navigate = useAppNavigate();
   const { t } = useI18n();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -29,7 +29,7 @@ export default function LoginPage() {
 
     try {
       await login(username, password);
-      router.push('/');
+      navigate.push('/');
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, t('login.failed')));
     } finally {
@@ -94,9 +94,9 @@ export default function LoginPage() {
 
         <p className="text-center text-sm text-gray-500 mt-6">
           {t('login.noAccount')}{' '}
-          <Link href="/register" className="text-blue-600 hover:underline font-medium">
+          <AppLink href="/register" className="text-blue-600 hover:underline font-medium">
             {t('login.register')}
-          </Link>
+          </AppLink>
         </p>
       </div>
     </div>

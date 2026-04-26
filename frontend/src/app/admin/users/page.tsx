@@ -15,13 +15,14 @@ import {
 import type { AdminUser } from '@/lib/types';
 import { useI18n } from '@/components/i18n-context';
 import { useAuth } from '@/components/auth-context';
+import { useAppNavigate } from '@/hooks/use-app-navigate';
 import UserManagement from '../components/user-management';
 import EditUserModal from '../components/edit-user-modal';
 import ResetPasswordModal from '../components/reset-password-modal';
 import ConfirmModal from '../components/confirm-modal';
 
 export default function AdminUsersPage() {
-  const router = useRouter();
+  const navigate = useAppNavigate();
   const { t, locale } = useI18n();
   const { user } = useAuth();
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -173,7 +174,7 @@ export default function AdminUsersPage() {
         onLoadMoreUsers={loadMoreUsers}
         userSearch={userSearch}
         onUserSearch={handleUserSearch}
-        onSelectUser={(u) => router.push(`/admin/users/${u.id}/files`)}
+        onSelectUser={(u) => navigate.push(`/admin/users/${u.id}/files`)}
         onEditUser={(u) => {
           setEditingUser(u);
           setEditForm({

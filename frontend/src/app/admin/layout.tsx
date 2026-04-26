@@ -1,15 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { Menu } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import { useNavigation } from '@/components/navigation-loader';
+import { useAppNavigate } from '@/hooks/use-app-navigate';
 import AdminSidebar from './components/admin-sidebar';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  const router = useRouter();
+  const navigate = useAppNavigate();
   const { isNavigating } = useNavigation();
   const { isReady, user, logout } = useRequireAuth({ requiredRole: 'ADMIN' });
   const { t } = useI18n();
@@ -24,12 +24,12 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
         onLogout={() => {
           if (!isNavigating) {
             logout();
-            router.push('/login');
+            navigate.push('/login');
           }
         }}
         onBackHome={() => {
           if (!isNavigating) {
-            router.push('/');
+            navigate.push('/');
           }
         }}
         isMobileOpen={isMobileSidebarOpen}
