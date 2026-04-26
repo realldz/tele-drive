@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class AdminDashboardService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async getSummary() {
     const [
@@ -40,6 +40,7 @@ export class AdminDashboardService {
           username: true,
           usedSpace: true,
           quota: true,
+          role: true,
         },
       }),
     ]);
