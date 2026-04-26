@@ -12,6 +12,7 @@ import {
   UseInterceptors,
   UseGuards,
   Logger,
+  SetMetadata,
 } from '@nestjs/common';
 import { FolderService } from './folder.service';
 import { FileService } from '../file/file.service';
@@ -177,6 +178,8 @@ export class FolderController {
   @Public()
   @UseGuards(OptionalJwtGuard)
   @Post('share/:token/download-token/:fileId')
+  @UseInterceptors(BandwidthInterceptor)
+  @SetMetadata('BANDWIDTH_CHECK_ONLY', true)
   generateShareFolderDownloadToken(
     @Param('token') token: string,
     @Param('fileId') fileId: string,

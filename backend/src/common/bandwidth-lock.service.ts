@@ -181,12 +181,13 @@ export class BandwidthLockService {
     fileId: string,
     actualBytes: bigint,
     estimatedSize: bigint,
+    countAsDownload: boolean,
   ): Promise<void> {
     await this.prisma.fileRecord.update({
       where: { id: fileId },
       data: {
         bandwidthUsed24h: { increment: actualBytes },
-        ...(actualBytes >= estimatedSize
+        ...(countAsDownload && actualBytes >= estimatedSize
           ? { downloads24h: { increment: 1 } }
           : {}),
       },
