@@ -720,7 +720,7 @@ export class FileService {
                           `Chunk ${chunkIndex} for file ${fileId} completed but file was aborted — deleting Telegram message ${telegramMessageId}`,
                         );
                         this.telegram
-                          .deleteMessage(telegramMessageId)
+                          .deleteMessage(telegramMessageId, botId)
                           .catch(() => {});
                         reject(new Error('Upload aborted'));
                         return;
@@ -737,7 +737,7 @@ export class FileService {
                           `Chunk ${chunkIndex} for file ${fileId} was aborted during upload — deleting orphaned Telegram message ${telegramMessageId}`,
                         );
                         this.telegram
-                          .deleteMessage(telegramMessageId)
+                          .deleteMessage(telegramMessageId, botId)
                           .catch(() => {});
                         reject(new Error('Upload aborted'));
                         return;
@@ -800,7 +800,7 @@ export class FileService {
     // First pass: delete Telegram messages from initial snapshot
     const deletePromises = fileRecord.chunks.map(async (chunk) => {
       if (chunk.telegramMessageId) {
-        await this.telegram.deleteMessage(chunk.telegramMessageId);
+        await this.telegram.deleteMessage(chunk.telegramMessageId, chunk.botId);
       }
     });
     await Promise.allSettled(deletePromises);
@@ -819,7 +819,7 @@ export class FileService {
         chunk.telegramMessageId &&
         !alreadyDeleted.has(chunk.telegramMessageId)
       ) {
-        await this.telegram.deleteMessage(chunk.telegramMessageId);
+        await this.telegram.deleteMessage(chunk.telegramMessageId, chunk.botId);
       }
     }
 
