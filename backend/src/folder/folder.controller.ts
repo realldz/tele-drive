@@ -57,7 +57,11 @@ export class FolderController {
     @Query() pagination: PaginationQueryDto,
     @Req() req: AuthenticatedRequest,
   ) {
-    return this.folderService.getContent(req.user.userId, pagination.folderId, pagination);
+    return this.folderService.getContent(
+      req.user.userId,
+      pagination.folderId,
+      pagination,
+    );
   }
 
   @Get('trash/list')
@@ -163,7 +167,11 @@ export class FolderController {
     @Param('token') token: string,
     @Query() pagination: PaginationQueryDto,
   ) {
-    return this.folderService.getSharedContent(token, pagination.folderId, pagination);
+    return this.folderService.getSharedContent(
+      token,
+      pagination.folderId,
+      pagination,
+    );
   }
 
   @Public()

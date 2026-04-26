@@ -70,8 +70,13 @@ function isRetryable(err: any): boolean {
 
 function isBenignDeleteError(err: unknown): boolean {
   const description = String(
-    (err as { response?: { description?: string }; description?: string; message?: string })
-      ?.response?.description ??
+    (
+      err as {
+        response?: { description?: string };
+        description?: string;
+        message?: string;
+      }
+    )?.response?.description ??
       (err as { description?: string; message?: string })?.description ??
       (err as { message?: string })?.message ??
       '',
@@ -553,7 +558,8 @@ export class TelegramService implements OnModuleInit {
   // ─── Delete ────────────────────────────────────────────────────────
 
   async deleteMessage(messageId: number, botId?: bigint): Promise<void> {
-    const targetBotId = botId && this.botMap.has(botId) ? botId : this.mainBotId;
+    const targetBotId =
+      botId && this.botMap.has(botId) ? botId : this.mainBotId;
     const botClient = this.botMap.get(targetBotId) ?? this.bot.telegram;
 
     try {
