@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
+import { useParams } from 'next/navigation';
 import toast from 'react-hot-toast';
 import {
   fetchAdminUserBasic,
@@ -11,6 +11,7 @@ import {
 } from '@/lib/api';
 import type { AdminUserBasic, AdminUserFile } from '@/lib/types';
 import { useI18n } from '@/components/i18n-context';
+import { useAppNavigate } from '@/hooks/use-app-navigate';
 import AdminUserFilesList from '../../../components/admin-user-files-list';
 
 interface DownloadPolicyForm {
@@ -20,7 +21,7 @@ interface DownloadPolicyForm {
 
 export default function AdminUserFilesPage() {
   const params = useParams();
-  const router = useRouter();
+  const navigate = useAppNavigate();
   const { t, locale } = useI18n();
   const userId = params.userId as string;
   const [user, setUser] = useState<AdminUserBasic | null>(null);
@@ -102,7 +103,7 @@ export default function AdminUserFilesPage() {
       fileSearch={fileSearch}
       onFileSearch={handleSearch}
       onLoadMore={loadMore}
-      onBack={() => router.push('/admin/users')}
+      onBack={() => navigate.push('/admin/users')}
       onDeleteFile={() => {
         toast.error(t('admin.deleteFileError'));
       }}

@@ -1,13 +1,14 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { Home, Trash2, KeyRound, ShieldAlert, LogOut, User, HardDrive, Menu, X, KeySquare } from 'lucide-react';
 import { useAuth } from '@/components/auth-context';
 import { useI18n } from '@/components/i18n-context';
 import LanguageSwitcher from '@/components/language-switcher';
 import { formatBytes, changePassword, getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';
+import { useAppNavigate } from '@/hooks/use-app-navigate';
 
 interface SidebarProps {
   children?: React.ReactNode;
@@ -16,7 +17,7 @@ interface SidebarProps {
 export default function Sidebar({ children }: SidebarProps) {
   const { user, logout, quotaInfo } = useAuth();
   const { t } = useI18n();
-  const router = useRouter();
+  const navigate = useAppNavigate();
   const pathname = usePathname();
   const [isMobileOpen, setIsMobileOpen] = useState(false);
   const [showChangePassword, setShowChangePassword] = useState(false);
@@ -25,7 +26,7 @@ export default function Sidebar({ children }: SidebarProps) {
 
   const handleLogout = () => {
     logout();
-    router.push('/login');
+    navigate.push('/login');
   };
 
   const handleChangePassword = async (e: React.FormEvent) => {
@@ -90,7 +91,7 @@ export default function Sidebar({ children }: SidebarProps) {
             return (
               <button
                 key={item.href}
-                onClick={() => { router.push(item.href); setIsMobileOpen(false); }}
+                onClick={() => { navigate.push(item.href); setIsMobileOpen(false); }}
                 className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${isActive ? 'bg-white/10 text-white' : 'hover:bg-white/5 text-slate-300'}`}
               >
                 <item.icon size={20} /> {item.label}
@@ -101,8 +102,8 @@ export default function Sidebar({ children }: SidebarProps) {
           {user?.role === 'ADMIN' && (
             <>
               <div className="pt-4 mt-4 border-t border-slate-800"></div>
-            <button
-              onClick={() => { router.push('/admin'); setIsMobileOpen(false); }}
+             <button
+              onClick={() => { navigate.push('/admin'); setIsMobileOpen(false); }}
               className={`w-full hover:cursor-pointer flex items-center gap-3 px-4 py-3 rounded-lg text-left font-medium transition-colors ${pathname === '/admin' ? 'bg-white/10 text-amber-400' : 'hover:bg-white/5 text-amber-400'}`}
             >
                 <ShieldAlert size={20} /> {t('sidebar.adminPanel')}

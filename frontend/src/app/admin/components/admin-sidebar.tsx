@@ -3,7 +3,8 @@
 import { ShieldAlert, X, LogOut, User, Users, Settings, ArrowLeft, Logs } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import type { UserRole } from '@/lib/types';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
+import { useAppNavigate } from '@/hooks/use-app-navigate';
 
 interface UserInfo {
   id: string;
@@ -25,7 +26,7 @@ export default function AdminSidebar({
 }: AdminSidebarProps) {
   const { t } = useI18n();
   const pathname = usePathname();
-  const router = useRouter();
+  const navigateTo = useAppNavigate();
 
   const isDashboard = pathname === '/admin';
   const isUsers = pathname.startsWith('/admin/users');
@@ -34,7 +35,7 @@ export default function AdminSidebar({
 
   const navigate = (href: string) => {
     setIsMobileOpen(false);
-    router.push(href);
+    navigateTo.push(href);
   };
 
   return (

@@ -2,13 +2,16 @@
 
 import { createContext, useContext, useEffect, useRef, useState, useCallback, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import { useRequestTracker } from '@/lib/request-tracker';
 
 interface NavigationContextType {
   isNavigating: boolean;
+  startNavigation: () => void;
 }
 
-const NavigationContext = createContext<NavigationContextType>({ isNavigating: false });
+const NavigationContext = createContext<NavigationContextType>({
+  isNavigating: false,
+  startNavigation: () => {},
+});
 
 export function useNavigation() {
   return useContext(NavigationContext);
@@ -17,53 +20,69 @@ export function useNavigation() {
 /**
  * Custom navigation progress bar for Next.js App Router.
  *
- * Driven by two signals:
- * 1. `pathname` change → start progress bar (user is navigating)
- * 2. `pendingCount === 0` after being > 0 → API requests finished → complete bar
+ * Driven by two signals only:
+ * 1. Internal link click → start progress bar immediately
+ * 2. `pathname` change + next paint frames → new route committed and painted
  *
- * Safety net: auto-completes after 2s even with no requests.
+ * This intentionally ignores client-side `useEffect`/fetch work. Those screens
+ * should show their own local loading states.
  */
 export default function NavigationLoader({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const { pendingCount } = useRequestTracker();
   const isFirstMount = useRef(true);
+  const lastPathnameRef = useRef(pathname);
 
   const [progress, setProgress] = useState(0);
   const [visible, setVisible] = useState(false);
 
   const incrementRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const safetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const wasPendingRef = useRef(false);
+  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const rafRef = useRef<number | null>(null);
 
   const clearAllTimers = useCallback(() => {
     if (incrementRef.current) {
       clearInterval(incrementRef.current);
       incrementRef.current = null;
     }
-    if (safetyTimerRef.current) {
-      clearTimeout(safetyTimerRef.current);
-      safetyTimerRef.current = null;
-    }
     if (hideTimerRef.current) {
       clearTimeout(hideTimerRef.current);
       hideTimerRef.current = null;
+    }
+    if (resetTimerRef.current) {
+      clearTimeout(resetTimerRef.current);
+      resetTimerRef.current = null;
+    }
+    if (rafRef.current !== null) {
+      cancelAnimationFrame(rafRef.current);
+      rafRef.current = null;
     }
   }, []);
 
   const finishNavigation = useCallback(() => {
     clearAllTimers();
-    wasPendingRef.current = false;
     setProgress(100);
     hideTimerRef.current = setTimeout(() => {
       setVisible(false);
-      setProgress(0);
+      hideTimerRef.current = null;
+      resetTimerRef.current = setTimeout(() => {
+        setProgress(0);
+        resetTimerRef.current = null;
+      }, 220);
     }, 300);
   }, [clearAllTimers]);
 
   const startNavigation = useCallback(() => {
+    if (hideTimerRef.current) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+
+    if (visible) {
+      return;
+    }
+
     clearAllTimers();
-    wasPendingRef.current = false;
     setVisible(true);
     setProgress(0);
 
@@ -78,35 +97,66 @@ export default function NavigationLoader({ children }: { children: ReactNode }) 
         return prev + (80 - prev) * 0.1;
       });
     }, 150);
+  }, [clearAllTimers, finishNavigation, visible]);
 
-    // Safety net: auto-complete after 2s if no requests triggered
-    safetyTimerRef.current = setTimeout(finishNavigation, 2000);
-  }, [clearAllTimers, finishNavigation]);
+  // Start navigation immediately on internal link clicks.
+  useEffect(() => {
+    const handleClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+
+      const anchor = target.closest('a[href]');
+      if (!(anchor instanceof HTMLAnchorElement)) return;
+      if (anchor.target && anchor.target !== '_self') return;
+      if (anchor.hasAttribute('download')) return;
+
+      const href = anchor.getAttribute('href');
+      if (!href || href.startsWith('#')) return;
+
+      const url = new URL(anchor.href, window.location.href);
+      if (url.origin !== window.location.origin) return;
+      if (url.pathname === lastPathnameRef.current && url.search === window.location.search) {
+        return;
+      }
+
+      startNavigation();
+    };
+
+    document.addEventListener('click', handleClick, true);
+    return () => document.removeEventListener('click', handleClick, true);
+  }, [startNavigation]);
 
   // Start navigation on pathname change
   useEffect(() => {
     if (isFirstMount.current) {
       isFirstMount.current = false;
+      lastPathnameRef.current = pathname;
       return;
     }
-    startNavigation();
-  }, [pathname, startNavigation]);
 
-  // Finish navigation when all API requests complete
-  useEffect(() => {
-    if (isFirstMount.current) return;
+    if (pathname !== lastPathnameRef.current) {
+      lastPathnameRef.current = pathname;
+      if (!visible) {
+        startNavigation();
+      }
+      if (rafRef.current !== null) {
+        cancelAnimationFrame(rafRef.current);
+      }
 
-    if (pendingCount > 0) {
-      wasPendingRef.current = true;
+      rafRef.current = requestAnimationFrame(() => {
+        rafRef.current = requestAnimationFrame(() => {
+          rafRef.current = null;
+          finishNavigation();
+        });
+      });
     }
-
-    if (wasPendingRef.current && pendingCount === 0 && visible) {
-      finishNavigation();
-    }
-  }, [pendingCount, visible, finishNavigation]);
+  }, [pathname, finishNavigation, startNavigation, visible]);
 
   return (
-    <NavigationContext.Provider value={{ isNavigating: visible }}>
+    <NavigationContext.Provider value={{ isNavigating: visible, startNavigation }}>
       <div
         className="fixed top-0 left-0 right-0 z-[9999] pointer-events-none"
         style={{
