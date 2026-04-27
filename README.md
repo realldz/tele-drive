@@ -24,17 +24,25 @@ Cloud storage powered by Telegram. Store, manage, and share files using Telegram
                      │ (reverse proxy)  │
                      └──┬────────┬──────┘
                         │        │
-              /api/*    │        │  /*
-                        ▼        ▼
-                ┌──────────┐ ┌──────────┐
-                │ Backend  │ │ Frontend │
-                │ NestJS   │ │ Next.js  │
-                │  :3001   │ │  :3000   │
-                └────┬─────┘ └──────────┘
+                /api/*    │        │  /*
+                         ▼        ▼
+        ┌──────────────────────┐ ┌──────────┐
+        │ Backend Core API     │ │ Frontend │
+        │ NestJS               │ │ Next.js  │
+        │  :3001               │ │  :3000   │
+        └──────────────────────┘ └──────────┘
                      │
+                     │ /files/*, /s3/*, /api/files/*, /api/s3/*
                      ▼
-              ┌──────────────┐    ┌────────────────┐
-              │ nginx :8088  │───►│ telegram-bot-   │
+             ┌──────────────────────┐
+             │ Backend Transfer API │
+             │ NestJS               │
+             │  :3001               │
+             └──────────┬───────────┘
+                        │
+                      ▼
+               ┌──────────────┐    ┌────────────────┐
+               │ nginx :8088  │───►│ telegram-bot-   │
               │ (file proxy) │    │ api :8081       │
               └──────────────┘    │ (Local Bot API) │
                                   └────────────────┘
@@ -88,6 +96,7 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 # Root .env (for Docker Compose — Telegram API credentials)
 cp .env.example .env
 # Edit: TELEGRAM_API_ID, TELEGRAM_API_HASH
+# These are required for telegram-bot-api to become healthy in Docker
 
 # Backend .env (bot token, chat ID, secrets)
 cp backend/.env.example backend/.env
@@ -103,6 +112,12 @@ docker compose up -d
 ```
 
 Access at [http://localhost](http://localhost).
+
+Compose now runs two backend containers internally:
+- `backend-core` for auth, users, settings, folders, and admin APIs
+- `backend-transfer` for `/files/*`, `/s3/*`, and transfer-heavy `/api/files/*` paths
+
+Public URLs stay the same because nginx routes requests to the right backend internally.
 
 #### Option B: Cloudflare Tunnel (no port exposure)
 
@@ -122,11 +137,13 @@ Configure routing in [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) d
 |--------|---------|
 | Start all | `docker compose up -d` |
 | Stop all | `docker compose down` |
-| Rebuild + restart one service | `docker compose up -d --build backend` |
+| Rebuild + restart core API | `docker compose up -d --build backend-core` |
+| Rebuild + restart transfer API | `docker compose up -d --build backend-transfer` |
 | Force rebuild (no cache) | `docker compose build --no-cache frontend` |
 | Force rebuild + restart all | `docker compose up -d --build --force-recreate` |
 | Restart (no rebuild) | `docker compose restart frontend` |
-| View logs | `docker container logs -f backend` |
+| View core logs | `docker container logs -f tele-drive-backend-core-1` |
+| View transfer logs | `docker container logs -f tele-drive-backend-transfer-1` |
 | Rebuild all | `docker compose build` |
 
 ## Environment Variables
