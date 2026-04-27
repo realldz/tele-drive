@@ -36,6 +36,8 @@ type TestRequest = {
 
 type TestResponse = {
   _bwReconciled: boolean;
+  _header?: string;
+  socket?: { bytesWritten: number };
   write: jest.Mock<boolean, [unknown?, unknown?, unknown?]>;
   end: jest.Mock<unknown, [unknown?, unknown?, unknown?]>;
   getHeader: jest.Mock;
@@ -83,13 +85,15 @@ describe('BandwidthInterceptor', () => {
       lockService as never,
     );
 
-    return { interceptor, prisma, reflector, lockService };
+    return { interceptor, prisma, cryptoService, reflector, lockService };
   };
 
   const createResponse = (): TestResponse => {
     const listeners = new Map<string, Array<() => void>>();
     const res: TestResponse = {
       _bwReconciled: false,
+      _header: 'HTTP/1.1 200 OK\r\ncontent-length: 5\r\n\r\n',
+      socket: { bytesWritten: 0 },
       write: jest.fn(() => true),
       end: jest.fn(() => undefined),
       getHeader: jest.fn(),
@@ -141,8 +145,11 @@ describe('BandwidthInterceptor', () => {
 
     await interceptor.intercept(context, {
       handle: () => {
+        res.socket!.bytesWritten = Buffer.byteLength(res._header!, 'utf8');
         res.write(Buffer.from('hel'));
+        res.socket!.bytesWritten += 3;
         res.end(Buffer.from('lo'));
+        res.socket!.bytesWritten += 2;
         res.emit('close');
         return of(null);
       },
@@ -186,7 +193,9 @@ describe('BandwidthInterceptor', () => {
 
     await interceptor.intercept(context, {
       handle: () => {
+        res.socket!.bytesWritten = Buffer.byteLength(res._header!, 'utf8');
         res.write(Buffer.from('1234'));
+        res.socket!.bytesWritten += 4;
         res.emit('close');
         return of(null);
       },
@@ -205,6 +214,99 @@ describe('BandwidthInterceptor', () => {
       'file-2',
       4n,
       10n,
+      true,
+    );
+  });
+
+  it('falls back to counted bytes when Content-Length is missing', async () => {
+    const { interceptor, prisma, lockService } = createInterceptor();
+    prisma.fileRecord.findUnique.mockResolvedValue({
+      size: 10n,
+      downloadLimit24h: null,
+      downloads24h: 0,
+      bandwidthLimit24h: null,
+      bandwidthUsed24h: 0n,
+      lastDownloadReset: new Date(),
+    });
+
+    const req: TestRequest = {
+      params: { id: 'file-fallback' },
+      user: { userId: 'user-fallback' },
+      headers: {},
+      requestId: 'req-fallback',
+      ip: '127.0.0.11',
+      connection: { remoteAddress: '127.0.0.11' },
+    };
+    const res = createResponse();
+    res.getHeader.mockReturnValue(undefined);
+    const context = createExecutionContext(req, res);
+
+    await interceptor.intercept(context, {
+      handle: () => {
+        res.socket!.bytesWritten = Buffer.byteLength(res._header!, 'utf8');
+        res.write(Buffer.from('1234'));
+        res.socket!.bytesWritten += 4;
+        res.emit('close');
+        return of(null);
+      },
+    });
+
+    expect(lockService.refundBandwidth).toHaveBeenCalledWith(
+      {
+        userId: 'user-fallback',
+        estimatedSize: 10n,
+        ip: '127.0.0.11',
+      },
+      6n,
+      false,
+    );
+    expect(lockService.reconcilePerFileCounters).toHaveBeenCalledWith(
+      'file-fallback',
+      4n,
+      10n,
+      true,
+    );
+  });
+
+  it('subtracts response headers from socket bytes when reconciling', async () => {
+    const { interceptor, prisma, lockService } = createInterceptor();
+    prisma.fileRecord.findUnique.mockResolvedValue({
+      size: 5n,
+      downloadLimit24h: null,
+      downloads24h: 0,
+      bandwidthLimit24h: null,
+      bandwidthUsed24h: 0n,
+      lastDownloadReset: new Date(),
+    });
+
+    const req: TestRequest = {
+      params: { id: 'file-socket' },
+      user: { userId: 'user-socket' },
+      headers: {},
+      requestId: 'req-socket',
+      ip: '127.0.0.13',
+      connection: { remoteAddress: '127.0.0.13' },
+    };
+    const res = createResponse();
+    res.getHeader.mockImplementation((name: string) =>
+      name === 'content-length' ? '5' : undefined,
+    );
+    const context = createExecutionContext(req, res);
+
+    await interceptor.intercept(context, {
+      handle: () => {
+        const headerBytes = Buffer.byteLength(res._header!, 'utf8');
+        res.socket!.bytesWritten = headerBytes + 5;
+        res.emit('close');
+        return of(null);
+      },
+    });
+
+    expect(lockService.refundBandwidth).not.toHaveBeenCalled();
+    expect(lockService.reconcilePerFileCounters).toHaveBeenCalledWith(
+      'file-socket',
+      5n,
+      5n,
       true,
     );
   });
@@ -233,7 +335,9 @@ describe('BandwidthInterceptor', () => {
 
     await interceptor.intercept(context, {
       handle: () => {
+        res.socket!.bytesWritten = Buffer.byteLength(res._header!, 'utf8');
         res.end(Buffer.from('1234567890'));
+        res.socket!.bytesWritten += 10;
         res.emit('close');
         return of(null);
       },
@@ -288,7 +392,9 @@ describe('BandwidthInterceptor', () => {
 
     await interceptor.intercept(context, {
       handle: () => {
+        res.socket!.bytesWritten = Buffer.byteLength(res._header!, 'utf8');
         res.end(Buffer.from('1234'));
+        res.socket!.bytesWritten += 4;
         res.emit('close');
         return of(null);
       },

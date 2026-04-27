@@ -83,6 +83,7 @@ server {
         proxy_read_timeout 600s;
         proxy_send_timeout 600s;
         proxy_request_buffering off;
+        proxy_buffering off;
     }
 
     location /api/s3-credentials {
@@ -166,6 +167,7 @@ server {
         proxy_read_timeout 600s;
         proxy_send_timeout 600s;
         proxy_request_buffering off;
+        proxy_buffering off;
     }
 
     # Direct file/stream routes used by signed download links and media streaming
@@ -180,6 +182,7 @@ server {
         proxy_read_timeout 600s;
         proxy_send_timeout 600s;
         proxy_request_buffering off;
+        proxy_buffering off;
     }
 
     # Frontend — default route
