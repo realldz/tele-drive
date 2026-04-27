@@ -6,6 +6,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { S3AuthService } from './s3-auth.service';
+import { getClientIp } from '../common/utils/get-client-ip';
 
 /**
  * S3AuthGuard — NestJS Guard kiểm tra AWS Signature V4 trên mọi route /s3/**
@@ -25,7 +26,7 @@ export class S3AuthGuard implements CanActivate {
 
     if (!userId) {
       this.logger.warn(
-        `S3 auth denied: ${req.method} ${req.url} from ${req.ip}`,
+        `S3 auth denied: ${req.method} ${req.url} from ${getClientIp(req)}`,
       );
       throw new UnauthorizedException({
         code: 'InvalidSignature',
