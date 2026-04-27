@@ -21,6 +21,23 @@ interface BandwidthReconcileData {
   requiresReset: boolean;
   ip: string;
   countAsDownload: boolean;
+  method?: string;
+  url?: string;
+  range?: string;
+}
+
+interface FileBandwidthAggregate {
+  fileId: string;
+  actorKey: string;
+  startedAt: number;
+  lastUpdatedAt: number;
+  requestCount: number;
+  fullRequests: number;
+  rangeRequests: number;
+  zeroByteRequests: number;
+  totalLocked: bigint;
+  totalActual: bigint;
+  totalRefunded: bigint;
 }
 
 type ExpressRequest = {
@@ -41,10 +58,13 @@ type ExpressResponse = {
   write: (...args: unknown[]) => boolean;
   end: (...args: unknown[]) => unknown;
   _bwReconciled?: boolean;
+  _header?: string;
+  socket?: { bytesWritten?: number };
 };
 
 interface ResponseByteCounter {
-  actualBytes: bigint;
+  countedBytes: bigint;
+  socketStartBytes: bigint | null;
   restore: () => void;
 }
 
@@ -111,6 +131,8 @@ function formatBytes(bytes: bigint): string {
 @Injectable()
 export class BandwidthInterceptor implements NestInterceptor {
   private readonly logger = new Logger(BandwidthInterceptor.name);
+  private readonly aggregateWindowMs = 30_000;
+  private readonly bandwidthAggregates = new Map<string, FileBandwidthAggregate>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -184,6 +206,11 @@ export class BandwidthInterceptor implements NestInterceptor {
           requiresReset,
           ip,
           countAsDownload: !req.headers.range,
+          method: (req as { method?: string }).method,
+          url:
+            (req as { originalUrl?: string }).originalUrl ??
+            (req as { url?: string }).url,
+          range: req.headers.range,
         },
         req.requestId,
       );
@@ -386,10 +413,18 @@ export class BandwidthInterceptor implements NestInterceptor {
       res._bwReconciled = true;
       counter.restore();
 
-      const actualBytes =
-        counter.actualBytes < data.estimatedSize
-          ? counter.actualBytes
-          : data.estimatedSize;
+      const contentLengthHeader = res.getHeader('content-length');
+      const actualBytes = this.resolveActualBytes(
+        res,
+        counter.countedBytes,
+        counter.socketStartBytes,
+        data.estimatedSize,
+      );
+
+      this.logger.debug(
+        `[${requestId || 'unknown'}] Bandwidth response details: method=${data.method || 'unknown'}, url=${data.url || 'unknown'}, range=${data.range || '-'}, contentLength=${contentLengthHeader ?? '-'}, counted=${formatBytes(counter.countedBytes)}, socketStart=${counter.socketStartBytes === null ? '-' : counter.socketStartBytes.toString()}, socketEnd=${typeof res.socket?.bytesWritten === 'number' ? String(res.socket.bytesWritten) : '-'}, headerBytes=${formatBytes(this.estimateHeaderBytes(res))}, actual=${formatBytes(actualBytes)}, countAsDownload=${data.countAsDownload}`,
+      );
+
       const refund =
         actualBytes < data.estimatedSize
           ? data.estimatedSize - actualBytes
@@ -419,28 +454,139 @@ export class BandwidthInterceptor implements NestInterceptor {
         data.estimatedSize,
         data.countAsDownload,
       );
+      this.recordAggregate(data, actualBytes, refund, requestId);
     });
   }
 
+  private recordAggregate(
+    data: BandwidthReconcileData,
+    actualBytes: bigint,
+    refund: bigint,
+    requestId?: string,
+  ): void {
+    const now = Date.now();
+    this.pruneAggregates(now);
+
+    const actorKey = data.userId ?? `guest:${data.ip}`;
+    const aggregateKey = `${data.fileId}:${actorKey}`;
+    const existing = this.bandwidthAggregates.get(aggregateKey);
+
+    const aggregate: FileBandwidthAggregate =
+      existing && now - existing.lastUpdatedAt < this.aggregateWindowMs
+        ? existing
+        : {
+            fileId: data.fileId,
+            actorKey,
+            startedAt: now,
+            lastUpdatedAt: now,
+            requestCount: 0,
+            fullRequests: 0,
+            rangeRequests: 0,
+            zeroByteRequests: 0,
+            totalLocked: 0n,
+            totalActual: 0n,
+            totalRefunded: 0n,
+          };
+
+    aggregate.lastUpdatedAt = now;
+    aggregate.requestCount += 1;
+    aggregate.totalLocked += data.estimatedSize;
+    aggregate.totalActual += actualBytes;
+    aggregate.totalRefunded += refund;
+    if (data.range) {
+      aggregate.rangeRequests += 1;
+    } else {
+      aggregate.fullRequests += 1;
+    }
+    if (actualBytes === 0n) {
+      aggregate.zeroByteRequests += 1;
+    }
+
+    this.bandwidthAggregates.set(aggregateKey, aggregate);
+
+    this.logger.debug(
+      `[${requestId || 'unknown'}] Bandwidth aggregate: fileId=${aggregate.fileId}, actor=${aggregate.actorKey}, windowMs=${now - aggregate.startedAt}, requests=${aggregate.requestCount}, full=${aggregate.fullRequests}, range=${aggregate.rangeRequests}, zero=${aggregate.zeroByteRequests}, locked=${formatBytes(aggregate.totalLocked)}, actual=${formatBytes(aggregate.totalActual)}, refunded=${formatBytes(aggregate.totalRefunded)}`,
+    );
+  }
+
+  private pruneAggregates(now: number): void {
+    for (const [key, aggregate] of this.bandwidthAggregates.entries()) {
+      if (now - aggregate.lastUpdatedAt >= this.aggregateWindowMs) {
+        this.bandwidthAggregates.delete(key);
+      }
+    }
+  }
+
+  private resolveActualBytes(
+    res: ExpressResponse,
+    countedBytes: bigint,
+    socketStartBytes: bigint | null,
+    estimatedSize: bigint,
+  ): bigint {
+    const socketPayloadBytes = this.getSocketPayloadBytes(res, socketStartBytes);
+    const measuredBytes = socketPayloadBytes ?? countedBytes;
+    return measuredBytes < estimatedSize ? measuredBytes : estimatedSize;
+  }
+
+  private getSocketPayloadBytes(
+    res: ExpressResponse,
+    socketStartBytes: bigint | null,
+  ): bigint | null {
+    if (
+      socketStartBytes === null ||
+      typeof res.socket?.bytesWritten !== 'number' ||
+      !Number.isFinite(res.socket.bytesWritten)
+    ) {
+      return null;
+    }
+
+    const socketEndBytes = BigInt(Math.max(0, Math.trunc(res.socket.bytesWritten)));
+    if (socketEndBytes <= socketStartBytes) {
+      return 0n;
+    }
+
+    const socketDelta = socketEndBytes - socketStartBytes;
+    const headerBytes = this.estimateHeaderBytes(res);
+    if (socketDelta <= headerBytes) {
+      return 0n;
+    }
+
+    return socketDelta - headerBytes;
+  }
+
+  private estimateHeaderBytes(res: ExpressResponse): bigint {
+    const header = res._header;
+    if (typeof header !== 'string' || header.length === 0) {
+      return 0n;
+    }
+
+    return BigInt(Buffer.byteLength(header, 'utf8'));
+  }
+
   private attachResponseByteCounter(res: ExpressResponse): ResponseByteCounter {
-    let actualBytes = 0n;
+    let countedBytes = 0n;
+    const socketStartBytes =
+      typeof res.socket?.bytesWritten === 'number' &&
+      Number.isFinite(res.socket.bytesWritten)
+        ? BigInt(Math.max(0, Math.trunc(res.socket.bytesWritten)))
+        : null;
     const originalWrite = res.write.bind(res);
     const originalEnd = res.end.bind(res);
 
     const countChunk = (chunk: unknown, encoding?: unknown): void => {
       if (chunk === undefined || chunk === null) return;
       if (typeof chunk === 'string') {
-        actualBytes += BigInt(
+        countedBytes += BigInt(
           Buffer.byteLength(chunk, this.normalizeEncoding(encoding)),
         );
         return;
       }
       if (Buffer.isBuffer(chunk)) {
-        actualBytes += BigInt(chunk.length);
+        countedBytes += BigInt(chunk.length);
         return;
       }
       if (chunk instanceof Uint8Array) {
-        actualBytes += BigInt(chunk.byteLength);
+        countedBytes += BigInt(chunk.byteLength);
       }
     };
 
@@ -455,9 +601,10 @@ export class BandwidthInterceptor implements NestInterceptor {
     }) as ExpressResponse['end'];
 
     return {
-      get actualBytes() {
-        return actualBytes;
+      get countedBytes() {
+        return countedBytes;
       },
+      socketStartBytes,
       restore: () => {
         res.write = originalWrite;
         res.end = originalEnd;
