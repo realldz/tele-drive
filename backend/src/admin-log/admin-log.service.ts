@@ -9,7 +9,11 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { createGunzip } from 'zlib';
 import type { Readable } from 'stream';
-import { ReadLogQueryDto } from './dto/read-log-query.dto';
+import {
+  ADMIN_LOG_FILTER_FIELDS,
+  type AdminLogFilterField,
+  ReadLogQueryDto,
+} from './dto/read-log-query.dto';
 
 type LogKind = 'combined' | 'error' | 'unknown';
 
@@ -30,6 +34,12 @@ export interface AdminLogEntry {
   ms?: string;
   raw?: unknown;
 }
+
+type AdminLogFilter = {
+  field: AdminLogFilterField;
+  value: string;
+  negated: boolean;
+};
 
 @Injectable()
 export class AdminLogService {
@@ -148,6 +158,7 @@ export class AdminLogService {
     query: ReadLogQueryDto,
   ): Promise<AdminLogEntry[]> {
     const limit = query.limit ?? 100;
+    const filters = this.parseFilters(query.filters);
     const entries: AdminLogEntry[] = [];
     let remainder = '';
 
@@ -160,14 +171,14 @@ export class AdminLogService {
         for (const line of lines) {
           const entry = this.parseLogLine(line);
           if (!entry) continue;
-          if (!this.matchesFilters(entry, query)) continue;
+          if (!this.matchesFilters(entry, query, filters)) continue;
           this.pushRingBuffer(entries, entry, limit);
         }
       }
 
       if (remainder.trim()) {
         const entry = this.parseLogLine(remainder);
-        if (entry && this.matchesFilters(entry, query)) {
+        if (entry && this.matchesFilters(entry, query, filters)) {
           this.pushRingBuffer(entries, entry, limit);
         }
       }
@@ -218,25 +229,14 @@ export class AdminLogService {
     return JSON.stringify(parsed);
   }
 
-  private matchesFilters(entry: AdminLogEntry, query: ReadLogQueryDto): boolean {
-    const { level, search, context, excludeContext, excludePath, excludeHealthchecks } =
-      query;
+  private matchesFilters(
+    entry: AdminLogEntry,
+    query: ReadLogQueryDto,
+    filters: AdminLogFilter[],
+  ): boolean {
+    const { level, search } = query;
 
     if (level && (entry.level || '').toLowerCase() !== level.toLowerCase()) {
-      return false;
-    }
-
-    if (
-      context &&
-      (entry.context || '').toLowerCase() !== context.toLowerCase()
-    ) {
-      return false;
-    }
-
-    if (
-      excludeContext &&
-      (entry.context || '').toLowerCase() === excludeContext.toLowerCase()
-    ) {
       return false;
     }
 
@@ -251,38 +251,97 @@ export class AdminLogService {
         : JSON.stringify(entry.raw ?? ''),
     ].filter(Boolean) as string[];
 
-    const haystack = haystackParts.join(' ');
-    const haystackLower = haystack.toLowerCase();
-
-    if (excludePath && haystackLower.includes(excludePath.toLowerCase())) {
-      return false;
-    }
-
-    if (excludeHealthchecks && this.isHealthcheckNoise(entry, haystackLower)) {
-      return false;
+    if (filters.length > 0) {
+      for (const filter of filters) {
+        if (!this.matchesFieldFilter(entry, filter)) {
+          return false;
+        }
+      }
     }
 
     if (!search) {
       return true;
     }
 
-    return haystackLower.includes(search.toLowerCase());
+    return haystackParts.join(' ').toLowerCase().includes(search.toLowerCase());
   }
 
-  private isHealthcheckNoise(entry: AdminLogEntry, haystackLower: string): boolean {
-    if ((entry.context || '').toLowerCase() !== 'requestlogginginterceptor') {
-      return false;
+  private matchesFieldFilter(
+    entry: AdminLogEntry,
+    filter: AdminLogFilter,
+  ): boolean {
+    const fieldValue = this.getFieldValue(entry, filter.field).toLowerCase();
+    const needle = filter.value.toLowerCase();
+    const matched = fieldValue.includes(needle);
+
+    return filter.negated ? !matched : matched;
+  }
+
+  private getFieldValue(entry: AdminLogEntry, field: AdminLogFilter['field']): string {
+    switch (field) {
+      case 'timestamp':
+        return entry.timestamp || '';
+      case 'level':
+        return entry.level || '';
+      case 'context':
+        return entry.context || '';
+      case 'message':
+        return entry.message || '';
+      case 'stack':
+        return entry.stack || '';
+      case 'raw':
+        return typeof entry.raw === 'string'
+          ? entry.raw
+          : JSON.stringify(entry.raw ?? '');
+      default:
+        return '';
+    }
+  }
+
+  private parseFilters(rawFilters?: string): AdminLogFilter[] {
+    if (!rawFilters) {
+      return [];
     }
 
-    return [
-      'get /files/config',
-      'get /api/files/config',
-      'get / ',
-      'get /http',
-      'user-agent: wget',
-      'kube-probe',
-      'healthcheck',
-    ].some((needle) => haystackLower.includes(needle));
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawFilters);
+    } catch {
+      throw new BadRequestException('Invalid filters payload');
+    }
+
+    if (!Array.isArray(parsed)) {
+      throw new BadRequestException('Invalid filters payload');
+    }
+
+    return parsed.map((item) => this.parseSingleFilter(item));
+  }
+
+  private parseSingleFilter(item: unknown): AdminLogFilter {
+    if (!item || typeof item !== 'object') {
+      throw new BadRequestException('Invalid log filter');
+    }
+
+    const field = (item as { field?: unknown }).field;
+    const value = (item as { value?: unknown }).value;
+    const negated = (item as { negated?: unknown }).negated;
+
+    if (
+      typeof field !== 'string' ||
+      !ADMIN_LOG_FILTER_FIELDS.includes(field as AdminLogFilterField)
+    ) {
+      throw new BadRequestException('Invalid log filter field');
+    }
+
+    if (typeof value !== 'string') {
+      throw new BadRequestException('Invalid log filter value');
+    }
+
+    return {
+      field: field as AdminLogFilterField,
+      value,
+      negated: negated === true,
+    };
   }
 
   private pushRingBuffer<T>(buffer: T[], item: T, limit: number): void {

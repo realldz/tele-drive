@@ -412,22 +412,22 @@ export async function readAdminLogs(params: {
   limit?: number;
   level?: string;
   search?: string;
-  context?: string;
-  excludeContext?: string;
-  excludePath?: string;
-  excludeHealthchecks?: boolean;
   newestFirst?: boolean;
+  filters?: Array<{
+    field: 'timestamp' | 'level' | 'context' | 'message' | 'stack' | 'raw';
+    value: string;
+    negated?: boolean;
+  }>;
 }): Promise<ReadAdminLogsResponse> {
   const query = new URLSearchParams();
   query.set('file', params.file);
   if (params.limit) query.set('limit', String(params.limit));
   if (params.level) query.set('level', params.level);
   if (params.search) query.set('search', params.search);
-  if (params.context) query.set('context', params.context);
-  if (params.excludeContext) query.set('excludeContext', params.excludeContext);
-  if (params.excludePath) query.set('excludePath', params.excludePath);
-  if (params.excludeHealthchecks) query.set('excludeHealthchecks', 'true');
   if (params.newestFirst) query.set('newestFirst', 'true');
+  if (params.filters && params.filters.length > 0) {
+    query.set('filters', JSON.stringify(params.filters));
+  }
 
   const res = await api.get(`/admin/logs/read?${query}`);
   return res.data;
