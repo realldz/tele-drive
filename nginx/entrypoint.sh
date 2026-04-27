@@ -22,23 +22,6 @@ if [ ! -f "${CERT_PATH}" ] || [ ! -f "${KEY_PATH}" ]; then
   echo "[nginx] Self-signed cert created at ${CERT_PATH}"
 fi
 
-# ─── Wait for upstream services ──────────────────────────────────────
-echo "[nginx] Waiting for backend service..."
-MAX_ATTEMPTS=30
-ATTEMPT=0
-while [ $ATTEMPT -lt $MAX_ATTEMPTS ]; do
-  if getent hosts backend >/dev/null 2>&1; then
-    echo "[nginx] Backend service is reachable"
-    break
-  fi
-  ATTEMPT=$((ATTEMPT + 1))
-  sleep 1
-done
-
-if [ $ATTEMPT -eq $MAX_ATTEMPTS ]; then
-  echo "[nginx] Warning: backend service not reachable after ${MAX_ATTEMPTS}s. Starting anyway..."
-fi
-
 # ─── Apply envsubst to template ──────────────────────────────────────
 echo "[nginx] Rendering nginx.conf from template..."
 export APP_DOMAIN="${APP_DOMAIN:-_}"

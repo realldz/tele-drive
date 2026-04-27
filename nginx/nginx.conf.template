@@ -45,7 +45,7 @@ server {
 
     # S3-compatible API via /api/s3 — preserve path for SigV4 verification
     location = /api/s3 {
-        proxy_pass http://backend:3001;
+        proxy_pass http://backend-transfer:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -58,7 +58,7 @@ server {
     }
 
     location /api/s3/ {
-        proxy_pass http://backend:3001;
+        proxy_pass http://backend-transfer:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -70,10 +70,78 @@ server {
         proxy_request_buffering off;
     }
 
+    # Transfer API routes exposed behind /api
+    location /api/files/ {
+        rewrite ^/api/(.*) /$1 break;
+        proxy_pass http://backend-transfer:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        client_max_body_size 2000m;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_request_buffering off;
+    }
+
+    location /api/s3-credentials {
+        rewrite ^/api/(.*) /$1 break;
+        proxy_pass http://backend-transfer:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        client_max_body_size 2000m;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    location /api/s3-credentials/ {
+        rewrite ^/api/(.*) /$1 break;
+        proxy_pass http://backend-transfer:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        client_max_body_size 2000m;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    # Core API routes exposed behind /api
+    location /api/folders {
+        rewrite ^/api/(.*) /$1 break;
+        proxy_pass http://backend-core:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        client_max_body_size 2000m;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    location /api/folders/ {
+        rewrite ^/api/(.*) /$1 break;
+        proxy_pass http://backend-core:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        client_max_body_size 2000m;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
     # Backend API — strip /api prefix and proxy to backend
     location /api/ {
         rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://backend:3001;
+        proxy_pass http://backend-core:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -88,7 +156,21 @@ server {
     # S3-compatible API — direct proxy (for aws-cli, s3cmd, etc.)
     # Regex to match /s3 or /s3/* but NOT /s3-keys or other frontend routes
     location ~ ^/s3(/|$) {
-        proxy_pass http://backend:3001;
+        proxy_pass http://backend-transfer:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        client_max_body_size 2000m;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        proxy_request_buffering off;
+    }
+
+    # Direct file/stream routes used by signed download links and media streaming
+    location /files/ {
+        proxy_pass http://backend-transfer:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;

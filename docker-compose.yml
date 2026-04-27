@@ -51,14 +51,40 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # ─── Backend (NestJS) ──────────────────────────────────────────────
-  backend:
+  # ─── Backend Core API (NestJS) ─────────────────────────────────────
+  backend-core:
     build: ./backend
     env_file:
       - ./backend/.env
     environment:
       NODE_ENV: production
-      DATABASE_URL: postgresql://tele_drive@postgres:5432/tele_drive
+      PORT: 3001
+      DATABASE_URL: postgresql://tele_drive:tele_drive@postgres:5432/tele_drive
+      TELEGRAM_API_ROOT: http://nginx:8088
+    volumes:
+      - ./backend/.logs:/app/.logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+      telegram-bot-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/ || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    command: ["sh", "-c", "npx prisma db push --skip-generate && node dist/main-core.js"]
+
+  # ─── Backend Transfer API (NestJS) ─────────────────────────────────
+  backend-transfer:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://tele_drive:tele_drive@postgres:5432/tele_drive
       TELEGRAM_API_ROOT: http://nginx:8088
     volumes:
       - ./backend/.logs:/app/.logs
@@ -73,6 +99,7 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    command: ["sh", "-c", "node dist/main-transfer.js"]
 
   # ─── Frontend (Next.js) ────────────────────────────────────────────
   # NEXT_PUBLIC_* vars are baked at build time, not runtime
