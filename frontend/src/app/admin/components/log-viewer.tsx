@@ -25,6 +25,36 @@ function formatUnknown(value: unknown): string {
 }
 
 type FilterPreset = 'all' | 'errors' | 'app' | 'requests' | 'docker-noise';
+type FilterField = 'timestamp' | 'level' | 'context' | 'message' | 'stack' | 'raw';
+
+type LogFilter = {
+  id: string;
+  field: FilterField;
+  value: string;
+  negated: boolean;
+};
+
+const FILTER_FIELDS: FilterField[] = [
+  'timestamp',
+  'level',
+  'context',
+  'message',
+  'stack',
+  'raw',
+];
+
+function createFilter(
+  field: FilterField = 'message',
+  value = '',
+  negated = false,
+): LogFilter {
+  return {
+    id: `${field}-${Math.random().toString(36).slice(2, 10)}`,
+    field,
+    value,
+    negated,
+  };
+}
 
 export default function LogViewer({ t }: LogViewerProps) {
   const [files, setFiles] = useState<AdminLogFile[]>([]);
@@ -34,14 +64,18 @@ export default function LogViewer({ t }: LogViewerProps) {
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState('');
-  const [context, setContext] = useState('');
   const [search, setSearch] = useState('');
-  const [excludeContext, setExcludeContext] = useState('RequestLoggingInterceptor');
-  const [excludePath, setExcludePath] = useState('/files/config');
-  const [excludeHealthchecks, setExcludeHealthchecks] = useState(true);
   const [newestFirst, setNewestFirst] = useState(true);
   const [limit, setLimit] = useState(100);
   const [preset, setPreset] = useState<FilterPreset>('docker-noise');
+  const [filters, setFilters] = useState<LogFilter[]>([
+    createFilter('context', 'RequestLoggingInterceptor', true),
+    createFilter('message', '/files/config', true),
+    createFilter('message', '/api/files/config', true),
+    createFilter('message', 'healthcheck', true),
+    createFilter('message', 'kube-probe', true),
+    createFilter('message', 'user-agent: wget', true),
+  ]);
 
   const selectedMeta = useMemo(
     () => files.find((file) => file.name === selectedFile) || null,
@@ -80,12 +114,15 @@ export default function LogViewer({ t }: LogViewerProps) {
           file: selectedFile,
           limit,
           level: level || undefined,
-          context: context || undefined,
           search: search.trim() || undefined,
-          excludeContext: excludeContext.trim() || undefined,
-          excludePath: excludePath.trim() || undefined,
-          excludeHealthchecks,
           newestFirst,
+          filters: filters
+            .map((filter) => ({
+              field: filter.field,
+              value: filter.value.trim(),
+              negated: filter.negated,
+            }))
+            .filter((filter) => filter.value.length > 0),
         });
         setEntries(result.entries);
     } catch (err: unknown) {
@@ -98,12 +135,9 @@ export default function LogViewer({ t }: LogViewerProps) {
     selectedFile,
     limit,
     level,
-    context,
     search,
-    excludeContext,
-    excludePath,
-    excludeHealthchecks,
     newestFirst,
+    filters,
     t,
   ]);
 
@@ -114,42 +148,34 @@ export default function LogViewer({ t }: LogViewerProps) {
       switch (nextPreset) {
         case 'all':
           setLevel('');
-          setContext('');
-          setExcludeContext('');
-          setExcludePath('');
-          setExcludeHealthchecks(false);
+          setFilters([]);
           setNewestFirst(true);
           break;
         case 'errors':
           setLevel('error');
-          setContext('');
-          setExcludeContext('');
-          setExcludePath('');
-          setExcludeHealthchecks(false);
+          setFilters([]);
           setNewestFirst(true);
           break;
         case 'app':
           setLevel('');
-          setContext('');
-          setExcludeContext('RequestLoggingInterceptor');
-          setExcludePath('');
-          setExcludeHealthchecks(true);
+          setFilters([createFilter('context', 'RequestLoggingInterceptor', true)]);
           setNewestFirst(true);
           break;
         case 'requests':
           setLevel('');
-          setContext('RequestLoggingInterceptor');
-          setExcludeContext('');
-          setExcludePath('');
-          setExcludeHealthchecks(false);
+          setFilters([createFilter('context', 'RequestLoggingInterceptor')]);
           setNewestFirst(true);
           break;
         case 'docker-noise':
           setLevel('');
-          setContext('');
-          setExcludeContext('RequestLoggingInterceptor');
-          setExcludePath('/files/config');
-          setExcludeHealthchecks(true);
+          setFilters([
+            createFilter('context', 'RequestLoggingInterceptor', true),
+            createFilter('message', '/files/config', true),
+            createFilter('message', '/api/files/config', true),
+            createFilter('message', 'healthcheck', true),
+            createFilter('message', 'kube-probe', true),
+            createFilter('message', 'user-agent: wget', true),
+          ]);
           setNewestFirst(true);
           break;
       }
@@ -233,16 +259,6 @@ export default function LogViewer({ t }: LogViewerProps) {
           </label>
 
           <label className="space-y-1">
-            <span className="text-sm font-medium text-gray-700">{t('admin.logsContext')}</span>
-            <input
-              value={context}
-              onChange={(e) => setContext(e.target.value)}
-              placeholder={t('admin.logsContextPlaceholder')}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
             <span className="text-sm font-medium text-gray-700">{t('admin.logsLimit')}</span>
             <input
               type="number"
@@ -273,37 +289,94 @@ export default function LogViewer({ t }: LogViewerProps) {
           </label>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-gray-700">{t('admin.logsExcludeContext')}</span>
-            <input
-              value={excludeContext}
-              onChange={(e) => setExcludeContext(e.target.value)}
-              placeholder={t('admin.logsExcludeContextPlaceholder')}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            />
-          </label>
+        <div className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-sm font-medium text-gray-700">{t('admin.logsFilters')}</span>
+            <button
+              type="button"
+              onClick={() =>
+                setFilters((current) => [...current, createFilter('message', '', false)])
+              }
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
+            >
+              {t('admin.logsAddFilter')}
+            </button>
+          </div>
 
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-gray-700">{t('admin.logsExcludePath')}</span>
-            <input
-              value={excludePath}
-              onChange={(e) => setExcludePath(e.target.value)}
-              placeholder={t('admin.logsExcludePathPlaceholder')}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            />
-          </label>
+          {filters.length === 0 ? (
+            <div className="text-sm text-gray-500">{t('admin.logsNoFilters')}</div>
+          ) : (
+            <div className="space-y-2">
+              {filters.map((filter) => (
+                <div key={filter.id} className="grid grid-cols-1 md:grid-cols-[90px_180px_1fr_110px] gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFilters((current) =>
+                        current.map((item) =>
+                          item.id === filter.id
+                            ? { ...item, negated: !item.negated }
+                            : item,
+                        ),
+                      )
+                    }
+                    className={`rounded-lg border px-3 py-2 text-sm font-semibold ${
+                      filter.negated
+                        ? 'border-red-300 bg-red-50 text-red-700'
+                        : 'border-gray-300 bg-white text-gray-700'
+                    }`}
+                  >
+                    {filter.negated ? '!' : '='}
+                  </button>
 
-          <label className="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2 mt-6 md:mt-0">
-            <input
-              type="checkbox"
-              checked={excludeHealthchecks}
-              onChange={(e) => setExcludeHealthchecks(e.target.checked)}
-              className="h-4 w-4 rounded border-gray-300"
-            />
-            <span className="text-sm text-gray-700">{t('admin.logsExcludeHealthchecks')}</span>
-          </label>
+                  <select
+                    value={filter.field}
+                    onChange={(e) => {
+                      const nextField = e.target.value as FilterField;
+                      setFilters((current) =>
+                        current.map((item) =>
+                          item.id === filter.id ? { ...item, field: nextField } : item,
+                        ),
+                      );
+                    }}
+                    className="rounded-lg border border-gray-300 px-3 py-2 bg-white text-sm"
+                  >
+                    {FILTER_FIELDS.map((field) => (
+                      <option key={field} value={field}>
+                        {field}
+                      </option>
+                    ))}
+                  </select>
 
+                  <input
+                    value={filter.value}
+                    onChange={(e) =>
+                      setFilters((current) =>
+                        current.map((item) =>
+                          item.id === filter.id ? { ...item, value: e.target.value } : item,
+                        ),
+                      )
+                    }
+                    placeholder={t('admin.logsFilterValuePlaceholder')}
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  />
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setFilters((current) => current.filter((item) => item.id !== filter.id))
+                    }
+                    className="rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                  >
+                    {t('admin.logsRemoveFilter')}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-1 gap-3">
           <label className="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2 mt-6 md:mt-0">
             <input
               type="checkbox"
