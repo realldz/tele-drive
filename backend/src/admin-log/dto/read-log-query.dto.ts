@@ -9,7 +9,7 @@ export class ReadLogQueryDto {
   @Transform(({ value }) => Number(value))
   @IsInt()
   @Min(1)
-  @Max(500)
+  @Max(5000)
   limit: number = 100;
 
   @IsOptional()
@@ -19,4 +19,24 @@ export class ReadLogQueryDto {
   @IsOptional()
   @IsString()
   search?: string;
+
+  @IsOptional()
+  @IsString()
+  context?: string;
+
+  @IsOptional()
+  @IsString()
+  excludeContext?: string;
+
+  @IsOptional()
+  @IsString()
+  excludePath?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  excludeHealthchecks?: boolean;
+
+  @IsOptional()
+  @Transform(({ value }) => value === 'true' || value === true)
+  newestFirst?: boolean;
 }

@@ -24,6 +24,8 @@ function formatUnknown(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+type FilterPreset = 'all' | 'errors' | 'app' | 'requests' | 'docker-noise';
+
 export default function LogViewer({ t }: LogViewerProps) {
   const [files, setFiles] = useState<AdminLogFile[]>([]);
   const [selectedFile, setSelectedFile] = useState('');
@@ -32,8 +34,14 @@ export default function LogViewer({ t }: LogViewerProps) {
   const [loadingEntries, setLoadingEntries] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [level, setLevel] = useState('');
+  const [context, setContext] = useState('');
   const [search, setSearch] = useState('');
+  const [excludeContext, setExcludeContext] = useState('RequestLoggingInterceptor');
+  const [excludePath, setExcludePath] = useState('/files/config');
+  const [excludeHealthchecks, setExcludeHealthchecks] = useState(true);
+  const [newestFirst, setNewestFirst] = useState(true);
   const [limit, setLimit] = useState(100);
+  const [preset, setPreset] = useState<FilterPreset>('docker-noise');
 
   const selectedMeta = useMemo(
     () => files.find((file) => file.name === selectedFile) || null,
@@ -68,20 +76,86 @@ export default function LogViewer({ t }: LogViewerProps) {
     setLoadingEntries(true);
     setError(null);
     try {
-      const result = await readAdminLogs({
-        file: selectedFile,
-        limit,
-        level: level || undefined,
-        search: search.trim() || undefined,
-      });
-      setEntries(result.entries);
+        const result = await readAdminLogs({
+          file: selectedFile,
+          limit,
+          level: level || undefined,
+          context: context || undefined,
+          search: search.trim() || undefined,
+          excludeContext: excludeContext.trim() || undefined,
+          excludePath: excludePath.trim() || undefined,
+          excludeHealthchecks,
+          newestFirst,
+        });
+        setEntries(result.entries);
     } catch (err: unknown) {
       setError(getApiErrorMessage(err, t('admin.logsLoadError')));
       setEntries([]);
     } finally {
       setLoadingEntries(false);
     }
-  }, [selectedFile, limit, level, search, t]);
+  }, [
+    selectedFile,
+    limit,
+    level,
+    context,
+    search,
+    excludeContext,
+    excludePath,
+    excludeHealthchecks,
+    newestFirst,
+    t,
+  ]);
+
+  const applyPreset = useCallback(
+    (nextPreset: FilterPreset) => {
+      setPreset(nextPreset);
+
+      switch (nextPreset) {
+        case 'all':
+          setLevel('');
+          setContext('');
+          setExcludeContext('');
+          setExcludePath('');
+          setExcludeHealthchecks(false);
+          setNewestFirst(true);
+          break;
+        case 'errors':
+          setLevel('error');
+          setContext('');
+          setExcludeContext('');
+          setExcludePath('');
+          setExcludeHealthchecks(false);
+          setNewestFirst(true);
+          break;
+        case 'app':
+          setLevel('');
+          setContext('');
+          setExcludeContext('RequestLoggingInterceptor');
+          setExcludePath('');
+          setExcludeHealthchecks(true);
+          setNewestFirst(true);
+          break;
+        case 'requests':
+          setLevel('');
+          setContext('RequestLoggingInterceptor');
+          setExcludeContext('');
+          setExcludePath('');
+          setExcludeHealthchecks(false);
+          setNewestFirst(true);
+          break;
+        case 'docker-noise':
+          setLevel('');
+          setContext('');
+          setExcludeContext('RequestLoggingInterceptor');
+          setExcludePath('/files/config');
+          setExcludeHealthchecks(true);
+          setNewestFirst(true);
+          break;
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     loadFiles();
@@ -99,6 +173,31 @@ export default function LogViewer({ t }: LogViewerProps) {
       </div>
 
       <div className="bg-white border border-gray-200 rounded-2xl p-4 md:p-5 shadow-sm space-y-4">
+        <div className="flex flex-wrap gap-2">
+          {(
+            [
+              ['docker-noise', t('admin.logsPresetDockerNoise')],
+              ['app', t('admin.logsPresetApp')],
+              ['requests', t('admin.logsPresetRequests')],
+              ['errors', t('admin.logsPresetErrors')],
+              ['all', t('admin.logsPresetAll')],
+            ] as Array<[FilterPreset, string]>
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => applyPreset(value)}
+              className={`rounded-full border px-3 py-1.5 text-sm transition ${
+                preset === value
+                  ? 'border-blue-600 bg-blue-50 text-blue-700'
+                  : 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
           <label className="space-y-1">
             <span className="text-sm font-medium text-gray-700">{t('admin.logsFile')}</span>
@@ -134,18 +233,33 @@ export default function LogViewer({ t }: LogViewerProps) {
           </label>
 
           <label className="space-y-1">
+            <span className="text-sm font-medium text-gray-700">{t('admin.logsContext')}</span>
+            <input
+              value={context}
+              onChange={(e) => setContext(e.target.value)}
+              placeholder={t('admin.logsContextPlaceholder')}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="space-y-1">
             <span className="text-sm font-medium text-gray-700">{t('admin.logsLimit')}</span>
-            <select
+            <input
+              type="number"
               value={limit}
-              onChange={(e) => setLimit(Number(e.target.value))}
-              className="w-full rounded-lg border border-gray-300 px-3 py-2 bg-white text-sm"
-            >
-              {[50, 100, 200, 500].map((value) => (
-                <option key={value} value={value}>
-                  {value}
-                </option>
-              ))}
-            </select>
+              min={1}
+              max={5000}
+              step={100}
+              onChange={(e) => {
+                const nextValue = Number(e.target.value);
+                if (Number.isNaN(nextValue)) {
+                  setLimit(100);
+                  return;
+                }
+                setLimit(Math.min(5000, Math.max(1, nextValue)));
+              }}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
           </label>
 
           <label className="space-y-1">
@@ -156,6 +270,48 @@ export default function LogViewer({ t }: LogViewerProps) {
               placeholder={t('admin.logsSearchPlaceholder')}
               className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
             />
+          </label>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-gray-700">{t('admin.logsExcludeContext')}</span>
+            <input
+              value={excludeContext}
+              onChange={(e) => setExcludeContext(e.target.value)}
+              placeholder={t('admin.logsExcludeContextPlaceholder')}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-gray-700">{t('admin.logsExcludePath')}</span>
+            <input
+              value={excludePath}
+              onChange={(e) => setExcludePath(e.target.value)}
+              placeholder={t('admin.logsExcludePathPlaceholder')}
+              className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2 mt-6 md:mt-0">
+            <input
+              type="checkbox"
+              checked={excludeHealthchecks}
+              onChange={(e) => setExcludeHealthchecks(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <span className="text-sm text-gray-700">{t('admin.logsExcludeHealthchecks')}</span>
+          </label>
+
+          <label className="flex items-center gap-3 rounded-lg border border-gray-200 px-3 py-2 mt-6 md:mt-0">
+            <input
+              type="checkbox"
+              checked={newestFirst}
+              onChange={(e) => setNewestFirst(e.target.checked)}
+              className="h-4 w-4 rounded border-gray-300"
+            />
+            <span className="text-sm text-gray-700">{t('admin.logsNewestFirst')}</span>
           </label>
         </div>
 

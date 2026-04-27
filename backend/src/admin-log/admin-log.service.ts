@@ -160,16 +160,20 @@ export class AdminLogService {
         for (const line of lines) {
           const entry = this.parseLogLine(line);
           if (!entry) continue;
-          if (!this.matchesFilters(entry, query.level, query.search)) continue;
+          if (!this.matchesFilters(entry, query)) continue;
           this.pushRingBuffer(entries, entry, limit);
         }
       }
 
       if (remainder.trim()) {
         const entry = this.parseLogLine(remainder);
-        if (entry && this.matchesFilters(entry, query.level, query.search)) {
+        if (entry && this.matchesFilters(entry, query)) {
           this.pushRingBuffer(entries, entry, limit);
         }
+      }
+
+      if (query.newestFirst) {
+        entries.reverse();
       }
 
       return entries;
@@ -214,20 +218,29 @@ export class AdminLogService {
     return JSON.stringify(parsed);
   }
 
-  private matchesFilters(
-    entry: AdminLogEntry,
-    level?: string,
-    search?: string,
-  ): boolean {
+  private matchesFilters(entry: AdminLogEntry, query: ReadLogQueryDto): boolean {
+    const { level, search, context, excludeContext, excludePath, excludeHealthchecks } =
+      query;
+
     if (level && (entry.level || '').toLowerCase() !== level.toLowerCase()) {
       return false;
     }
 
-    if (!search) {
-      return true;
+    if (
+      context &&
+      (entry.context || '').toLowerCase() !== context.toLowerCase()
+    ) {
+      return false;
     }
 
-    const haystack = [
+    if (
+      excludeContext &&
+      (entry.context || '').toLowerCase() === excludeContext.toLowerCase()
+    ) {
+      return false;
+    }
+
+    const haystackParts = [
       entry.timestamp,
       entry.level,
       entry.context,
@@ -236,12 +249,40 @@ export class AdminLogService {
       typeof entry.raw === 'string'
         ? entry.raw
         : JSON.stringify(entry.raw ?? ''),
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
+    ].filter(Boolean) as string[];
 
-    return haystack.includes(search.toLowerCase());
+    const haystack = haystackParts.join(' ');
+    const haystackLower = haystack.toLowerCase();
+
+    if (excludePath && haystackLower.includes(excludePath.toLowerCase())) {
+      return false;
+    }
+
+    if (excludeHealthchecks && this.isHealthcheckNoise(entry, haystackLower)) {
+      return false;
+    }
+
+    if (!search) {
+      return true;
+    }
+
+    return haystackLower.includes(search.toLowerCase());
+  }
+
+  private isHealthcheckNoise(entry: AdminLogEntry, haystackLower: string): boolean {
+    if ((entry.context || '').toLowerCase() !== 'requestlogginginterceptor') {
+      return false;
+    }
+
+    return [
+      'get /files/config',
+      'get /api/files/config',
+      'get / ',
+      'get /http',
+      'user-agent: wget',
+      'kube-probe',
+      'healthcheck',
+    ].some((needle) => haystackLower.includes(needle));
   }
 
   private pushRingBuffer<T>(buffer: T[], item: T, limit: number): void {
