@@ -31,6 +31,45 @@ import { SkipThrottle } from '@nestjs/throttler';
 import { UseInterceptors } from '@nestjs/common';
 import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
 
+const RETRYABLE_UPSTREAM_CODES = new Set([
+  'ECONNRESET',
+  'ETIMEDOUT',
+  'ECONNREFUSED',
+  'EPIPE',
+  'EAI_AGAIN',
+  'ENOTFOUND',
+  'ENETUNREACH',
+  'EHOSTUNREACH',
+  'UND_ERR_SOCKET',
+]);
+
+function isRetryableUpstreamError(err: unknown): boolean {
+  if (!err || typeof err !== 'object') return false;
+
+  const code =
+    'code' in err && typeof err.code === 'string'
+      ? err.code
+      : 'cause' in err &&
+          err.cause &&
+          typeof err.cause === 'object' &&
+          'code' in err.cause &&
+          typeof err.cause.code === 'string'
+        ? err.cause.code
+        : undefined;
+  if (code && RETRYABLE_UPSTREAM_CODES.has(code)) return true;
+
+  const message =
+    'message' in err && typeof err.message === 'string' ? err.message : '';
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes('socket hang up') ||
+    normalized.includes('fetch failed') ||
+    normalized.includes('terminated') ||
+    normalized.includes('econnreset')
+  );
+}
+
 /**
  * S3Controller — S3-compatible API Gateway.
  *
@@ -967,7 +1006,10 @@ export class S3Controller {
 
   private sendS3Error(res: Response, err: unknown) {
     const message = err instanceof Error ? err.message : String(err);
-    const status = (err as { status?: number }).status;
+    const explicitStatus =
+      typeof err === 'object' && err !== null && 'status' in err
+        ? err.status
+        : undefined;
     const statusMap: Record<string, number> = {
       NoSuchBucket: 404,
       NoSuchKey: 404,
@@ -976,17 +1018,30 @@ export class S3Controller {
       BadDigest: 400,
       AccessDenied: 403,
       InvalidRequest: 400,
+      ServiceUnavailable: 503,
+      InternalError: 500,
     };
-    const code = message || 'InternalError';
-    const httpStatus = status || statusMap[code] || 500;
+
+    const normalized = isRetryableUpstreamError(err)
+      ? {
+          code: 'ServiceUnavailable',
+          message: 'A temporary upstream error occurred. Please retry.',
+          status: 503,
+        }
+      : {
+          code: message || 'InternalError',
+          message: message || 'An internal error occurred.',
+          status:
+            typeof explicitStatus === 'number'
+              ? explicitStatus
+              : statusMap[message] || 500,
+        };
+
     res
-      .status(httpStatus)
+      .status(normalized.status)
       .setHeader('Content-Type', 'application/xml')
       .send(
-        this.s3Service.buildErrorXml(
-          code,
-          message || 'An internal error occurred.',
-        ),
+        this.s3Service.buildErrorXml(normalized.code, normalized.message),
       );
   }
 
