@@ -19,7 +19,7 @@ import { escapeXml, decodeXmlEntities } from '../common/utils/xml';
 export class S3Service {
   private readonly logger = new Logger(S3Service.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   // ---------------------------------------------------------------------------
   // Bucket operations (map → root folders)
@@ -281,7 +281,9 @@ export class S3Service {
         );
         currentFolderId = newFolder.id;
       } else {
-        throw new NotFoundException('NoSuchKey');
+        throw new NotFoundException(
+          `NoSuchKey: Cannot resolve key ${key} under folder ${rootFolderId}`,
+        );
       }
     }
 
@@ -310,7 +312,7 @@ export class S3Service {
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
     });
 
-    if (!file) throw new NotFoundException('NoSuchKey');
+    if (!file) throw new NotFoundException('NoSuchKey: ' + key);
     return file;
   }
 
@@ -580,8 +582,8 @@ export class S3Service {
     const deletedXml = quiet
       ? ''
       : deleted
-          .map((item) => `<Deleted><Key>${escapeXml(item.key)}</Key></Deleted>`)
-          .join('');
+        .map((item) => `<Deleted><Key>${escapeXml(item.key)}</Key></Deleted>`)
+        .join('');
 
     const errorsXml = errors
       .map(
