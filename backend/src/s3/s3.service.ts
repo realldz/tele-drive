@@ -402,12 +402,17 @@ export class S3Service {
       delimiter,
       objects,
       commonPrefixes,
-      maxKeys,
+      Number.MAX_SAFE_INTEGER,
+    );
+
+    objects.sort((a, b) => a.key.localeCompare(b.key));
+    const sortedCommonPrefixes = [...commonPrefixes].sort((a, b) =>
+      a.localeCompare(b),
     );
 
     return {
       objects: objects.slice(0, maxKeys),
-      commonPrefixes: [...commonPrefixes],
+      commonPrefixes: sortedCommonPrefixes,
     };
   }
 
