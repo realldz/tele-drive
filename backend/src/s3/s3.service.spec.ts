@@ -281,6 +281,56 @@ describe('S3Service', () => {
     });
   });
 
+  describe('listObjects ordering', () => {
+    it('returns keys sorted lexicographically for sync compatibility', async () => {
+      const prisma = {
+        folder: {
+          findFirst: jest
+            .fn()
+            .mockResolvedValueOnce({ id: 'bucket-id' })
+            .mockResolvedValueOnce(null)
+            .mockResolvedValueOnce(null),
+          findMany: jest.fn().mockResolvedValue([]),
+        },
+        fileRecord: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              filename: 'zeta.mp4',
+              size: 2n,
+              createdAt: new Date('2026-05-01T00:00:00.000Z'),
+              updatedAt: new Date('2026-05-02T00:00:00.000Z'),
+              id: 'file-z',
+              etag: '"etag-z"',
+            },
+            {
+              filename: 'alpha.mp4',
+              size: 1n,
+              createdAt: new Date('2026-05-01T00:00:00.000Z'),
+              updatedAt: new Date('2026-05-02T00:00:00.000Z'),
+              id: 'file-a',
+              etag: '"etag-a"',
+            },
+          ]),
+          findFirst: jest.fn().mockResolvedValue(null),
+        },
+      } as any;
+      service = new S3Service(prisma);
+
+      const result = await service.listObjects(
+        'user-1',
+        'bucket-a',
+        '',
+        undefined,
+        1000,
+      );
+
+      expect(result.objects.map((object) => object.key)).toEqual([
+        'alpha.mp4',
+        'zeta.mp4',
+      ]);
+    });
+  });
+
   describe('cleanupEmptyFolders', () => {
     it('soft-deletes empty ancestors until reaching the bucket root', async () => {
       const prisma = {
