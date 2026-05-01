@@ -679,7 +679,10 @@ export class S3Service {
   }
 
   private encodeS3ListValue(value: string): string {
-    return encodeURIComponent(value);
+    return encodeURIComponent(value).replace(
+      /[!'()*]/g,
+      (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+    );
   }
 
   buildErrorXml(code: string, message: string): string {
