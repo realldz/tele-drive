@@ -91,7 +91,11 @@ export class FileStorageUploadService {
         fileId: telegramFileId,
         messageId: telegramMessageId,
         botId,
-      } = await this.telegram.uploadFile(encryptedBuffer, existingFileId, signal);
+      } = await this.telegram.uploadFile(
+        encryptedBuffer,
+        existingFileId,
+        signal,
+      );
 
       if (oldRecord) {
         await this.fileLifecycleService.purgeFilesFromTelegram([oldRecord]);
@@ -345,5 +349,12 @@ export class FileStorageUploadService {
       await this.prisma.fileRecord.delete({ where: { id: record.id } });
       throw err;
     }
+  }
+
+  async updateObjectEtag(fileId: string, etag: string) {
+    return this.prisma.fileRecord.update({
+      where: { id: fileId },
+      data: { etag },
+    });
   }
 }

@@ -19,7 +19,7 @@ import { escapeXml, decodeXmlEntities } from '../common/utils/xml';
 export class S3Service {
   private readonly logger = new Logger(S3Service.name);
 
-  constructor(private readonly prisma: PrismaService) { }
+  constructor(private readonly prisma: PrismaService) {}
 
   // ---------------------------------------------------------------------------
   // Bucket operations (map → root folders)
@@ -434,6 +434,7 @@ export class S3Service {
       select: {
         filename: true,
         size: true,
+        createdAt: true,
         updatedAt: true,
         id: true,
         etag: true,
@@ -459,7 +460,9 @@ export class S3Service {
       objects.push({
         key,
         size: file.size,
-        lastModified: file.updatedAt,
+        // S3 object timestamps should track object version creation, not
+        // download quota/accounting updates that bump updatedAt.
+        lastModified: file.createdAt,
         etag: file.etag || `"${file.id}"`,
       });
     }
@@ -582,8 +585,8 @@ export class S3Service {
     const deletedXml = quiet
       ? ''
       : deleted
-        .map((item) => `<Deleted><Key>${escapeXml(item.key)}</Key></Deleted>`)
-        .join('');
+          .map((item) => `<Deleted><Key>${escapeXml(item.key)}</Key></Deleted>`)
+          .join('');
 
     const errorsXml = errors
       .map(
@@ -633,12 +636,17 @@ export class S3Service {
     delimiter: string,
     maxKeys: number,
     isTruncated: boolean,
+    encodingType?: string,
   ): string {
+    const shouldUrlEncode = encodingType === 'url';
+    const encodeValue = (value: string) =>
+      shouldUrlEncode ? this.encodeS3ListValue(value) : value;
+
     const objectsXml = objects
       .map(
         (o) => `
   <Contents>
-    <Key>${escapeXml(o.key)}</Key>
+    <Key>${escapeXml(encodeValue(o.key))}</Key>
     <LastModified>${o.lastModified.toISOString()}</LastModified>
     <ETag>${escapeXml(o.etag)}</ETag>
     <Size>${o.size}</Size>
@@ -650,18 +658,26 @@ export class S3Service {
     const prefixesXml = commonPrefixes
       .map(
         (p) =>
-          `\n  <CommonPrefixes><Prefix>${escapeXml(p)}</Prefix></CommonPrefixes>`,
+          `\n  <CommonPrefixes><Prefix>${escapeXml(encodeValue(p))}</Prefix></CommonPrefixes>`,
       )
       .join('');
+
+    const encodingTypeXml = shouldUrlEncode
+      ? `\n  <EncodingType>url</EncodingType>`
+      : '';
 
     return `<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>${escapeXml(bucketName)}</Name>
-  <Prefix>${escapeXml(prefix)}</Prefix>
-  <Delimiter>${escapeXml(delimiter)}</Delimiter>
+  <Prefix>${escapeXml(encodeValue(prefix))}</Prefix>
+  <Delimiter>${escapeXml(encodeValue(delimiter))}</Delimiter>
   <MaxKeys>${maxKeys}</MaxKeys>
-  <IsTruncated>${isTruncated}</IsTruncated>${objectsXml}${prefixesXml}
+  <IsTruncated>${isTruncated}</IsTruncated>${encodingTypeXml}${objectsXml}${prefixesXml}
 </ListBucketResult>`;
+  }
+
+  private encodeS3ListValue(value: string): string {
+    return encodeURIComponent(value).replace(/%2F/g, '/');
   }
 
   buildErrorXml(code: string, message: string): string {

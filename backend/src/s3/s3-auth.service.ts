@@ -334,30 +334,17 @@ export class S3AuthService {
    */
   private buildCanonicalRequest(req: any, signedHeaders: string[]): string {
     const method = req.method.toUpperCase();
-
-    // Canonical URI — must use originalUrl to preserve the full path the client signed
-    const requestUrl = req.originalUrl || req.url;
-    const url = new URL(
-      requestUrl,
-      `http://${req.headers['host'] || 'localhost'}`,
+    const requestTarget = this.getRequestTarget(req);
+    const canonicalUri = this.buildCanonicalUri(requestTarget.path);
+    const canonicalQueryString = this.buildCanonicalQueryString(
+      requestTarget.query,
     );
-    const canonicalUri = url.pathname || '/';
-
-    // Canonical Query String — sorted by key
-    const queryParams: [string, string][] = [];
-    url.searchParams.forEach((value, key) => {
-      queryParams.push([key, value]);
-    });
-    queryParams.sort(([a], [b]) => a.localeCompare(b));
-    const canonicalQueryString = queryParams
-      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-      .join('&');
 
     // Canonical Headers — only signed headers, sorted
     const canonicalHeaderLines = signedHeaders
       .map((h) => {
         const val = req.headers[h.toLowerCase()];
-        return `${h.toLowerCase()}:${Array.isArray(val) ? val.join(',') : val || ''}`;
+        return `${h.toLowerCase()}:${this.normalizeHeaderValue(val)}`;
       })
       .join('\n');
 
@@ -389,30 +376,18 @@ export class S3AuthService {
   ): string {
     const method = req.method.toUpperCase();
 
-    const requestUrl = req.originalUrl || req.url;
-    const url = new URL(
-      requestUrl,
-      `http://${req.headers['host'] || 'localhost'}`,
+    const requestTarget = this.getRequestTarget(req);
+    const canonicalUri = this.buildCanonicalUri(requestTarget.path);
+    const canonicalQueryString = this.buildCanonicalQueryString(
+      requestTarget.query,
+      'X-Amz-Signature',
     );
-    const canonicalUri = url.pathname || '/';
-
-    // Canonical Query String — sorted by key, excluding X-Amz-Signature
-    const queryParams: [string, string][] = [];
-    url.searchParams.forEach((value, key) => {
-      if (key !== 'X-Amz-Signature') {
-        queryParams.push([key, value]);
-      }
-    });
-    queryParams.sort(([a], [b]) => a.localeCompare(b));
-    const canonicalQueryString = queryParams
-      .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
-      .join('&');
 
     // Canonical Headers
     const canonicalHeaderLines = signedHeaders
       .map((h) => {
         const val = req.headers[h.toLowerCase()];
-        return `${h.toLowerCase()}:${Array.isArray(val) ? val.join(',') : val || ''}`;
+        return `${h.toLowerCase()}:${this.normalizeHeaderValue(val)}`;
       })
       .join('\n');
 
@@ -451,6 +426,85 @@ export class S3AuthService {
       .update('aws4_request')
       .digest();
     return kSigning;
+  }
+
+  private getRequestTarget(req: any): { path: string; query: string } {
+    const requestUrl = String(req.originalUrl || req.url || '/');
+    const queryIndex = requestUrl.indexOf('?');
+
+    if (queryIndex === -1) {
+      return { path: requestUrl || '/', query: '' };
+    }
+
+    return {
+      path: requestUrl.slice(0, queryIndex) || '/',
+      query: requestUrl.slice(queryIndex + 1),
+    };
+  }
+
+  private buildCanonicalUri(rawPath: string): string {
+    const normalizedPath = rawPath || '/';
+    const segments = normalizedPath.split('/');
+
+    return segments
+      .map((segment) => this.awsUriEncode(this.safeDecodeURIComponent(segment)))
+      .join('/');
+  }
+
+  private buildCanonicalQueryString(
+    rawQuery: string,
+    excludedKey?: string,
+  ): string {
+    if (!rawQuery) return '';
+
+    const pairs = rawQuery
+      .split('&')
+      .filter((part) => part.length > 0)
+      .map((part) => {
+        const eqIndex = part.indexOf('=');
+        const rawKey = eqIndex === -1 ? part : part.slice(0, eqIndex);
+        const rawValue = eqIndex === -1 ? '' : part.slice(eqIndex + 1);
+        const key = this.safeDecodeURIComponent(rawKey);
+        const value = this.safeDecodeURIComponent(rawValue);
+        return {
+          key,
+          value,
+          encodedKey: this.awsUriEncode(key),
+          encodedValue: this.awsUriEncode(value),
+        };
+      })
+      .filter((pair) => pair.key !== excludedKey);
+
+    pairs.sort((a, b) => {
+      if (a.encodedKey === b.encodedKey) {
+        return a.encodedValue.localeCompare(b.encodedValue);
+      }
+      return a.encodedKey.localeCompare(b.encodedKey);
+    });
+
+    return pairs
+      .map((pair) => `${pair.encodedKey}=${pair.encodedValue}`)
+      .join('&');
+  }
+
+  private normalizeHeaderValue(value: unknown): string {
+    const joined = Array.isArray(value) ? value.join(',') : String(value || '');
+    return joined.trim().replace(/\s+/g, ' ');
+  }
+
+  private safeDecodeURIComponent(value: string): string {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+
+  private awsUriEncode(value: string): string {
+    return encodeURIComponent(value).replace(
+      /[!'()*]/g,
+      (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+    );
   }
 
   /**
