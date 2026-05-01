@@ -254,7 +254,7 @@ describe('S3Service', () => {
         'demo-bucket',
         [
           {
-            key: 'folder one/[clip] 星火+demo.mp4',
+            key: "folder one/[clip] 星火+demo's.mp4",
             size: 123n,
             lastModified: new Date('2026-05-01T01:02:03.000Z'),
             etag: '"etag-1"',
@@ -273,7 +273,7 @@ describe('S3Service', () => {
       expect(xml).toContain('<Prefix>folder%20one%2F</Prefix>');
       expect(xml).toContain('<Delimiter>%2F</Delimiter>');
       expect(xml).toContain(
-        '<Key>folder%20one%2F%5Bclip%5D%20%E6%98%9F%E7%81%AB%2Bdemo.mp4</Key>',
+        '<Key>folder%20one%2F%5Bclip%5D%20%E6%98%9F%E7%81%AB%2Bdemo%27s.mp4</Key>',
       );
       expect(xml).toContain(
         '<Prefix>folder%20one%2Fsub%20dir%2F</Prefix>',
