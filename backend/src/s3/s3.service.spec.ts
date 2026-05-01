@@ -269,13 +269,13 @@ describe('S3Service', () => {
       );
 
       expect(xml).toContain('<EncodingType>url</EncodingType>');
-      expect(xml).toContain('<Prefix>folder%20one/</Prefix>');
-      expect(xml).toContain('<Delimiter>/</Delimiter>');
+      expect(xml).toContain('<Prefix>folder%20one%2F</Prefix>');
+      expect(xml).toContain('<Delimiter>%2F</Delimiter>');
       expect(xml).toContain(
-        '<Key>folder%20one/%5Bclip%5D%20%E6%98%9F%E7%81%AB%2Bdemo.mp4</Key>',
+        '<Key>folder%20one%2F%5Bclip%5D%20%E6%98%9F%E7%81%AB%2Bdemo.mp4</Key>',
       );
       expect(xml).toContain(
-        '<Prefix>folder%20one/sub%20dir/</Prefix>',
+        '<Prefix>folder%20one%2Fsub%20dir%2F</Prefix>',
       );
     });
   });
