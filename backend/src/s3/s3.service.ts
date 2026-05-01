@@ -641,6 +641,7 @@ export class S3Service {
     const shouldUrlEncode = encodingType === 'url';
     const encodeValue = (value: string) =>
       shouldUrlEncode ? this.encodeS3ListValue(value) : value;
+    const keyCount = objects.length + commonPrefixes.length;
 
     const objectsXml = objects
       .map(
@@ -670,9 +671,10 @@ export class S3Service {
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>${escapeXml(bucketName)}</Name>
   <Prefix>${escapeXml(encodeValue(prefix))}</Prefix>
-  <Delimiter>${escapeXml(encodeValue(delimiter))}</Delimiter>
+  <KeyCount>${keyCount}</KeyCount>
   <MaxKeys>${maxKeys}</MaxKeys>
-  <IsTruncated>${isTruncated}</IsTruncated>${encodingTypeXml}${objectsXml}${prefixesXml}
+  <Delimiter>${escapeXml(encodeValue(delimiter))}</Delimiter>${encodingTypeXml}
+  <IsTruncated>${isTruncated}</IsTruncated>${objectsXml}${prefixesXml}
 </ListBucketResult>`;
   }
 
