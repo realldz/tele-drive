@@ -269,6 +269,7 @@ describe('S3Service', () => {
       );
 
       expect(xml).toContain('<EncodingType>url</EncodingType>');
+      expect(xml).toContain('<KeyCount>2</KeyCount>');
       expect(xml).toContain('<Prefix>folder%20one%2F</Prefix>');
       expect(xml).toContain('<Delimiter>%2F</Delimiter>');
       expect(xml).toContain(
