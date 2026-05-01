@@ -223,6 +223,63 @@ describe('S3Service', () => {
     });
   });
 
+  describe('buildListObjectsV2Xml', () => {
+    it('renders the provided stable object timestamp in LastModified', () => {
+      const createdAt = new Date('2026-05-01T01:02:03.000Z');
+      const updatedAt = new Date('2026-05-02T04:05:06.000Z');
+
+      const xml = service.buildListObjectsV2Xml(
+        'demo-bucket',
+        [
+          {
+            key: 'archive/demo.txt',
+            size: 123n,
+            lastModified: createdAt,
+            etag: '"etag-1"',
+          },
+        ],
+        [],
+        '',
+        '/',
+        1000,
+        false,
+      );
+
+      expect(xml).toContain(`<LastModified>${createdAt.toISOString()}</LastModified>`);
+      expect(xml).not.toContain(updatedAt.toISOString());
+    });
+
+    it('supports encoding-type=url for keys, prefixes, and delimiters', () => {
+      const xml = service.buildListObjectsV2Xml(
+        'demo-bucket',
+        [
+          {
+            key: 'folder one/[clip] 星火+demo.mp4',
+            size: 123n,
+            lastModified: new Date('2026-05-01T01:02:03.000Z'),
+            etag: '"etag-1"',
+          },
+        ],
+        ['folder one/sub dir/'],
+        'folder one/',
+        '/',
+        1000,
+        false,
+        'url',
+      );
+
+      expect(xml).toContain('<EncodingType>url</EncodingType>');
+      expect(xml).toContain('<Prefix>folder%20one/</Prefix>');
+      expect(xml).toContain('<Delimiter>/</Delimiter>');
+      expect(xml).toContain(
+        '<Key>folder%20one/%5Bclip%5D%20%E6%98%9F%E7%81%AB%2Bdemo.mp4</Key>',
+      );
+      expect(xml).toContain(
+        '<Prefix>folder%20one/sub%20dir/</Prefix>',
+      );
+    });
+  });
+
   describe('cleanupEmptyFolders', () => {
     it('soft-deletes empty ancestors until reaching the bucket root', async () => {
       const prisma = {

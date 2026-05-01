@@ -231,6 +231,7 @@ export class S3Controller {
     this.logger.debug(`S3 ListObjects: ${userId}, ${bucket}`);
     const prefix = this.qstr(req.query['prefix']);
     const delimiter = this.qstr(req.query['delimiter']);
+    const encodingType = this.qstr(req.query['encoding-type']);
     const maxKeys = Math.min(
       parseInt(this.qstr(req.query['max-keys']) || '1000', 10),
       1000,
@@ -254,6 +255,7 @@ export class S3Controller {
         delimiter,
         maxKeys,
         isTruncated,
+        encodingType,
       );
 
       res.setHeader('Content-Type', 'application/xml');
@@ -560,6 +562,7 @@ export class S3Controller {
       this.logger.debug(`S3 GetObject: ${userId}, ${bucket}, ${key}`);
       const file = await this.s3Service.findObject(userId, bucket, key);
       const downloadInfo = this.transferReadService.getDownloadMetadata(file);
+      const lastModified = file.createdAt.toUTCString();
 
       const etag = file.etag || `"${file.id}"`;
       res.setHeader(
@@ -568,7 +571,7 @@ export class S3Controller {
       );
       res.setHeader('Content-Length', file.size.toString());
       res.setHeader('ETag', etag);
-      res.setHeader('Last-Modified', file.updatedAt.toUTCString());
+      res.setHeader('Last-Modified', lastModified);
       res.setHeader('Accept-Ranges', 'bytes');
 
       const rangeHeader = req.headers['range'];
@@ -610,6 +613,7 @@ export class S3Controller {
 
     try {
       const file = await this.s3Service.findObject(userId, bucket, key);
+      const lastModified = file.createdAt.toUTCString();
       const etag = file.etag || `"${file.id}"`;
 
       res.setHeader(
@@ -618,7 +622,7 @@ export class S3Controller {
       );
       res.setHeader('Content-Length', file.size.toString());
       res.setHeader('ETag', etag);
-      res.setHeader('Last-Modified', file.updatedAt.toUTCString());
+      res.setHeader('Last-Modified', lastModified);
       res.setHeader('Accept-Ranges', 'bytes');
       res.status(200).end();
     } catch (err: unknown) {
@@ -812,17 +816,16 @@ export class S3Controller {
           },
         });
 
-        const etag = `"${md5.digest('hex')}"`;
-
-        await this.fileStorageUploadService.uploadFromStream({
+        const record = await this.fileStorageUploadService.uploadFromStream({
           stream: stream.pipe(counterTransform),
           filename,
           mimeType: contentType,
           size: contentLength || 0,
           userId,
           folderId,
-          etag,
         });
+        const etag = `"${md5.digest('hex')}"`;
+        await this.fileStorageUploadService.updateObjectEtag(record.id, etag);
 
         if (existingFiles.length > 0) {
           await this.prisma.fileRecord.updateMany({
@@ -1040,9 +1043,7 @@ export class S3Controller {
     res
       .status(normalized.status)
       .setHeader('Content-Type', 'application/xml')
-      .send(
-        this.s3Service.buildErrorXml(normalized.code, normalized.message),
-      );
+      .send(this.s3Service.buildErrorXml(normalized.code, normalized.message));
   }
 
   /**
