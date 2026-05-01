@@ -677,7 +677,7 @@ export class S3Service {
   }
 
   private encodeS3ListValue(value: string): string {
-    return encodeURIComponent(value).replace(/%2F/g, '/');
+    return encodeURIComponent(value);
   }
 
   buildErrorXml(code: string, message: string): string {
