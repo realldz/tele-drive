@@ -277,7 +277,10 @@ export class AdminLogService {
     return filter.negated ? !matched : matched;
   }
 
-  private getFieldValue(entry: AdminLogEntry, field: AdminLogFilter['field']): string {
+  private getFieldValue(
+    entry: AdminLogEntry,
+    field: AdminLogFilter['field'],
+  ): string {
     switch (field) {
       case 'timestamp':
         return entry.timestamp || '';

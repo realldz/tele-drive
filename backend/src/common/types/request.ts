@@ -5,5 +5,5 @@ export interface AuthenticatedRequest extends Request {
 }
 
 export interface S3AuthenticatedRequest extends Request {
-  s3UserId: string;
+  s3UserId?: string | null;
 }

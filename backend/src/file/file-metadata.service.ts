@@ -123,7 +123,10 @@ export class FileMetadataService {
           name: conflict.filename,
           suggestedName: await this.nameConflictService.generateUniqueName(
             fileRecord.filename,
-            await this.nameConflictService.getExistingNames(newFolderId, userId),
+            await this.nameConflictService.getExistingNames(
+              newFolderId,
+              userId,
+            ),
           ),
         });
       }
@@ -174,7 +177,8 @@ export class FileMetadataService {
     });
     if (!fileRecord) throw new NotFoundException('File not found');
 
-    const shareToken = fileRecord.shareToken || crypto.randomBytes(16).toString('hex');
+    const shareToken =
+      fileRecord.shareToken || crypto.randomBytes(16).toString('hex');
     const updated = await this.prisma.fileRecord.update({
       where: { id },
       data: {
@@ -288,7 +292,9 @@ export class FileMetadataService {
 
     if (pagination.cursor) {
       try {
-        const decoded = Buffer.from(pagination.cursor, 'base64').toString('utf-8');
+        const decoded = Buffer.from(pagination.cursor, 'base64').toString(
+          'utf-8',
+        );
         const [timestamp, cursorId] = decoded.split('_');
         where.OR = [
           { deletedAt: { lt: new Date(timestamp) } },

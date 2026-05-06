@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Put,
   Delete,
   Patch,
   Body,
@@ -158,6 +159,25 @@ export class FolderController {
   async unshare(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const result = await this.folderService.unshare(id, req.user.userId);
     this.logger.log(`Folder unshared: id=${id}, userId=${req.user.userId}`);
+    return result;
+  }
+
+  @Put(':id/s3-public-access')
+  async setS3PublicAccess(
+    @Param('id') id: string,
+    @Body('enabled') enabled: boolean,
+    @Body('listObjects') listObjects: boolean | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const result = await this.folderService.setS3PublicAccess(
+      id,
+      req.user.userId,
+      enabled,
+      listObjects,
+    );
+    this.logger.log(
+      `S3 public access ${enabled ? 'enabled' : 'disabled'}: id=${id}, userId=${req.user.userId}`,
+    );
     return result;
   }
 

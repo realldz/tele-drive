@@ -58,6 +58,10 @@ model Folder {
   visibility String      @default("PRIVATE") // PRIVATE | PUBLIC_LINK
   shareToken String?     @unique
 
+  // S3 public access
+  s3PublicAccess      Boolean @default(false)
+  s3PublicListObjects Boolean @default(false)
+
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 }

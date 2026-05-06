@@ -66,7 +66,9 @@ export class FileLifecycleService {
           await new Promise((resolve) => setTimeout(resolve, 50));
         }
       } catch (err) {
-        this.logger.warn(`Failed to delete Telegram message ${messageId}: ${err}`);
+        this.logger.warn(
+          `Failed to delete Telegram message ${messageId}: ${err}`,
+        );
       }
     }
   }
