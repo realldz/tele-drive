@@ -114,7 +114,6 @@ function isRetryableUpstreamError(err: unknown): boolean {
  */
 @Public()
 @SkipThrottle()
-@UseGuards(S3AuthGuard)
 @Controller('s3')
 export class S3Controller {
   private readonly logger = new Logger(S3Controller.name);
@@ -134,9 +133,10 @@ export class S3Controller {
   // GET /s3/ → ListBuckets
   // ---------------------------------------------------------------------------
 
+  @UseGuards(S3AuthGuard)
   @Get()
   async listBuckets(@Req() req: S3AuthenticatedRequest, @Res() res: Response) {
-    const userId = req.s3UserId;
+    const userId = req.s3UserId as string;
     this.logger.debug(`S3 ListBuckets: ${userId}`);
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -159,13 +159,14 @@ export class S3Controller {
   // ---------------------------------------------------------------------------
 
   /** PUT /s3/:bucket → CreateBucket */
+  @UseGuards(S3AuthGuard)
   @Put(':bucket')
   async createBucket(
     @Param('bucket') bucket: string,
     @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = req.s3UserId;
+    const userId = req.s3UserId as string;
     this.logger.debug(`S3 CreateBucket: ${userId}, ${bucket}`);
     await this.s3Service.createBucket(userId, bucket);
     this.setRequestId(res);
@@ -178,13 +179,14 @@ export class S3Controller {
    * aws-cli checks this before any bucket operation. Returns 200 if bucket
    * exists and belongs to user, 404 otherwise.
    */
+  @UseGuards(S3AuthGuard)
   @Head(':bucket')
   async headBucket(
     @Param('bucket') bucket: string,
     @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = req.s3UserId;
+    const userId = req.s3UserId as string;
     this.logger.debug(`S3 HeadBucket: ${userId}, ${bucket}`);
     const exists = await this.prisma.folder.findFirst({
       where: { userId, name: bucket, parentId: null, deletedAt: null },
@@ -195,13 +197,14 @@ export class S3Controller {
   }
 
   /** DELETE /s3/:bucket → DeleteBucket */
+  @UseGuards(S3AuthGuard)
   @Delete(':bucket')
   async deleteBucket(
     @Param('bucket') bucket: string,
     @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = req.s3UserId;
+    const userId = req.s3UserId as string;
     this.logger.debug(`S3 DeleteBucket: ${userId}, ${bucket}`);
     this.setRequestId(res);
     try {
@@ -221,13 +224,14 @@ export class S3Controller {
   /**
    * GET /s3/:bucket → ListObjectsV2 (handles both list-type=1 and list-type=2)
    */
+  @UseGuards(S3AuthGuard)
   @Get(':bucket')
   async listObjects(
     @Param('bucket') bucket: string,
     @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = req.s3UserId;
+    const userId = req.s3UserId as string;
     this.logger.debug(`S3 ListObjects: ${userId}, ${bucket}`);
     const prefix = this.qstr(req.query['prefix']);
     const delimiter = this.qstr(req.query['delimiter']);
@@ -269,13 +273,14 @@ export class S3Controller {
   // POST /s3/:bucket?delete → DeleteObjects
   // ---------------------------------------------------------------------------
 
+  @UseGuards(S3AuthGuard)
   @Post(':bucket')
   async handleBucketPost(
     @Param('bucket') bucket: string,
     @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = req.s3UserId;
+    const userId = req.s3UserId as string;
     this.logger.debug(`S3 handleBucketPost: ${userId}, ${bucket}`);
 
     this.setRequestId(res);
@@ -350,6 +355,7 @@ export class S3Controller {
   // PUT /s3/:bucket/* — PutObject / UploadPart / CopyObject
   // ---------------------------------------------------------------------------
 
+  @UseGuards(S3AuthGuard)
   @Put(':bucket/*key')
   async handlePut(
     @Param('bucket') bucket: string,
@@ -357,7 +363,7 @@ export class S3Controller {
     @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = req.s3UserId;
+    const userId = req.s3UserId as string;
     this.logger.debug(
       `S3 handlePut: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
     );
@@ -417,6 +423,7 @@ export class S3Controller {
   // POST /s3/:bucket/* — CreateMultipartUpload / CompleteMultipartUpload
   // ---------------------------------------------------------------------------
 
+  @UseGuards(S3AuthGuard)
   @Post(':bucket/*key')
   async handlePost(
     @Param('bucket') bucket: string,
@@ -424,7 +431,7 @@ export class S3Controller {
     @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = req.s3UserId;
+    const userId = req.s3UserId as string;
     this.logger.debug(
       `S3 handlePost: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
     );
@@ -518,6 +525,7 @@ export class S3Controller {
   // GET /s3/:bucket/* — GetObject / ListParts
   // ---------------------------------------------------------------------------
 
+  @UseGuards(S3AuthGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get(':bucket/*key')
   async handleGet(
@@ -526,7 +534,7 @@ export class S3Controller {
     @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = req.s3UserId;
+    const userId = req.s3UserId as string;
     this.logger.debug(
       `S3 handleGet: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
     );
@@ -595,6 +603,7 @@ export class S3Controller {
   // HEAD /s3/:bucket/* — HeadObject
   // ---------------------------------------------------------------------------
 
+  @UseGuards(S3AuthGuard)
   @Head(':bucket/*key')
   async headObject(
     @Param('bucket') bucket: string,
@@ -602,7 +611,7 @@ export class S3Controller {
     @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = req.s3UserId;
+    const userId = req.s3UserId as string;
     this.logger.debug(
       `S3 HeadObject: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
     );
@@ -644,6 +653,7 @@ export class S3Controller {
   // DELETE /s3/:bucket/* — DeleteObject / AbortMultipartUpload
   // ---------------------------------------------------------------------------
 
+  @UseGuards(S3AuthGuard)
   @Delete(':bucket/*key')
   async handleDelete(
     @Param('bucket') bucket: string,
@@ -651,7 +661,7 @@ export class S3Controller {
     @Req() req: S3AuthenticatedRequest,
     @Res() res: Response,
   ) {
-    const userId = req.s3UserId;
+    const userId = req.s3UserId as string;
     this.logger.debug(
       `S3 handleDelete: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
     );
@@ -1054,7 +1064,7 @@ export class S3Controller {
   private qstr(value: unknown): string {
     if (value === undefined || value === null) return '';
     if (Array.isArray(value)) return String(value[0] ?? '');
-    return String(value);
+    return typeof value === 'string' ? value : '';
   }
 
   /**
@@ -1063,8 +1073,8 @@ export class S3Controller {
    * hyphens, 3-63 chars). Returns `'/'` if the name is invalid or empty.
    */
   private safeBucketLocation(bucket: string): string {
-    const trimmed = (bucket || '').replace(/^[\/\\]+/, '').trim();
-    if (!trimmed || !/^[a-z0-9][a-z0-9.\-]{1,61}[a-z0-9]$/.test(trimmed)) {
+    const trimmed = (bucket || '').replace(/^[/\\]+/, '').trim();
+    if (!trimmed || !/^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/.test(trimmed)) {
       return '/';
     }
     return `/${trimmed}`;

@@ -3,6 +3,7 @@ import {
   Logger,
   NotFoundException,
   BadRequestException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { escapeXml, decodeXmlEntities } from '../common/utils/xml';
@@ -360,6 +361,115 @@ export class S3Service {
 
       throw err;
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Public object access (không yêu cầu userId filter)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Find a FileRecord by bucket + key for public access.
+   * Bucket must belong to userId AND have s3PublicAccess = true.
+   */
+  async findObjectPublic(userId: string, bucketName: string, key: string) {
+    const bucket = await this.prisma.folder.findFirst({
+      where: {
+        userId,
+        name: bucketName,
+        parentId: null,
+        s3PublicAccess: true,
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+
+    if (!bucket) throw new NotFoundException('NoSuchBucket');
+
+    const { folderId, filename } = await this.resolveKeyUnderFolder(
+      userId,
+      bucket.id,
+      key,
+      false,
+    );
+
+    const file = await this.prisma.fileRecord.findFirst({
+      where: {
+        folderId,
+        filename,
+        userId,
+        deletedAt: null,
+        status: 'complete',
+      },
+      include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
+    });
+
+    if (!file) throw new NotFoundException('NoSuchKey: ' + key);
+    return file;
+  }
+
+  /**
+   * ListObjectsV2 cho public bucket.
+   * Bucket phải thuộc về userId và có s3PublicAccess = true.
+   */
+  async listObjectsPublic(
+    userId: string,
+    bucketName: string,
+    prefix?: string,
+    delimiter?: string,
+    maxKeys = 1000,
+  ): Promise<{
+    objects: Array<{
+      key: string;
+      size: bigint;
+      lastModified: Date;
+      etag: string;
+    }>;
+    commonPrefixes: string[];
+  }> {
+    const bucket = await this.prisma.folder.findFirst({
+      where: {
+        userId,
+        name: bucketName,
+        parentId: null,
+        s3PublicAccess: true,
+        deletedAt: null,
+      },
+      select: { id: true, s3PublicListObjects: true },
+    });
+    if (!bucket) throw new NotFoundException('NoSuchBucket');
+
+    if (!bucket.s3PublicListObjects) {
+      throw new ForbiddenException('AccessDenied');
+    }
+
+    const objects: Array<{
+      key: string;
+      size: bigint;
+      lastModified: Date;
+      etag: string;
+    }> = [];
+    const commonPrefixes = new Set<string>();
+
+    await this.listRecursive(
+      userId,
+      bucket.id,
+      '',
+      prefix || '',
+      delimiter,
+      objects,
+      commonPrefixes,
+      Number.MAX_SAFE_INTEGER,
+    );
+
+    objects.sort((a, b) => a.key.localeCompare(b.key));
+    const sortedCommonPrefixes = [...commonPrefixes].sort((a, b) =>
+      a.localeCompare(b),
+    );
+
+    return {
+      objects: objects.slice(0, maxKeys),
+      commonPrefixes: sortedCommonPrefixes,
+    };
   }
 
   // ---------------------------------------------------------------------------

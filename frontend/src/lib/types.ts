@@ -5,6 +5,8 @@ export interface FolderRecord {
   userId: string;
   visibility: string;
   shareToken: string | null;
+  s3PublicAccess: boolean;
+  s3PublicListObjects: boolean;
   createdAt: string;
   updatedAt: string;
 }

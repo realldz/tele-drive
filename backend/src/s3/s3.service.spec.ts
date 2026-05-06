@@ -245,7 +245,9 @@ describe('S3Service', () => {
         false,
       );
 
-      expect(xml).toContain(`<LastModified>${createdAt.toISOString()}</LastModified>`);
+      expect(xml).toContain(
+        `<LastModified>${createdAt.toISOString()}</LastModified>`,
+      );
       expect(xml).not.toContain(updatedAt.toISOString());
     });
 
@@ -275,9 +277,7 @@ describe('S3Service', () => {
       expect(xml).toContain(
         '<Key>folder%20one%2F%5Bclip%5D%20%E6%98%9F%E7%81%AB%2Bdemo%27s.mp4</Key>',
       );
-      expect(xml).toContain(
-        '<Prefix>folder%20one%2Fsub%20dir%2F</Prefix>',
-      );
+      expect(xml).toContain('<Prefix>folder%20one%2Fsub%20dir%2F</Prefix>');
     });
   });
 

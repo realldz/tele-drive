@@ -284,6 +284,10 @@ export async function unshareItem(type: 'file' | 'folder', id: string) {
   return api.post(`/${endpoint}/${id}/unshare`);
 }
 
+export async function setS3PublicAccess(folderId: string, enabled: boolean, listObjects?: boolean) {
+  return api.put(`/folders/${folderId}/s3-public-access`, { enabled, listObjects });
+}
+
 // ── Trash ────────────────────────────────────────────────────────────────────
 
 export async function fetchTrashFolders(

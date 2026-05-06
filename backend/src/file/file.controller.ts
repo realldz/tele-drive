@@ -68,7 +68,8 @@ export class FileController {
   async getConfig() {
     return {
       maxChunkSize: MAX_CHUNK_SIZE,
-      maxConcurrentChunks: await this.uploadSessionService.getMaxConcurrentChunks(),
+      maxConcurrentChunks:
+        await this.uploadSessionService.getMaxConcurrentChunks(),
     };
   }
 
@@ -198,9 +199,8 @@ export class FileController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const downloadInfo = await this.transferReadService.downloadBySignedToken(
-      token,
-    );
+    const downloadInfo =
+      await this.transferReadService.downloadBySignedToken(token);
     return this.transferReadService.processDownload(
       downloadInfo,
       res,
@@ -374,9 +374,8 @@ export class FileController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const downloadInfo = await this.transferReadService.getDownloadInfoByToken(
-      token,
-    );
+    const downloadInfo =
+      await this.transferReadService.getDownloadInfoByToken(token);
     return this.transferReadService.processDownload(
       downloadInfo,
       res,
@@ -393,9 +392,8 @@ export class FileController {
     @Req() req: Request,
     @Res() res: Response,
   ) {
-    const downloadInfo = await this.transferReadService.getDownloadInfoByToken(
-      token,
-    );
+    const downloadInfo =
+      await this.transferReadService.getDownloadInfoByToken(token);
     return this.transferReadService.processStream(
       downloadInfo,
       req.headers.range,

@@ -60,7 +60,12 @@ export class TransferReadService {
     if (!file) throw new NotFoundException('File not found');
 
     const ttl = await this.getDownloadTtl();
-    const token = this.cryptoService.createSignedToken(fileId, 'u', ttl, userId);
+    const token = this.cryptoService.createSignedToken(
+      fileId,
+      'u',
+      ttl,
+      userId,
+    );
     const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
 
     this.logger.debug(
@@ -629,7 +634,8 @@ export class TransferReadService {
             Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}`,
           },
         });
-        if (!fetchRes.ok || !fetchRes.body) throw new Error('Fetch chunk error');
+        if (!fetchRes.ok || !fetchRes.body)
+          throw new Error('Fetch chunk error');
 
         await this.pipeStreamToResponse(fetchRes.body, res, {
           decrypt:

@@ -441,48 +441,55 @@ export class UploadSessionService {
               },
             })
             .then((pendingChunk) => {
-              return this.telegram.uploadFile(buffer, chunkFilename, signal).then(
-                async ({
-                  fileId: telegramFileId,
-                  messageId: telegramMessageId,
-                  botId,
-                }) => {
-                  try {
-                    const updated = await this.prisma.fileChunk.update({
-                      where: { id: pendingChunk.id },
-                      data: { telegramFileId, telegramMessageId, botId },
-                    });
+              return this.telegram
+                .uploadFile(buffer, chunkFilename, signal)
+                .then(
+                  async ({
+                    fileId: telegramFileId,
+                    messageId: telegramMessageId,
+                    botId,
+                  }) => {
+                    try {
+                      const updated = await this.prisma.fileChunk.update({
+                        where: { id: pendingChunk.id },
+                        data: { telegramFileId, telegramMessageId, botId },
+                      });
 
-                    const currentFile = await this.prisma.fileRecord.findUnique({
-                      where: { id: fileId },
-                      select: { status: true },
-                    });
-                    if (!currentFile || currentFile.status === 'aborted') {
-                      this.logger.warn(
-                        `Chunk ${chunkIndex} for file ${fileId} completed but file was aborted - deleting Telegram message ${telegramMessageId}`,
-                      );
-                      this.telegram.deleteMessage(telegramMessageId, botId).catch(() => {});
-                      reject(new Error('Upload aborted'));
-                      return;
-                    }
+                      const currentFile =
+                        await this.prisma.fileRecord.findUnique({
+                          where: { id: fileId },
+                          select: { status: true },
+                        });
+                      if (!currentFile || currentFile.status === 'aborted') {
+                        this.logger.warn(
+                          `Chunk ${chunkIndex} for file ${fileId} completed but file was aborted - deleting Telegram message ${telegramMessageId}`,
+                        );
+                        this.telegram
+                          .deleteMessage(telegramMessageId, botId)
+                          .catch(() => {});
+                        reject(new Error('Upload aborted'));
+                        return;
+                      }
 
-                    this.logger.debug(
-                      `Chunk uploaded: ${chunkIndex + 1}/${fileRecord.totalChunks} for file ${fileId} (${rawBytes} bytes)`,
-                    );
-                    resolve(updated);
-                  } catch (updateErr: any) {
-                    if (updateErr?.code === 'P2025') {
-                      this.logger.warn(
-                        `Chunk ${chunkIndex} for file ${fileId} was aborted during upload - deleting orphaned Telegram message ${telegramMessageId}`,
+                      this.logger.debug(
+                        `Chunk uploaded: ${chunkIndex + 1}/${fileRecord.totalChunks} for file ${fileId} (${rawBytes} bytes)`,
                       );
-                      this.telegram.deleteMessage(telegramMessageId, botId).catch(() => {});
-                      reject(new Error('Upload aborted'));
-                      return;
+                      resolve(updated);
+                    } catch (updateErr: any) {
+                      if (updateErr?.code === 'P2025') {
+                        this.logger.warn(
+                          `Chunk ${chunkIndex} for file ${fileId} was aborted during upload - deleting orphaned Telegram message ${telegramMessageId}`,
+                        );
+                        this.telegram
+                          .deleteMessage(telegramMessageId, botId)
+                          .catch(() => {});
+                        reject(new Error('Upload aborted'));
+                        return;
+                      }
+                      reject(updateErr);
                     }
-                    reject(updateErr);
-                  }
-                },
-              );
+                  },
+                );
             })
             .catch((err) => {
               this.prisma.fileChunk
@@ -501,7 +508,9 @@ export class UploadSessionService {
       bb.on('error', (err: Error) => reject(err));
       bb.on('close', () => {
         if (!fileProcessed) {
-          reject(new BadRequestException('No file field received in the request'));
+          reject(
+            new BadRequestException('No file field received in the request'),
+          );
         }
       });
 
@@ -533,7 +542,9 @@ export class UploadSessionService {
     });
     await Promise.allSettled(deletePromises);
 
-    const latestChunks = await this.prisma.fileChunk.findMany({ where: { fileId } });
+    const latestChunks = await this.prisma.fileChunk.findMany({
+      where: { fileId },
+    });
     const alreadyDeleted = new Set(
       fileRecord.chunks
         .filter((c) => c.telegramMessageId)

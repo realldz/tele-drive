@@ -105,6 +105,7 @@ export class FolderService {
         userId: true,
         visibility: true,
         shareToken: true,
+        s3PublicAccess: true,
         createdAt: true,
         updatedAt: true,
         children: {
@@ -206,6 +207,7 @@ export class FolderService {
             userId: true,
             visibility: true,
             shareToken: true,
+            s3PublicAccess: true,
             createdAt: true,
             updatedAt: true,
           },
@@ -474,6 +476,42 @@ export class FolderService {
     });
 
     this.logger.log(`Folder unshared: "${folder.name}" (folderId: ${id})`);
+    return updated;
+  }
+
+  /**
+   * Bật/tắt S3 public access cho bucket (root folder).
+   * Chỉ áp dụng cho folder gốc (parentId = null).
+   */
+  async setS3PublicAccess(
+    id: string,
+    userId: string,
+    enabled: boolean,
+    listObjects?: boolean,
+  ) {
+    const folder = await this.prisma.folder.findFirst({
+      where: { id, userId, deletedAt: null },
+    });
+    if (!folder) throw new NotFoundException('Folder not found');
+    if (folder.parentId !== null) {
+      throw new BadRequestException(
+        'Only root folders (buckets) can have S3 public access',
+      );
+    }
+
+    const data: Record<string, unknown> = { s3PublicAccess: enabled };
+    if (listObjects !== undefined) {
+      data.s3PublicListObjects = listObjects;
+    }
+
+    const updated = await this.prisma.folder.update({
+      where: { id },
+      data,
+    });
+
+    this.logger.log(
+      `S3 public access ${enabled ? 'enabled' : 'disabled'}${listObjects !== undefined ? ` (listObjects: ${listObjects})` : ''} for bucket: "${folder.name}" (folderId: ${id}, userId: ${userId})`,
+    );
     return updated;
   }
 
@@ -766,7 +804,10 @@ export class FolderService {
     const allFileIds = await this.collectAllFileIds(id);
 
     // Atomically delete all files inside the folder tree before deleting the folder
-    await this.fileLifecycleService.bulkPermanentDeleteFiles(allFileIds, userId);
+    await this.fileLifecycleService.bulkPermanentDeleteFiles(
+      allFileIds,
+      userId,
+    );
 
     await this.prisma.folder.delete({ where: { id } });
 

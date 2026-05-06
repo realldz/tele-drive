@@ -49,6 +49,7 @@ type ExpressRequest = {
   path?: string;
   requestId?: string;
   s3UserId?: string;
+  s3PublicAccess?: boolean;
 };
 
 type ExpressResponse = {
@@ -132,7 +133,10 @@ function formatBytes(bytes: bigint): string {
 export class BandwidthInterceptor implements NestInterceptor {
   private readonly logger = new Logger(BandwidthInterceptor.name);
   private readonly aggregateWindowMs = 30_000;
-  private readonly bandwidthAggregates = new Map<string, FileBandwidthAggregate>();
+  private readonly bandwidthAggregates = new Map<
+    string,
+    FileBandwidthAggregate
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -274,7 +278,9 @@ export class BandwidthInterceptor implements NestInterceptor {
       const s3File = await this.resolveS3Object(req.s3UserId, req);
       if (s3File) {
         fileId = s3File.id;
-        userId = req.s3UserId;
+        if (!req.s3PublicAccess) {
+          userId = req.s3UserId;
+        }
       }
     }
 
@@ -523,7 +529,10 @@ export class BandwidthInterceptor implements NestInterceptor {
     socketStartBytes: bigint | null,
     estimatedSize: bigint,
   ): bigint {
-    const socketPayloadBytes = this.getSocketPayloadBytes(res, socketStartBytes);
+    const socketPayloadBytes = this.getSocketPayloadBytes(
+      res,
+      socketStartBytes,
+    );
     const measuredBytes = socketPayloadBytes ?? countedBytes;
     return measuredBytes < estimatedSize ? measuredBytes : estimatedSize;
   }
@@ -540,7 +549,9 @@ export class BandwidthInterceptor implements NestInterceptor {
       return null;
     }
 
-    const socketEndBytes = BigInt(Math.max(0, Math.trunc(res.socket.bytesWritten)));
+    const socketEndBytes = BigInt(
+      Math.max(0, Math.trunc(res.socket.bytesWritten)),
+    );
     if (socketEndBytes <= socketStartBytes) {
       return 0n;
     }
