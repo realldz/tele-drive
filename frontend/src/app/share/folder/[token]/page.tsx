@@ -23,8 +23,8 @@ export default function SharedFolderPage() {
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [folders, setFolders] = useState<FolderRecord[]>([]);
   const [files, setFiles] = useState<FileRecord[]>([]);
-  const [foldersCursor, setFoldersCursor] = useState<string | null>(null);
-  const [filesCursor, setFilesCursor] = useState<string | null>(null);
+  const foldersCursor = useRef<string | null>(null);
+  const filesCursor = useRef<string | null>(null);
   const [hasMoreFolders, setHasMoreFolders] = useState(true);
   const [hasMoreFiles, setHasMoreFiles] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -48,7 +48,7 @@ export default function SharedFolderPage() {
       const params = new URLSearchParams();
       if (currentFolderId) params.set('folderId', currentFolderId);
       if (!isInitial) {
-        const cursor = foldersCursor || filesCursor;
+        const cursor = foldersCursor.current || filesCursor.current;
         if (cursor) params.set('cursor', cursor);
       }
 
@@ -66,8 +66,8 @@ export default function SharedFolderPage() {
         setFolders(prev => [...prev, ...(res.data.folders || [])]);
         setFiles(prev => [...prev, ...(res.data.files || [])]);
       }
-      setFoldersCursor(res.data.nextFolderCursor || null);
-      setFilesCursor(res.data.nextFileCursor || null);
+      foldersCursor.current = res.data.nextFolderCursor || null;
+      filesCursor.current = res.data.nextFileCursor || null;
       setHasMoreFolders(res.data.nextFolderCursor !== null && res.data.nextFolderCursor !== undefined);
       setHasMoreFiles(res.data.nextFileCursor !== null && res.data.nextFileCursor !== undefined);
       setBreadcrumbs(res.data.breadcrumbs || []);
@@ -77,11 +77,11 @@ export default function SharedFolderPage() {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [token, currentFolderId, foldersCursor, filesCursor, t]);
+  }, [token, currentFolderId, t]);
 
   useEffect(() => {
-    setFoldersCursor(null);
-    setFilesCursor(null);
+    foldersCursor.current = null;
+    filesCursor.current = null;
     setHasMoreFolders(true);
     setHasMoreFiles(true);
   }, [currentFolderId, token]);
