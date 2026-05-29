@@ -1,17 +1,20 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { Download, AlertCircle, Folder, ChevronRight, Home, UserCircle2, FileSearch, Loader2 } from 'lucide-react';
+import { AlertCircle, ChevronRight, Home, UserCircle2, LayoutGrid, List } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import { useAuth } from '@/components/auth-context';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import toast from 'react-hot-toast';
 
-import { API_URL, api, formatSize, requestShareFolderDownloadToken, parseBandwidthError, getApiErrorMessage } from '@/lib/api';
+import { API_URL, api, requestShareFolderDownloadToken, parseBandwidthError, getApiErrorMessage } from '@/lib/api';
 import type { SharedFolderRoot, FolderRecord, FileRecord, BreadcrumbItem } from '@/lib/types';
 import SharedFolderPreviewModal from './shared-folder-preview-modal';
-import { getFileIcon } from '@/lib/file-icon';
+import FileGrid from '@/components/file-grid';
+
+type SortField = 'name' | 'createdAt';
+type SortDirection = 'asc' | 'desc';
 
 export default function SharedFolderPage() {
   const params = useParams();
@@ -33,8 +36,39 @@ export default function SharedFolderPage() {
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [downloadingId, setDownloadingId] = useState<string | null>(null);
+  const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set());
   const [previewFile, setPreviewFile] = useState<FileRecord | null>(null);
+
+  // Grid/list toggle
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+
+  // Sort
+  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
+
+  const handleSort = useCallback((field: SortField) => {
+    setSortDirection(prev => sortField === field ? (prev === 'asc' ? 'desc' : 'asc') : 'asc');
+    setSortField(field);
+  }, [sortField]);
+
+  // Filter + sort
+  const filteredFolders = useMemo(() => {
+    return [...folders].sort((a, b) => {
+      const cmp = sortField === 'name'
+        ? a.name.localeCompare(b.name)
+        : new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+  }, [folders, sortField, sortDirection]);
+
+  const filteredFiles = useMemo(() => {
+    return [...files].sort((a, b) => {
+      const cmp = sortField === 'name'
+        ? a.filename.localeCompare(b.filename)
+        : new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      return sortDirection === 'asc' ? cmp : -cmp;
+    });
+  }, [files, sortField, sortDirection]);
 
   const fetchContent = useCallback(async (isInitial = true) => {
     if (!token) return;
@@ -108,14 +142,14 @@ export default function SharedFolderPage() {
     return () => { if (observerRef.current) observerRef.current.disconnect(); };
   }, [hasMoreFolders, hasMoreFiles, isLoading, isLoadingMore, fetchContent]);
 
-  const handleDownload = async (file: FileRecord) => {
-    setDownloadingId(file.id);
+  const handleDownload = useCallback(async (fileId: string, filename: string) => {
+    setDownloadingFiles(prev => new Set(prev).add(fileId));
     try {
-      const { url } = await requestShareFolderDownloadToken(token, file.id);
+      const { url } = await requestShareFolderDownloadToken(token, fileId);
       toast(t('dashboard.downloadStarted'), { icon: '⬇️', duration: 2000 });
       const link = document.createElement('a');
       link.href = API_URL + url;
-      link.setAttribute('download', file.filename);
+      link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();
       link.remove();
@@ -129,9 +163,19 @@ export default function SharedFolderPage() {
         toast.error(t('shareFolder.downloadError'));
       }
     } finally {
-      setTimeout(() => setDownloadingId(null), 2000);
+      setTimeout(() => setDownloadingFiles(prev => { const n = new Set(prev); n.delete(fileId); return n; }), 2000);
     }
-  };
+  }, [token, t]);
+
+  const handleItemClick = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
+    if (type === 'folder') {
+      setCurrentFolderId(item.id);
+    } else {
+      setPreviewFile(item as FileRecord);
+    }
+  }, []);
+
+  const hasMore = hasMoreFolders || hasMoreFiles;
 
   if (error) {
     return (
@@ -152,6 +196,7 @@ export default function SharedFolderPage() {
     <div className="min-h-screen bg-gray-50 p-4 md:p-8">
       <GuestLanguageSwitcher />
       <div className="max-w-5xl mx-auto bg-white shadow-sm rounded-2xl overflow-hidden border border-gray-100">
+        {/* Header */}
         <div className="bg-slate-900 justify-between items-center text-white p-6 flex">
           <div>
             <h1 className="text-xl font-bold tracking-tight">Tele-Drive</h1>
@@ -159,12 +204,31 @@ export default function SharedFolderPage() {
               {t('shareFolder.sharedBy')}: <span className="text-slate-200">{rootFolder?.user?.username || t('shareFolder.user')}</span>
             </p>
           </div>
-          {user && (
-            <div className="flex items-center gap-2 text-slate-300 text-sm bg-slate-800 px-3 py-2 rounded-lg">
-              <UserCircle2 size={16} />
-              <span className="font-medium">{user.username}</span>
+          <div className="flex items-center gap-3">
+            {/* View toggle */}
+            <div className="flex bg-slate-800 p-1 rounded-lg">
+              <button
+                onClick={() => setViewMode('grid')}
+                className={`p-1.5 rounded-md transition-all ${viewMode === 'grid' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                title={t('dashboard.gridView')}
+              >
+                <LayoutGrid size={18} />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`p-1.5 rounded-md transition-all ${viewMode === 'list' ? 'bg-slate-700 text-white' : 'text-slate-400 hover:text-slate-200'}`}
+                title={t('dashboard.listView')}
+              >
+                <List size={18} />
+              </button>
             </div>
-          )}
+            {user && (
+              <div className="flex items-center gap-2 text-slate-300 text-sm bg-slate-800 px-3 py-2 rounded-lg">
+                <UserCircle2 size={16} />
+                <span className="font-medium">{user.username}</span>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="p-6">
@@ -191,76 +255,22 @@ export default function SharedFolderPage() {
             ))}
           </div>
 
-          {isLoading ? (
-            <div className="text-center py-12 text-gray-500">{t('shareFolder.loading')}</div>
-          ) : folders.length === 0 && files.length === 0 ? (
-            <div className="text-center py-16 bg-gray-50 rounded-xl border border-dashed border-gray-200">
-              <Folder size={48} className="mx-auto text-gray-300 mb-3" />
-              <p className="text-gray-500">{t('shareFolder.emptyFolder')}</p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
-              {/* Folders */}
-              {folders.map(folder => (
-                <div
-                  key={folder.id}
-                  onClick={() => setCurrentFolderId(folder.id)}
-                  className="bg-white border border-gray-100 p-4 rounded-xl flex items-center hover:shadow-md hover:border-blue-100 transition-all cursor-pointer group"
-                >
-                  <div className="w-10 h-10 bg-blue-50 text-blue-500 rounded-lg flex items-center justify-center mr-3 group-hover:bg-blue-100 transition-colors">
-                    <Folder size={20} className="fill-current opacity-20" />
-                  </div>
-                  <span className="font-medium text-gray-800 truncate" title={folder.name}>
-                    {folder.name}
-                  </span>
-                </div>
-              ))}
-
-              {/* Files */}
-              {files.map(file => (
-                <div
-                  key={file.id}
-                  onClick={() => setPreviewFile(file)}
-                  className="bg-white border border-gray-100 p-4 rounded-xl flex items-start hover:shadow-md hover:border-blue-100 transition-all cursor-pointer group"
-                >
-                  <div className="flex-1 overflow-hidden pr-2">
-                    <div className="flex items-start mb-2">
-                      <div className="w-8 h-8 mr-2 flex-shrink-0 flex items-center justify-center bg-gray-50 rounded-lg border border-gray-100">
-                        {getFileIcon(file.mimeType, 'w-5 h-5')}
-                      </div>
-                      <div className="overflow-hidden">
-                        <span className="font-medium text-gray-800 text-sm break-all line-clamp-2" title={file.filename}>
-                          {file.filename}
-                        </span>
-                        <span className="text-xs text-gray-500 mt-1 block">{formatSize(Number(file.size))}</span>
-                      </div>
-                    </div>
-                  </div>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); handleDownload(file); }}
-                    disabled={downloadingId === file.id}
-                    className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-600 hover:text-white rounded-lg transition-colors flex-shrink-0 disabled:opacity-50"
-                    title={t('shareFolder.download')}
-                  >
-                    <Download size={18} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Load More */}
-          {(hasMoreFolders || hasMoreFiles) && !isLoading && (
-            <div ref={loadMoreRef} className="py-6 text-center">
-              {isLoadingMore ? (
-                <Loader2 className="animate-spin text-blue-500 mx-auto" size={20} />
-              ) : (
-                <button onClick={() => fetchContent(false)} className="px-4 py-2 bg-gray-100 hover:bg-gray-200 rounded-lg text-sm font-medium text-gray-600 transition-colors flex items-center gap-2 mx-auto">
-                  <FileSearch size={16} /> {t('dashboard.loadMore')}
-                </button>
-              )}
-            </div>
-          )}
+          {/* Content */}
+          <FileGrid
+            folders={filteredFolders}
+            files={filteredFiles}
+            viewMode={viewMode}
+            sortField={sortField}
+            sortDirection={sortDirection}
+            onSort={handleSort}
+            downloadingFiles={downloadingFiles}
+            hasMore={hasMore}
+            loadMoreRef={loadMoreRef}
+            isLoadingContent={isLoading}
+            emptyMessage={t('shareFolder.emptyFolder')}
+            onItemClick={handleItemClick}
+            onDownload={handleDownload}
+          />
         </div>
       </div>
 
