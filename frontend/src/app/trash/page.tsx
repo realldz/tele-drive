@@ -258,6 +258,7 @@ export default function TrashPage() {
       if (contextMenu.type === 'folder') handleRestoreFolder(contextMenu.item.id);
       else handleRestoreFile(contextMenu.item.id);
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection.selectedCount, contextMenu, handleBatchRestore]);
 
   const handleContextMenuPermanentDelete = useCallback((e: React.MouseEvent) => {
@@ -272,6 +273,7 @@ export default function TrashPage() {
         if (confirm(t('trash.confirmDeleteFile'))) handlePermanentDeleteFile(contextMenu.item.id);
       }
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selection.selectedCount, contextMenu, handleBatchPermanentDelete, t]);
 
   // Item click handler

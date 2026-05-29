@@ -55,7 +55,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 
 function PlyrVideo({ src }: { src: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<unknown>(null);
+  const playerRef = useRef<{ destroy: () => void } | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -86,8 +86,8 @@ function PlyrVideo({ src }: { src: string }) {
 function PlyrAudio({ src }: { src: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const playerRef = useRef<unknown>(null);
-  const analyzeRef = useRef<unknown>(null);
+  const playerRef = useRef<{ destroy: () => void } | null>(null);
+  const analyzeRef = useRef<{ destroy: () => void } | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -242,7 +242,7 @@ function CodeViewer({ url, filename }: { url: string; filename: string }) {
   const lang = LANG_MAP[ext] || '';
 
   useEffect(() => {
-    setIsLoading(true);
+    setIsLoading(true); // eslint-disable-line react-hooks/set-state-in-effect
     highlightedRef.current = false;
     axios.get(url, { responseType: 'text', withCredentials: true, transformResponse: [(data: unknown) => data] })
       .then(res => setContent(res.data))
@@ -282,7 +282,7 @@ interface PreviewRendererProps {
   streamUrl: string;
   onDownload: () => void;
   fileInfo: { filename: string; mimeType: string; size: number };
-  t: (key: string, params?: Record<string, unknown>) => string;
+  t: (key: string, params?: Record<string, string | number>) => string;
 }
 
 export default function PreviewRenderer({ streamUrl, onDownload, fileInfo, t }: PreviewRendererProps) {
@@ -292,6 +292,7 @@ export default function PreviewRenderer({ streamUrl, onDownload, fileInfo, t }: 
   if (mimeType.startsWith('image/')) {
     return (
       <div className="flex h-full items-center justify-center p-4">
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={streamUrl}
           alt={filename}

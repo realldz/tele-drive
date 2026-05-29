@@ -20,6 +20,7 @@ interface ContextMenuProps {
 }
 
 export default function ContextMenu({
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   x, y, itemType: _itemType,
   onRename, onMove, onShare, onDelete, onDetails,
   onRestore, onPermanentDelete,

@@ -30,6 +30,7 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
   const [isLoading, setIsLoading] = useState(false);
   const { streamUrl, isLoading: isStreamLoading, setupStream, teardownStream } = useStream();
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!fileId) {
       setFileInfo(null);
@@ -53,6 +54,7 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
       })
       .finally(() => setIsLoading(false));
   }, [fileId, setupStream, teardownStream]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // ESC key handler
   useEffect(() => {

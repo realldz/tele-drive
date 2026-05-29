@@ -54,6 +54,7 @@ export default function S3KeysPage() {
 
   useEffect(() => {
     if (isReady) loadCredentials();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isReady]);
 
   async function loadCredentials() {

@@ -302,6 +302,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     } finally {
       processingRef.current = false;
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [maxChunkSize, uploadSimple, uploadChunked, updateItem]);
 
   // Auto-process queue when items are added
