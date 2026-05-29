@@ -571,8 +571,10 @@ export class FolderService {
           const parsed = JSON.parse(
             Buffer.from(pagination.cursor, 'base64').toString('utf-8'),
           );
+          let isQueryNextFolder = false;
           if (parsed.f) {
             folderWhere['id'] = { lt: parsed.f };
+            isQueryNextFolder = true;
           }
           const fileWhere: Record<string, unknown> = { ...filesWhere };
           if (parsed.fc) {
@@ -583,11 +585,18 @@ export class FolderService {
             ];
           }
 
-          const folders = await this.prisma.folder.findMany({
-            where: folderWhere,
-            orderBy: { id: 'desc' },
-            take: limit + 1,
-          });
+          let isQueryNextFile = false;
+          if (parsed.fc && !parsed.f) {
+            isQueryNextFile = true;
+          }
+
+          const folders = isQueryNextFile
+            ? []
+            : await this.prisma.folder.findMany({
+                where: folderWhere,
+                orderBy: { id: 'desc' },
+                take: limit + 1,
+              });
           const foldersHasNext = folders.length > limit;
           const folderItems = foldersHasNext ? folders.slice(0, -1) : folders;
           const nextFolderCursor = foldersHasNext
@@ -598,11 +607,14 @@ export class FolderService {
               ).toString('base64')
             : null;
 
-          const files = await this.prisma.fileRecord.findMany({
-            where: fileWhere,
-            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-            take: limit + 1,
-          });
+          const shouldFetchFiles = !isQueryNextFolder || !foldersHasNext;
+          const files = shouldFetchFiles
+            ? await this.prisma.fileRecord.findMany({
+                where: fileWhere,
+                orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+                take: limit + 1,
+              })
+            : [];
           const filesHasNext = files.length > limit;
           const fileItems = filesHasNext ? files.slice(0, -1) : files;
           const nextFileCursor = filesHasNext
