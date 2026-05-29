@@ -97,8 +97,14 @@ export default function SharedFolderPage() {
         setFolders(res.data.folders || []);
         setFiles(res.data.files || []);
       } else {
-        setFolders(prev => [...prev, ...(res.data.folders || [])]);
-        setFiles(prev => [...prev, ...(res.data.files || [])]);
+        setFolders(prev => {
+          const existingIds = new Set(prev.map((f: FolderRecord) => f.id));
+          return [...prev, ...(res.data.folders || []).filter((f: FolderRecord) => !existingIds.has(f.id))];
+        });
+        setFiles(prev => {
+          const existingIds = new Set(prev.map((f: FileRecord) => f.id));
+          return [...prev, ...(res.data.files || []).filter((f: FileRecord) => !existingIds.has(f.id))];
+        });
       }
       foldersCursor.current = res.data.nextFolderCursor || null;
       filesCursor.current = res.data.nextFileCursor || null;
@@ -112,6 +118,9 @@ export default function SharedFolderPage() {
       setIsLoadingMore(false);
     }
   }, [token, currentFolderId, t]);
+
+  const fetchContentRef = useRef(fetchContent);
+  fetchContentRef.current = fetchContent;
 
   useEffect(() => {
     foldersCursor.current = null;
@@ -132,7 +141,7 @@ export default function SharedFolderPage() {
     observerRef.current = new IntersectionObserver(
       (entries) => {
         if (entries[0].isIntersecting && (hasMoreFolders || hasMoreFiles) && !isLoading && !isLoadingMore) {
-          fetchContent(false);
+          fetchContentRef.current(false);
         }
       },
       { rootMargin: '200px' },
@@ -140,7 +149,7 @@ export default function SharedFolderPage() {
 
     observerRef.current.observe(loadMoreRef.current);
     return () => { if (observerRef.current) observerRef.current.disconnect(); };
-  }, [hasMoreFolders, hasMoreFiles, isLoading, isLoadingMore, fetchContent]);
+  }, [hasMoreFolders, hasMoreFiles, isLoading, isLoadingMore]);
 
   const handleDownload = useCallback(async (fileId: string, filename: string) => {
     setDownloadingFiles(prev => new Set(prev).add(fileId));
