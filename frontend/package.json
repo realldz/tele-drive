@@ -24,6 +24,9 @@
     "xgplayer": "^3.0.24",
     "xgplayer-music": "^3.0.24"
   },
+  "overrides": {
+    "postcss": "$postcss"
+  },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
