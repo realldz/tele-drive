@@ -157,33 +157,25 @@ export default function FileGrid({
                         {file.filename}
                       </span>
                       <span className="text-xs text-gray-500 mt-1">
-                        {file.status === 'uploading' ? (
-                          <span className="text-blue-500 font-medium flex items-center gap-1">
-                            <Loader2 size={12} className="animate-spin" /> {t('dashboard.processing')}
-                          </span>
-                        ) : (
-                          formatBytes(Number(file.size))
-                        )}
+                        {formatBytes(Number(file.size))}
                       </span>
                     </div>
                   </div>
                   <div className="flex gap-2 mt-auto">
-                    {file.status === 'uploading' ? null : (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (!downloadingFiles.has(file.id)) onDownload(file.id, file.filename);
-                        }}
-                        disabled={downloadingFiles.has(file.id)}
-                        className={`flex-1 flex items-center justify-center gap-1 border border-gray-100 bg-gray-50 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-100 text-gray-700 p-2 rounded-lg font-semibold text-sm transition-colors ${downloadingFiles.has(file.id) ? 'opacity-50 pointer-events-none' : ''}`}
-                      >
-                        {downloadingFiles.has(file.id) ? (
-                          <><Loader2 size={14} className="animate-spin" /> {t('dashboard.downloading')}</>
-                        ) : (
-                          <><Download size={14} /> {t('dashboard.download')}</>
-                        )}
-                      </button>
-                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (!downloadingFiles.has(file.id)) onDownload(file.id, file.filename);
+                      }}
+                      disabled={downloadingFiles.has(file.id)}
+                      className={`flex-1 flex items-center justify-center gap-1 border border-gray-100 bg-gray-50 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-100 text-gray-700 p-2 rounded-lg font-semibold text-sm transition-colors ${downloadingFiles.has(file.id) ? 'opacity-50 pointer-events-none' : ''}`}
+                    >
+                      {downloadingFiles.has(file.id) ? (
+                        <><Loader2 size={14} className="animate-spin" /> {t('dashboard.downloading')}</>
+                      ) : (
+                        <><Download size={14} /> {t('dashboard.download')}</>
+                      )}
+                    </button>
                   </div>
                 </div>
               ))}
@@ -219,11 +211,6 @@ export default function FileGrid({
                             <span className="font-medium text-gray-800 block truncate max-w-[150px] sm:max-w-xs md:max-w-sm">
                               {file.filename}
                             </span>
-                            {file.status === 'uploading' && (
-                              <span className="text-blue-500 text-xs font-medium flex items-center gap-1 mt-0.5">
-                                <Loader2 size={12} className="animate-spin" /> {t('dashboard.listProcessing')}
-                              </span>
-                            )}
                             <span className="text-xs text-gray-500 sm:hidden block mt-0.5">
                               {formatBytes(Number(file.size))}
                             </span>
@@ -231,7 +218,7 @@ export default function FileGrid({
                         </div>
                       </td>
                       <td className="p-3 md:p-4 text-sm text-gray-600 hidden sm:table-cell">
-                        {file.status === 'complete' ? formatBytes(Number(file.size)) : '-'}
+                        {formatBytes(Number(file.size))}
                       </td>
                       <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">
                         {formatDate(file.createdAt)}
