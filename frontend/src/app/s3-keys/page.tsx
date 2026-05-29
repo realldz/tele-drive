@@ -35,7 +35,7 @@ interface NewCredential extends S3Credential {
 }
 
 export default function S3KeysPage() {
-  const { isReady, token } = useRequireAuth();
+  const { isReady } = useRequireAuth();
   const { t } = useI18n();
   const uploadConfig = useAppSelector(state => state.uploadConfig);
 

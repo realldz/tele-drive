@@ -71,7 +71,7 @@ export default function DashboardContent({
 
   const formatDate = useCallback((d: string) => new Date(d).toLocaleDateString(LOCALE_DATE_MAP[locale]), [locale]);
 
-  const SortIcon = ({ field }: { field: SortField }) => {
+  const renderSortIcon = (field: SortField) => {
     if (sortField !== field) return null;
     return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
   };
@@ -141,10 +141,10 @@ export default function DashboardContent({
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
                     <th className="p-3 md:p-4 font-semibold cursor-pointer select-none" onClick={() => onSort('name')}>
-                      <span className="flex items-center gap-1">{t('dashboard.name')} <SortIcon field="name" /></span>
+                      <span className="flex items-center gap-1">{t('dashboard.name')} {renderSortIcon('name')}</span>
                     </th>
                     <th className="p-3 md:p-4 font-semibold hidden sm:table-cell cursor-pointer select-none" onClick={() => onSort('createdAt')}>
-                      <span className="flex items-center gap-1">{t('dashboard.createdDate')} <SortIcon field="createdAt" /></span>
+                      <span className="flex items-center gap-1">{t('dashboard.createdDate')} {renderSortIcon('createdAt')}</span>
                     </th>
                     <th className="p-3 md:p-4 font-semibold text-right whitespace-nowrap">{t('dashboard.options')}</th>
                   </tr>
@@ -244,11 +244,11 @@ export default function DashboardContent({
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
                     <th className="p-3 md:p-4 font-semibold cursor-pointer select-none" onClick={() => onSort('name')}>
-                      <span className="flex items-center gap-1">{t('dashboard.fileName')} <SortIcon field="name" /></span>
+                      <span className="flex items-center gap-1">{t('dashboard.fileName')} {renderSortIcon('name')}</span>
                     </th>
                     <th className="p-3 md:p-4 font-semibold hidden sm:table-cell">{t('dashboard.size')}</th>
                     <th className="p-3 md:p-4 font-semibold hidden sm:table-cell cursor-pointer select-none" onClick={() => onSort('createdAt')}>
-                      <span className="flex items-center gap-1">{t('dashboard.createdDate')} <SortIcon field="createdAt" /></span>
+                      <span className="flex items-center gap-1">{t('dashboard.createdDate')} {renderSortIcon('createdAt')}</span>
                     </th>
                     <th className="p-3 md:p-4 font-semibold text-right">{t('dashboard.options')}</th>
                   </tr>

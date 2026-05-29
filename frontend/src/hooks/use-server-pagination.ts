@@ -24,7 +24,7 @@ interface UseServerPaginationResult<T> {
 export function useServerPagination<T>(
   options: UseServerPaginationOptions<T>,
 ): UseServerPaginationResult<T> {
-  const { fetchFn, enabled = true, limit = 50 } = options;
+  const { fetchFn, enabled = true } = options;
 
   const [data, setData] = useState<T[]>([]);
   const [loading, setLoading] = useState(true);

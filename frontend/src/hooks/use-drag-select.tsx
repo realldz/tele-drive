@@ -131,7 +131,7 @@ export function useDragSelect({ containerRef, onSelect, enabled = true }: UseDra
       });
     };
 
-    const handleMouseUp = (e: MouseEvent) => {
+    const handleMouseUp = () => {
       if (isDraggingRef.current && rect) {
         const ids = getIntersectingIds(rect);
         onSelect(ids);

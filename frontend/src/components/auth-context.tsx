@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 
-import { API_URL, api, fetchCurrentUser } from '@/lib/api';
+import { api, fetchCurrentUser } from '@/lib/api';
 
 interface User {
   id: string;

@@ -7,7 +7,7 @@ import { useI18n, LOCALE_LABELS, type Locale } from '@/components/i18n-context';
 const locales: Locale[] = ['vi', 'en', 'zh', 'ja'];
 
 export default function LanguageSwitcher() {
-  const { locale, setLocale, t } = useI18n();
+  const { locale, setLocale } = useI18n();
   const [isOpen, setIsOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
