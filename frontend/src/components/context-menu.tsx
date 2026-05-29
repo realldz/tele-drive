@@ -20,7 +20,7 @@ interface ContextMenuProps {
 }
 
 export default function ContextMenu({
-  x, y, itemType,
+  x, y, itemType: _itemType,
   onRename, onMove, onShare, onDelete, onDetails,
   onRestore, onPermanentDelete,
   selectionCount = 1,

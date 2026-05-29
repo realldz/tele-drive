@@ -1,8 +1,7 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import { api, getApiErrorMessage } from '@/lib/api';
-import { Download, Loader2, FileIcon, AudioLines } from 'lucide-react';
+import { Download, Loader2, FileIcon } from 'lucide-react';
 // import 'plyr/dist/plyr.css';
 import { Document, Page, pdfjs } from 'react-pdf';
 import 'react-pdf/dist/Page/AnnotationLayer.css';
@@ -56,7 +55,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/b
 
 function PlyrVideo({ src }: { src: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<any>(null);
+  const playerRef = useRef<unknown>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -87,8 +86,8 @@ function PlyrVideo({ src }: { src: string }) {
 function PlyrAudio({ src }: { src: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const playerRef = useRef<any>(null);
-  const analyzeRef = useRef<any>(null);
+  const playerRef = useRef<unknown>(null);
+  const analyzeRef = useRef<unknown>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -245,7 +244,7 @@ function CodeViewer({ url, filename }: { url: string; filename: string }) {
   useEffect(() => {
     setIsLoading(true);
     highlightedRef.current = false;
-    axios.get(url, { responseType: 'text', withCredentials: true, transformResponse: [(data: any) => data] })
+    axios.get(url, { responseType: 'text', withCredentials: true, transformResponse: [(data: unknown) => data] })
       .then(res => setContent(res.data))
       .catch(() => setContent('Failed to load file content'))
       .finally(() => setIsLoading(false));
@@ -283,7 +282,7 @@ interface PreviewRendererProps {
   streamUrl: string;
   onDownload: () => void;
   fileInfo: { filename: string; mimeType: string; size: number };
-  t: (key: string, params?: any) => string;
+  t: (key: string, params?: Record<string, unknown>) => string;
 }
 
 export default function PreviewRenderer({ streamUrl, onDownload, fileInfo, t }: PreviewRendererProps) {

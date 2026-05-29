@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import axios from 'axios';
-import { API_URL, api, abortUpload, createFolder } from '@/lib/api';
+import { api, abortUpload, createFolder } from '@/lib/api';
 import { useAuth } from '@/components/auth-context';
 import { useAppSelector } from '@/lib/store';
 import { loadUploadConfig } from '@/lib/upload-config-slice';
@@ -338,7 +338,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     // Group files by directory path
     const dirSet = new Set<string>();
     for (const file of files) {
-      const relativePath = (file as any).webkitRelativePath as string;
+      const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
       if (!relativePath) continue;
       const parts = relativePath.split('/');
       for (let i = 1; i < parts.length; i++) {
@@ -370,7 +370,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
 
     // Add files to queue with correct targetFolderId
     const newItems: QueueItem[] = files.map(file => {
-      const relativePath = (file as any).webkitRelativePath as string;
+      const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
       const parts = relativePath ? relativePath.split('/') : [file.name];
       const dirPath = parts.slice(0, -1).join('/');
       const targetId = dirPath ? folderMap.get(dirPath) : folderId;
