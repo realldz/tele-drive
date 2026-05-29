@@ -411,6 +411,10 @@ export class S3Service {
    * ListObjectsV2 cho public bucket.
    * Bucket phải thuộc về userId và có s3PublicAccess = true.
    */
+  /**
+   * ListObjectsV2 cho public bucket.
+   * Bucket phải thuộc về userId và có s3PublicAccess = true.
+   */
   async listObjectsPublic(
     userId: string,
     bucketName: string,
@@ -450,10 +454,9 @@ export class S3Service {
     }> = [];
     const commonPrefixes = new Set<string>();
 
-    await this.listRecursive(
+    await this.listRecursiveOptimized(
       userId,
       bucket.id,
-      '',
       prefix || '',
       delimiter,
       objects,
@@ -504,10 +507,9 @@ export class S3Service {
     }> = [];
     const commonPrefixes = new Set<string>();
 
-    await this.listRecursive(
+    await this.listRecursiveOptimized(
       userId,
       bucket.id,
-      '',
       prefix || '',
       delimiter,
       objects,
@@ -526,10 +528,9 @@ export class S3Service {
     };
   }
 
-  private async listRecursive(
+  private async listRecursiveOptimized(
     userId: string,
-    folderId: string,
-    currentPath: string,
+    bucketId: string,
     prefix: string,
     delimiter: string | undefined,
     objects: Array<{
@@ -541,12 +542,55 @@ export class S3Service {
     commonPrefixes: Set<string>,
     maxKeys: number,
   ): Promise<void> {
-    if (objects.length >= maxKeys) return;
+    // 1. Fetch all active folders for the user
+    const folders = await this.prisma.folder.findMany({
+      where: { userId, deletedAt: null },
+      select: { id: true, name: true, parentId: true, updatedAt: true },
+    });
 
-    // List files in current folder
+    // 2. Build map and children structure in memory
+    const folderMap = new Map<string, (typeof folders)[0]>();
+    const childrenMap = new Map<string, (typeof folders)[0][]>();
+    for (const f of folders) {
+      folderMap.set(f.id, f);
+      if (f.parentId) {
+        const list = childrenMap.get(f.parentId) || [];
+        list.push(f);
+        childrenMap.set(f.parentId, list);
+      }
+    }
+
+    // 3. Compute relative paths starting from bucketId
+    const folderPathMap = new Map<string, string>(); // folderId -> relative path
+    const descendantFolderIds = new Set<string>();
+    descendantFolderIds.add(bucketId);
+    folderPathMap.set(bucketId, '');
+
+    const queue = [bucketId];
+    while (queue.length > 0) {
+      const currentId = queue.shift()!;
+      const currentPath = folderPathMap.get(currentId)!;
+      const children = childrenMap.get(currentId) || [];
+      for (const child of children) {
+        const childPath = currentPath
+          ? `${currentPath}/${child.name}`
+          : child.name;
+        folderPathMap.set(child.id, childPath);
+        descendantFolderIds.add(child.id);
+        queue.push(child.id);
+      }
+    }
+
+    // 4. Fetch all active complete files under the descendant folders
     const files = await this.prisma.fileRecord.findMany({
-      where: { folderId, userId, deletedAt: null, status: 'complete' },
+      where: {
+        userId,
+        folderId: { in: Array.from(descendantFolderIds) },
+        deletedAt: null,
+        status: 'complete',
+      },
       select: {
+        folderId: true,
         filename: true,
         size: true,
         createdAt: true,
@@ -556,117 +600,102 @@ export class S3Service {
       },
     });
 
+    // Group files by folderId
+    const filesByFolder = new Map<string, typeof files>();
     for (const file of files) {
-      const key = currentPath
-        ? `${currentPath}/${file.filename}`
-        : file.filename;
-
-      if (prefix && !key.startsWith(prefix)) continue;
-
-      if (delimiter) {
-        const rest = key.substring(prefix.length);
-        const delimIdx = rest.indexOf(delimiter);
-        if (delimIdx !== -1) {
-          commonPrefixes.add(prefix + rest.substring(0, delimIdx + 1));
-          continue;
-        }
-      }
-
-      objects.push({
-        key,
-        size: file.size,
-        // S3 object timestamps should track object version creation, not
-        // download quota/accounting updates that bump updatedAt.
-        lastModified: file.createdAt,
-        etag: file.etag || `"${file.id}"`,
-      });
+      const fId = file.folderId || bucketId;
+      const list = filesByFolder.get(fId) || [];
+      list.push(file);
+      filesByFolder.set(fId, list);
     }
 
-    if (objects.length >= maxKeys) return;
+    // 5. In-memory recursive traversal matching the original logic
+    const traverse = (folderId: string, currentPath: string): void => {
+      if (objects.length >= maxKeys) return;
 
-    // Recurse into subfolders
-    const subFolders = await this.prisma.folder.findMany({
-      where: { parentId: folderId, userId, deletedAt: null },
-      select: { id: true, name: true, updatedAt: true },
-    });
+      // List files in current folder
+      const folderFiles = filesByFolder.get(folderId) || [];
+      for (const file of folderFiles) {
+        const key = currentPath
+          ? `${currentPath}/${file.filename}`
+          : file.filename;
 
-    for (const folder of subFolders) {
-      const folderPath = currentPath
-        ? `${currentPath}/${folder.name}`
-        : folder.name;
-      const fullPath = `${folderPath}/`;
+        if (prefix && !key.startsWith(prefix)) continue;
 
-      if (
-        prefix &&
-        !fullPath.startsWith(prefix) &&
-        !prefix.startsWith(fullPath)
-      ) {
-        continue;
-      }
-
-      if (delimiter) {
-        // Prefix is deeper than this folder, keep traversing down to it.
-        if (prefix && prefix.startsWith(fullPath)) {
-          await this.listRecursive(
-            userId,
-            folder.id,
-            folderPath,
-            prefix,
-            delimiter,
-            objects,
-            commonPrefixes,
-            maxKeys,
-          );
-          continue;
-        }
-
-        // Collapse folder path to CommonPrefixes for delimiter-based listing.
-        const rest = fullPath.substring(prefix.length);
-        const delimIdx = rest.indexOf(delimiter);
-        if (delimIdx !== -1) {
-          commonPrefixes.add(prefix + rest.substring(0, delimIdx + 1));
-          continue;
-        }
-      }
-
-      // No delimiter (recursive mode): check if folder is an empty leaf.
-      // Emit it as a 0-byte virtual object so `aws s3 rm --recursive` can see and delete it.
-      if (!delimiter) {
-        const [hasChild, hasFile] = await Promise.all([
-          this.prisma.folder.findFirst({
-            where: { parentId: folder.id, userId, deletedAt: null },
-            select: { id: true },
-          }),
-          this.prisma.fileRecord.findFirst({
-            where: { folderId: folder.id, userId, deletedAt: null },
-            select: { id: true },
-          }),
-        ]);
-
-        if (!hasChild && !hasFile) {
-          if (!prefix || fullPath.startsWith(prefix)) {
-            objects.push({
-              key: fullPath,
-              size: BigInt(0),
-              lastModified: folder.updatedAt,
-              etag: `"${folder.id}"`,
-            });
+        if (delimiter) {
+          const rest = key.substring(prefix.length);
+          const delimIdx = rest.indexOf(delimiter);
+          if (delimIdx !== -1) {
+            commonPrefixes.add(prefix + rest.substring(0, delimIdx + 1));
+            continue;
           }
-          continue;
         }
+
+        objects.push({
+          key,
+          size: file.size,
+          lastModified: file.createdAt,
+          etag: file.etag || `"${file.id}"`,
+        });
       }
 
-      await this.listRecursive(
-        userId,
-        folder.id,
-        folderPath,
-        prefix,
-        delimiter,
-        objects,
-        commonPrefixes,
-        maxKeys,
-      );
-    }
+      if (objects.length >= maxKeys) return;
+
+      // List subfolders
+      const subFolders = childrenMap.get(folderId) || [];
+      for (const folder of subFolders) {
+        const folderPath = currentPath
+          ? `${currentPath}/${folder.name}`
+          : folder.name;
+        const fullPath = `${folderPath}/`;
+
+        if (
+          prefix &&
+          !fullPath.startsWith(prefix) &&
+          !prefix.startsWith(fullPath)
+        ) {
+          continue;
+        }
+
+        if (delimiter) {
+          // Prefix is deeper than this folder, keep traversing down to it.
+          if (prefix && prefix.startsWith(fullPath)) {
+            traverse(folder.id, folderPath);
+            continue;
+          }
+
+          // Collapse folder path to CommonPrefixes for delimiter-based listing.
+          const rest = fullPath.substring(prefix.length);
+          const delimIdx = rest.indexOf(delimiter);
+          if (delimIdx !== -1) {
+            commonPrefixes.add(prefix + rest.substring(0, delimIdx + 1));
+            continue;
+          }
+        }
+
+        // No delimiter (recursive mode): check if folder is an empty leaf.
+        if (!delimiter) {
+          const hasChild = (childrenMap.get(folder.id) || []).length > 0;
+          const hasFile = (filesByFolder.get(folder.id) || []).length > 0;
+
+          if (!hasChild && !hasFile) {
+            if (!prefix || fullPath.startsWith(prefix)) {
+              objects.push({
+                key: fullPath,
+                size: BigInt(0),
+                lastModified: folder.updatedAt,
+                etag: `"${folder.id}"`,
+              });
+            }
+            continue;
+          }
+        }
+
+        traverse(folder.id, folderPath);
+      }
+    };
+
+    traverse(bucketId, '');
   }
 
   // ---------------------------------------------------------------------------
