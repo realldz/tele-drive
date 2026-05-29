@@ -116,11 +116,13 @@ export default function FileGrid({
                       onClick={(e) => onItemClick(e, folder, 'folder')}
                       className="cursor-pointer transition-colors hover:bg-gray-50"
                     >
-                      <td className="p-3 md:p-4 flex items-center gap-3">
-                        <div className="relative flex-shrink-0">
-                          <Folder className="w-6 h-6 text-blue-500" fill="currentColor" opacity={0.8} />
+                      <td className="p-3 md:p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="relative flex-shrink-0">
+                            <Folder className="w-6 h-6 text-blue-500" fill="currentColor" opacity={0.8} />
+                          </div>
+                          <span className="font-medium text-gray-800">{folder.name}</span>
                         </div>
-                        <span className="font-medium text-gray-800">{folder.name}</span>
                       </td>
                       <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">
                         {formatDate(folder.createdAt)}
