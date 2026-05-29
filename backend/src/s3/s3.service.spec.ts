@@ -383,4 +383,102 @@ describe('S3Service', () => {
       expect(prisma.folder.update).not.toHaveBeenCalled();
     });
   });
+
+  describe('listObjects with optimized listRecursiveOptimized', () => {
+    it('supports delimiter based listing and recursive listing of empty leaf folders', async () => {
+      const folderUpdatedAt = new Date('2026-05-01T00:00:00.000Z');
+      const prisma = {
+        folder: {
+          findFirst: jest.fn().mockResolvedValue({ id: 'bucket-id' }),
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'bucket-id',
+              name: 'bucket-a',
+              parentId: null,
+              updatedAt: folderUpdatedAt,
+            },
+            {
+              id: 'sub-1',
+              name: 'docs',
+              parentId: 'bucket-id',
+              updatedAt: folderUpdatedAt,
+            },
+            {
+              id: 'sub-2',
+              name: 'empty-dir',
+              parentId: 'bucket-id',
+              updatedAt: folderUpdatedAt,
+            },
+            {
+              id: 'sub-nested',
+              name: 'reports',
+              parentId: 'sub-1',
+              updatedAt: folderUpdatedAt,
+            },
+          ]),
+        },
+        fileRecord: {
+          findMany: jest.fn().mockResolvedValue([
+            {
+              filename: 'root-file.txt',
+              size: 100n,
+              createdAt: new Date('2026-05-01T00:00:00.000Z'),
+              updatedAt: new Date('2026-05-02T00:00:00.000Z'),
+              id: 'file-1',
+              etag: '"etag-1"',
+              folderId: 'bucket-id',
+            },
+            {
+              filename: 'doc-file.pdf',
+              size: 200n,
+              createdAt: new Date('2026-05-01T00:00:00.000Z'),
+              updatedAt: new Date('2026-05-02T00:00:00.000Z'),
+              id: 'file-2',
+              etag: '"etag-2"',
+              folderId: 'sub-1',
+            },
+          ]),
+        },
+      } as any;
+      service = new S3Service(prisma);
+
+      // Scenario 1: Delimiter is '/' (listing folder contents like a traditional filesystem)
+      const resDelimiter = await service.listObjects(
+        'user-1',
+        'bucket-a',
+        '',
+        '/',
+        1000,
+      );
+
+      // Root files
+      expect(resDelimiter.objects.map((o) => o.key)).toEqual(['root-file.txt']);
+      // Immediate subdirectories
+      expect(resDelimiter.commonPrefixes).toEqual(['docs/', 'empty-dir/']);
+
+      // Scenario 2: Recursive listing (delimiter=undefined)
+      const resRecursive = await service.listObjects(
+        'user-1',
+        'bucket-a',
+        '',
+        undefined,
+        1000,
+      );
+
+      // Recursive objects (including nested files, and empty subdirectories as 0-byte objects)
+      expect(resRecursive.objects.map((o) => o.key)).toEqual([
+        'docs/doc-file.pdf',
+        'docs/reports/',
+        'empty-dir/',
+        'root-file.txt',
+      ]);
+      expect(
+        resRecursive.objects.find((o) => o.key === 'empty-dir/')?.size,
+      ).toBe(0n);
+      expect(
+        resRecursive.objects.find((o) => o.key === 'docs/reports/')?.size,
+      ).toBe(0n);
+      expect(resRecursive.commonPrefixes).toEqual([]);
+    });
+  });
 });
