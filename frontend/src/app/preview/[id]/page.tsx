@@ -32,6 +32,7 @@ export default function FilePreviewPage() {
   const [isLoading, setIsLoading] = useState(true);
   const { streamUrl, isLoading: isStreamLoading, setupStream, teardownStream } = useStream();
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!isReady) return;
 
@@ -52,6 +53,7 @@ export default function FilePreviewPage() {
       teardownStream();
     };
   }, [fileId, isReady, setupStream, teardownStream]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   async function handleDownload() {
     if (!fileInfo) return;

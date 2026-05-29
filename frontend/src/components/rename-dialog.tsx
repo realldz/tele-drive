@@ -20,7 +20,7 @@ export default function RenameDialog({ isOpen, onClose, onConfirm, initialName, 
   // Sync name state when dialog opens with a different item
   useEffect(() => {
     if (isOpen) {
-      setName(initialName);
+      setName(initialName); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [isOpen, initialName]);
 

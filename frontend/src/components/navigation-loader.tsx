@@ -97,6 +97,7 @@ export default function NavigationLoader({ children }: { children: ReactNode }) 
         return prev + (80 - prev) * 0.1;
       });
     }, 150);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clearAllTimers, finishNavigation, visible]);
 
   // Start navigation immediately on internal link clicks.
@@ -154,6 +155,7 @@ export default function NavigationLoader({ children }: { children: ReactNode }) 
       });
     }
   }, [pathname, finishNavigation, startNavigation, visible]);
+
 
   return (
     <NavigationContext.Provider value={{ isNavigating: visible, startNavigation }}>

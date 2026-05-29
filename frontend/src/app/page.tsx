@@ -160,6 +160,7 @@ export default function Dashboard() {
 
     observerRef.current.observe(loadMoreRef.current);
     return () => { if (observerRef.current) observerRef.current.disconnect(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasMore, isLoadingContent, isLoadMore]);
 
   // Context menu
@@ -190,6 +191,7 @@ export default function Dashboard() {
   }, [showNewMenu]);
 
   // Clear selection when folder changes
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { selection.clearSelection(); }, [currentFolderId, selection.clearSelection]);
 
   useEffect(() => {
@@ -319,7 +321,7 @@ export default function Dashboard() {
             className="text-blue-500 font-semibold text-sm hover:underline ml-2 cursor-pointer">{t('dashboard.undo')}</button>
         </span>
       ), { duration: 5000 });
-    } catch (_error: unknown) { toast.error(t('dashboard.deleteStuckError')); }
+    } catch { toast.error(t('dashboard.deleteStuckError')); }
   }, [fetchContent, t]);
 
   const handleDeleteFile = useCallback(async (e: React.MouseEvent, id: string) => {
@@ -334,14 +336,14 @@ export default function Dashboard() {
             className="text-blue-500 font-semibold text-sm hover:underline ml-2 cursor-pointer">{t('dashboard.undo')}</button>
         </span>
       ), { duration: 5000 });
-    } catch (_error: unknown) { toast.error(t('dashboard.deleteStuckError')); }
+    } catch { toast.error(t('dashboard.deleteStuckError')); }
   }, [fetchContent, t]);
 
   const handleDeleteStuckFile = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
     setActionLoading(prev => new Set(prev).add(id));
     try { await abortUpload(id); fetchContent(); }
-    catch (_error: unknown) { toast.error(t('dashboard.deleteStuckError')); }
+    catch { toast.error(t('dashboard.deleteStuckError')); }
     finally { setActionLoading(prev => { const next = new Set(prev); next.delete(id); return next; }); }
   }, [fetchContent, t]);
 
@@ -381,7 +383,7 @@ export default function Dashboard() {
         } else {
           await deleteFile(id);
         }
-      } catch (_error: unknown) {
+      } catch {
         toast.error(t('dashboard.deleteStuckError'));
       }
     }

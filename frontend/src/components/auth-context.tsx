@@ -59,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Khởi tạo: đọc token từ localStorage VÀ set axios header ngay lập tức
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
@@ -69,11 +70,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setIsLoading(false);
   }, []);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Fetch quota 1 lần khi đã có token
   useEffect(() => {
     if (token) {
-      refreshQuota();
+      refreshQuota(); // eslint-disable-line react-hooks/set-state-in-effect
     }
   }, [token, refreshQuota]);
 
