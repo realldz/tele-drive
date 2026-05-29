@@ -1,8 +1,9 @@
 import React, { useCallback } from 'react';
-import { Folder, Download, Trash2, MoreVertical, Loader2, Globe, ChevronUp, ChevronDown } from 'lucide-react';
+import { Folder, Globe, MoreVertical, Loader2, Download } from 'lucide-react';
 import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
 import { getFileIcon } from '@/lib/file-icon';
 import { formatBytes } from '@/lib/api';
+import FileGrid from '@/components/file-grid';
 import type { FileRecord, FolderRecord } from '@/lib/types';
 
 type SortField = 'name' | 'createdAt';
@@ -41,8 +42,6 @@ interface DashboardContentProps {
 
 export default function DashboardContent({
   isLoadingContent,
-  folders,
-  files,
   visibleFolders,
   visibleFiles,
   filteredFoldersCount,
@@ -71,13 +70,8 @@ export default function DashboardContent({
 
   const formatDate = useCallback((d: string) => new Date(d).toLocaleDateString(LOCALE_DATE_MAP[locale]), [locale]);
 
-  const renderSortIcon = (field: SortField) => {
-    if (sortField !== field) return null;
-    return sortDirection === 'asc' ? <ChevronUp size={14} /> : <ChevronDown size={14} />;
-  };
-
   // Loading state
-  if (isLoadingContent && folders.length === 0 && files.length === 0) {
+  if (isLoadingContent && visibleFolders.length === 0 && visibleFiles.length === 0) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="animate-spin text-blue-500" size={32} />
@@ -92,10 +86,17 @@ export default function DashboardContent({
         <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-sm border border-gray-100">
           <Folder className="text-gray-300" size={32} />
         </div>
-        <p className="text-gray-500 font-medium">{searchQuery ? t('dashboard.noResults') : t('dashboard.emptyFolder')}</p>
+        <p className="text-gray-500 font-medium">
+          {searchQuery ? t('dashboard.noResults') : t('dashboard.emptyFolder')}
+        </p>
       </div>
     );
   }
+
+  const renderSortIcon = (field: SortField) => {
+    if (sortField !== field) return null;
+    return sortDirection === 'asc' ? '▲' : '▼';
+  };
 
   return (
     <>
@@ -163,12 +164,14 @@ export default function DashboardContent({
                           : dragOverFolderId === folder.id ? 'bg-blue-50' : 'hover:bg-gray-50'
                       }`}
                     >
-                      <td className="p-3 md:p-4 flex items-center gap-3">
-                        <div className="relative flex-shrink-0">
-                          <Folder className="w-6 h-6 text-blue-500" fill="currentColor" opacity={0.8} />
-                          {folder.visibility !== 'PRIVATE' && <Globe className="absolute -bottom-1 -right-1 w-3 h-3 text-green-600 bg-white rounded-full p-px" />}
+                      <td className="p-3 md:p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="relative flex-shrink-0">
+                            <Folder className="w-6 h-6 text-blue-500" fill="currentColor" opacity={0.8} />
+                            {folder.visibility !== 'PRIVATE' && <Globe className="absolute -bottom-1 -right-1 w-3 h-3 text-green-600 bg-white rounded-full p-px" />}
+                          </div>
+                          <span className="font-medium text-gray-800">{folder.name}</span>
                         </div>
-                        <span className="font-medium text-gray-800">{folder.name}</span>
                       </td>
                       <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">{formatDate(folder.createdAt)}</td>
                       <td className="p-3 md:p-4 text-right">
@@ -219,7 +222,7 @@ export default function DashboardContent({
                   <div className="flex gap-2 mt-auto">
                     {file.status === 'uploading' ? (
                       <button onClick={(e) => onDeleteStuckFile(e, file.id)} disabled={actionLoading.has(file.id)} className="w-full p-2 text-red-500 bg-red-50 rounded-lg hover:bg-red-100 transition-colors flex items-center justify-center gap-1 text-sm font-medium disabled:opacity-50">
-                        {actionLoading.has(file.id) ? <Loader2 size={14} className="animate-spin" /> : <Trash2 size={14} />} {t('dashboard.stuckDelete')}
+                        {actionLoading.has(file.id) ? <Loader2 size={14} className="animate-spin" /> : '×'} {t('dashboard.stuckDelete')}
                       </button>
                     ) : (
                       <>
@@ -280,7 +283,7 @@ export default function DashboardContent({
                       <td className="p-3 md:p-4 text-right whitespace-nowrap">
                         {file.status === 'uploading' ? (
                           <button onClick={(e) => onDeleteStuckFile(e, file.id)} disabled={actionLoading.has(file.id)} className="p-1.5 text-red-500 bg-red-50 hover:bg-red-100 rounded-md transition-colors disabled:opacity-50">
-                            {actionLoading.has(file.id) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                            {actionLoading.has(file.id) ? <Loader2 size={16} className="animate-spin" /> : '×'}
                           </button>
                         ) : (
                           <div className="flex justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
