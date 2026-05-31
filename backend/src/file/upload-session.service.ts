@@ -380,6 +380,21 @@ export class UploadSessionService {
       dek = this.cryptoService.decryptKey(fileRecord.encryptedKey);
       chunkIv = this.cryptoService.generateIv();
     }
+    let rawBytes = 0;
+    const counterTransform = new Transform({
+      transform(chunk: Buffer, _encoding, callback) {
+        rawBytes += chunk.length;
+        if (rawBytes > MAX_CHUNK_SIZE) {
+          callback(
+            new BadRequestException(
+              `Chunk size exceeds maximum allowed size (${MAX_CHUNK_SIZE} bytes)`,
+            ),
+          );
+          return;
+        }
+        callback(null, chunk);
+      },
+    });
 
     return new Promise<any>((resolve, reject) => {
       const bb = Busboy({ headers: req.headers });
@@ -392,117 +407,101 @@ export class UploadSessionService {
         }
         fileProcessed = true;
 
-        const chunks: Buffer[] = [];
-        let rawBytes = 0;
-        let dataStream: Readable | Transform = stream;
+        let dataStream: Readable = stream;
+        dataStream = stream.pipe(counterTransform);
         if (dek && chunkIv) {
           const cipherStream = this.cryptoService.createEncryptStream(
             dek,
             chunkIv,
           );
-          dataStream = stream.pipe(cipherStream);
+          dataStream = dataStream.pipe(cipherStream);
         }
-
-        dataStream.on('data', (buf: Buffer) => {
-          chunks.push(buf);
-          rawBytes += buf.length;
-          if (rawBytes > MAX_CHUNK_SIZE) {
-            stream.destroy();
-            reject(
-              new BadRequestException(
-                `Chunk size exceeds maximum allowed size (${MAX_CHUNK_SIZE} bytes)`,
-              ),
-            );
-          }
-        });
 
         dataStream.on('error', (err: Error) => reject(err));
 
-        dataStream.on('end', () => {
-          const buffer = Buffer.concat(chunks);
-          if (signal?.aborted) {
-            reject(new Error('Upload cancelled'));
-            return;
-          }
+        this.logger.log(
+          `Starting streaming chunk upload: ${chunkIndex + 1}/${fileRecord.totalChunks} for file "${fileRecord.filename}" (${fileRecord.id})`,
+        );
 
-          this.logger.log(
-            `Starting chunk upload to Telegram: ${chunkIndex + 1}/${fileRecord.totalChunks} for file "${fileRecord.filename}" (${fileRecord.id}), ${rawBytes} bytes`,
-          );
+        this.prisma.fileChunk
+          .create({
+            data: {
+              fileId,
+              chunkIndex,
+              size: 0,
+              telegramFileId: '',
+              telegramMessageId: null,
+              ...(chunkIv && { encryptionIv: chunkIv.toString('hex') }),
+            },
+          })
+          .then((pendingChunk) => {
+            return this.telegram
+              .uploadStream(dataStream, chunkFilename, signal)
+              .then(
+                async ({
+                  fileId: telegramFileId,
+                  messageId: telegramMessageId,
+                  botId,
+                }) => {
+                  try {
+                    const updated = await this.prisma.fileChunk.update({
+                      where: { id: pendingChunk.id },
+                      data: {
+                        telegramFileId,
+                        telegramMessageId,
+                        botId,
+                        size: rawBytes,
+                      },
+                    });
 
-          this.prisma.fileChunk
-            .create({
-              data: {
-                fileId,
-                chunkIndex,
-                size: rawBytes,
-                telegramFileId: '',
-                telegramMessageId: null,
-                ...(chunkIv && { encryptionIv: chunkIv.toString('hex') }),
-              },
-            })
-            .then((pendingChunk) => {
-              return this.telegram
-                .uploadFile(buffer, chunkFilename, signal)
-                .then(
-                  async ({
-                    fileId: telegramFileId,
-                    messageId: telegramMessageId,
-                    botId,
-                  }) => {
-                    try {
-                      const updated = await this.prisma.fileChunk.update({
-                        where: { id: pendingChunk.id },
-                        data: { telegramFileId, telegramMessageId, botId },
-                      });
-
-                      const currentFile =
-                        await this.prisma.fileRecord.findUnique({
-                          where: { id: fileId },
-                          select: { status: true },
-                        });
-                      if (!currentFile || currentFile.status === 'aborted') {
-                        this.logger.warn(
-                          `Chunk ${chunkIndex} for file ${fileId} completed but file was aborted - deleting Telegram message ${telegramMessageId}`,
-                        );
-                        this.telegram
-                          .deleteMessage(telegramMessageId, botId)
-                          .catch(() => {});
-                        reject(new Error('Upload aborted'));
-                        return;
-                      }
-
-                      this.logger.debug(
-                        `Chunk uploaded: ${chunkIndex + 1}/${fileRecord.totalChunks} for file ${fileId} (${rawBytes} bytes)`,
+                    const currentFile = await this.prisma.fileRecord.findUnique(
+                      {
+                        where: { id: fileId },
+                        select: { status: true },
+                      },
+                    );
+                    if (!currentFile || currentFile.status === 'aborted') {
+                      this.logger.warn(
+                        `Chunk ${chunkIndex} for file ${fileId} completed but file was aborted - deleting Telegram message ${telegramMessageId}`,
                       );
-                      resolve(updated);
-                    } catch (updateErr: any) {
-                      if (updateErr?.code === 'P2025') {
-                        this.logger.warn(
-                          `Chunk ${chunkIndex} for file ${fileId} was aborted during upload - deleting orphaned Telegram message ${telegramMessageId}`,
-                        );
-                        this.telegram
-                          .deleteMessage(telegramMessageId, botId)
-                          .catch(() => {});
-                        reject(new Error('Upload aborted'));
-                        return;
-                      }
-                      reject(updateErr);
+                      this.telegram
+                        .deleteMessage(telegramMessageId, botId)
+                        .catch(() => {});
+                      reject(new Error('Upload aborted'));
+                      return;
                     }
-                  },
-                );
-            })
-            .catch((err) => {
-              this.prisma.fileChunk
-                .deleteMany({
-                  where: { fileId, chunkIndex },
-                })
-                .catch(() => {});
-              this.logger.error(
-                `Chunk upload failed: ${chunkIndex}/${fileRecord.totalChunks} for file ${fileId}: ${err.message}`,
+
+                    this.logger.debug(
+                      `Chunk streamed: ${chunkIndex + 1}/${fileRecord.totalChunks} for file ${fileId}`,
+                    );
+                    resolve(updated);
+                  } catch (updateErr: any) {
+                    if (updateErr?.code === 'P2025') {
+                      this.logger.warn(
+                        `Chunk ${chunkIndex} for file ${fileId} was aborted during upload - deleting orphaned Telegram message ${telegramMessageId}`,
+                      );
+                      this.telegram
+                        .deleteMessage(telegramMessageId, botId)
+                        .catch(() => {});
+                      reject(new Error('Upload aborted'));
+                      return;
+                    }
+                    reject(updateErr);
+                  }
+                },
               );
-              reject(err);
-            });
-        });
+          })
+          .catch((err) => {
+            this.prisma.fileChunk
+              .deleteMany({
+                where: { fileId, chunkIndex },
+              })
+              .catch(() => {});
+            this.logger.error(
+              `Chunk upload failed: ${chunkIndex}/${fileRecord.totalChunks} for file ${fileId}: ${err.message}`,
+            );
+            reject(err);
+          });
       });
 
       bb.on('error', (err: Error) => reject(err));
