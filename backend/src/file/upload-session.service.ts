@@ -397,6 +397,7 @@ export class UploadSessionService {
     });
 
     return new Promise<any>((resolve, reject) => {
+      const T1 = Date.now();
       const bb = Busboy({ headers: req.headers });
       let fileProcessed = false;
 
@@ -420,7 +421,7 @@ export class UploadSessionService {
         dataStream.on('error', (err: Error) => reject(err));
 
         this.logger.log(
-          `Starting streaming chunk upload: ${chunkIndex + 1}/${fileRecord.totalChunks} for file "${fileRecord.filename}" (${fileRecord.id})`,
+          `[TIMING-T1] File stream received at +${Date.now() - T1}ms: ${chunkIndex + 1}/${fileRecord.totalChunks} for file "${fileRecord.filename}" (${fileRecord.id})`,
         );
 
         this.prisma.fileChunk
@@ -435,6 +436,10 @@ export class UploadSessionService {
             },
           })
           .then((pendingChunk) => {
+            const T2 = Date.now();
+            this.logger.log(
+              `[TIMING-T2] Starting Telegram upload at +${T2 - T1}ms (gap from T1: ${T2 - T1}ms)`,
+            );
             return this.telegram
               .uploadStream(dataStream, chunkFilename, signal)
               .then(
@@ -443,6 +448,7 @@ export class UploadSessionService {
                   messageId: telegramMessageId,
                   botId,
                 }) => {
+                  const T3 = Date.now();
                   try {
                     const updated = await this.prisma.fileChunk.update({
                       where: { id: pendingChunk.id },
@@ -471,8 +477,8 @@ export class UploadSessionService {
                       return;
                     }
 
-                    this.logger.debug(
-                      `Chunk streamed: ${chunkIndex + 1}/${fileRecord.totalChunks} for file ${fileId}`,
+                    this.logger.log(
+                      `[TIMING-T3] Telegram upload completed at +${T3 - T1}ms (upload took ${T3 - T2}ms, rawBytes=${rawBytes})`,
                     );
                     resolve(updated);
                   } catch (updateErr: any) {
