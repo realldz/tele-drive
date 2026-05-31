@@ -54,7 +54,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
   const { refreshQuota } = useAuth();
   const dispatch = useAppDispatch();
   const [queue, setQueue] = useState<QueueItem[]>([]);
-  const { maxChunkSize, maxConcurrentChunks: concurrency, loaded } = useAppSelector(state => state.uploadConfig);
+  const { maxChunkSize, loaded } = useAppSelector(state => state.uploadConfig);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>();
 
   const abortControllersRef = useRef<Map<string, AbortController[]>>(new Map());
@@ -143,7 +143,6 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       chunkSizes.push(end - start);
     }
 
-    const chunkQueue = Array.from({ length: totalChunks }, (_, i) => i);
     const controllers: AbortController[] = [];
     abortControllersRef.current.set(item.id, controllers);
 
@@ -206,38 +205,11 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       updateProgress();
     };
 
-    let workerError: Error | null = null;
+    for (let i = 0; i < totalChunks; i++) {
+      const currentCheck = queueRef.current.find(q => q.id === item.id);
+      if (!currentCheck || currentCheck.status === 'cancelled' || currentCheck.status === 'error') break;
 
-    const abortAllControllers = () => {
-      controllers.forEach(ctrl => ctrl.abort());
-    };
-
-    const worker = async () => {
-      while (chunkQueue.length > 0) {
-        if (workerError) return; // Another worker failed — stop picking new chunks
-        const currentItem = queueRef.current.find(q => q.id === item.id);
-        if (!currentItem || currentItem.status === 'cancelled' || currentItem.status === 'error') return;
-
-        const chunkIndex = chunkQueue.shift();
-        if (chunkIndex === undefined) return;
-        try {
-          await uploadSingleChunk(chunkIndex);
-        } catch (err) {
-          if (!workerError) workerError = err as Error; // Preserve the FIRST error (not CanceledError from abort)
-          abortAllControllers();
-          throw err;
-        }
-      }
-    };
-
-    const workers = Array(Math.min(concurrency, totalChunks))
-      .fill(null)
-      .map(() => worker());
-    await Promise.allSettled(workers);
-
-    // If any worker failed, propagate the first error
-    if (workerError) {
-      throw workerError;
+      await uploadSingleChunk(i);
     }
 
     const currentItem = queueRef.current.find(q => q.id === item.id);
@@ -246,7 +218,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     }
 
     await api.post(`/files/upload/${serverFileId}/complete`);
-  }, [maxChunkSize, concurrency, updateItem]);
+  }, [maxChunkSize, updateItem]);
 
   // Process queue — pick next pending item and upload
   const processQueue = useCallback(async () => {
