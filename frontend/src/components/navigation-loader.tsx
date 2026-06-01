@@ -38,6 +38,7 @@ export default function NavigationLoader({ children }: { children: ReactNode }) 
   const incrementRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const safetyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const rafRef = useRef<number | null>(null);
 
   const clearAllTimers = useCallback(() => {
@@ -52,6 +53,10 @@ export default function NavigationLoader({ children }: { children: ReactNode }) 
     if (resetTimerRef.current) {
       clearTimeout(resetTimerRef.current);
       resetTimerRef.current = null;
+    }
+    if (safetyTimerRef.current) {
+      clearTimeout(safetyTimerRef.current);
+      safetyTimerRef.current = null;
     }
     if (rafRef.current !== null) {
       cancelAnimationFrame(rafRef.current);
@@ -97,7 +102,10 @@ export default function NavigationLoader({ children }: { children: ReactNode }) 
         return prev + (80 - prev) * 0.1;
       });
     }, 150);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    safetyTimerRef.current = setTimeout(() => {
+      finishNavigation();
+    }, 8000);
   }, [clearAllTimers, finishNavigation, visible]);
 
   // Start navigation immediately on internal link clicks.
@@ -119,7 +127,7 @@ export default function NavigationLoader({ children }: { children: ReactNode }) 
 
       const url = new URL(anchor.href, window.location.href);
       if (url.origin !== window.location.origin) return;
-      if (url.pathname === lastPathnameRef.current && url.search === window.location.search) {
+      if (url.pathname === lastPathnameRef.current) {
         return;
       }
 
@@ -141,7 +149,7 @@ export default function NavigationLoader({ children }: { children: ReactNode }) 
     if (pathname !== lastPathnameRef.current) {
       lastPathnameRef.current = pathname;
       if (!visible) {
-        startNavigation();
+        setTimeout(() => startNavigation(), 0);
       }
       if (rafRef.current !== null) {
         cancelAnimationFrame(rafRef.current);
