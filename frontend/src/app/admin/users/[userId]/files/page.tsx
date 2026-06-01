@@ -8,11 +8,13 @@ import {
   fetchUserFiles,
   getApiErrorMessage,
   updateAdminUserFileDownloadPolicy,
+  deleteUserFile,
 } from '@/lib/api';
 import type { AdminUserBasic, AdminUserFile } from '@/lib/types';
 import { useI18n } from '@/components/i18n-context';
 import { useAppNavigate } from '@/hooks/use-app-navigate';
 import AdminUserFilesList from '../../../components/admin-user-files-list';
+import ConfirmModal from '../../../components/confirm-modal';
 
 interface DownloadPolicyForm {
   downloadLimit24h: string;
@@ -33,6 +35,8 @@ export default function AdminUserFilesPage() {
   const [fileSearch, setFileSearch] = useState('');
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [actionLoading, setActionLoading] = useState<Set<string>>(new Set());
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [confirmLoading, setConfirmLoading] = useState(false);
 
   const loadInitial = useCallback(
     async (search?: string) => {
@@ -92,66 +96,96 @@ export default function AdminUserFilesPage() {
   }
 
   return (
-    <AdminUserFilesList
-      user={user}
-      files={files}
-      locale={locale}
-      t={t}
-      loading={loading}
-      loadingMore={loadingMore}
-      hasMore={hasMore}
-      fileSearch={fileSearch}
-      onFileSearch={handleSearch}
-      onLoadMore={loadMore}
-      onBack={() => navigate.push('/admin/users')}
-      onDeleteFile={() => {
-        toast.error(t('admin.deleteFileError'));
-      }}
-      onSavePolicy={async (fileId, form: DownloadPolicyForm) => {
-        const actionKey = `policy:${fileId}`;
-        setActionLoading((prev) => new Set(prev).add(actionKey));
-        try {
-          const downloadLimit24h =
-            form.downloadLimit24h.trim() === ''
-              ? null
-              : Number(form.downloadLimit24h);
-          const bandwidthLimit24h =
-            form.bandwidthLimitGB.trim() === ''
-              ? null
-              : Math.round(Number(form.bandwidthLimitGB) * 1024 ** 3).toString();
+    <>
+      <AdminUserFilesList
+        user={user}
+        files={files}
+        locale={locale}
+        t={t}
+        loading={loading}
+        loadingMore={loadingMore}
+        hasMore={hasMore}
+        fileSearch={fileSearch}
+        onFileSearch={handleSearch}
+        onLoadMore={loadMore}
+        onBack={() => navigate.push('/admin/users')}
+        onDeleteFile={(fileId) => setConfirmDeleteId(fileId)}
+        onSavePolicy={async (fileId, form: DownloadPolicyForm) => {
+          const actionKey = `policy:${fileId}`;
+          setActionLoading((prev) => new Set(prev).add(actionKey));
+          try {
+            const downloadLimit24h =
+              form.downloadLimit24h.trim() === ''
+                ? null
+                : Number(form.downloadLimit24h);
+            const bandwidthLimit24h =
+              form.bandwidthLimitGB.trim() === ''
+                ? null
+                : Math.round(Number(form.bandwidthLimitGB) * 1024 ** 3).toString();
 
-          const updated = await updateAdminUserFileDownloadPolicy(userId, fileId, {
-            downloadLimit24h,
-            bandwidthLimit24h,
-          });
+            const updated = await updateAdminUserFileDownloadPolicy(userId, fileId, {
+              downloadLimit24h,
+              bandwidthLimit24h,
+            });
 
-          setFiles((prev) =>
-            prev.map((file) =>
-              file.id === fileId
-                ? {
-                    ...file,
-                    downloadLimit24h: updated.downloadLimit24h,
-                    downloads24h: updated.downloads24h,
-                    bandwidthLimit24h: updated.bandwidthLimit24h,
-                    bandwidthUsed24h: updated.bandwidthUsed24h,
-                    lastDownloadReset: updated.lastDownloadReset,
-                  }
-                : file,
-            ),
-          );
-          toast.success(t('admin.policyUpdated'));
-        } catch (err: unknown) {
-          toast.error(getApiErrorMessage(err, t('admin.policyUpdateError')));
-          throw err;
-        } finally {
-          setActionLoading((prev) => {
-            const next = new Set(prev);
-            next.delete(actionKey);
-            return next;
-          });
-        }
-      }}
-      actionLoading={actionLoading}
-    />
+            setFiles((prev) =>
+              prev.map((file) =>
+                file.id === fileId
+                  ? {
+                      ...file,
+                      downloadLimit24h: updated.downloadLimit24h,
+                      downloads24h: updated.downloads24h,
+                      bandwidthLimit24h: updated.bandwidthLimit24h,
+                      bandwidthUsed24h: updated.bandwidthUsed24h,
+                      lastDownloadReset: updated.lastDownloadReset,
+                    }
+                  : file,
+              ),
+            );
+            toast.success(t('admin.policyUpdated'));
+          } catch (err: unknown) {
+            toast.error(getApiErrorMessage(err, t('admin.policyUpdateError')));
+            throw err;
+          } finally {
+            setActionLoading((prev) => {
+              const next = new Set(prev);
+              next.delete(actionKey);
+              return next;
+            });
+          }
+        }}
+        actionLoading={actionLoading}
+      />
+
+      {confirmDeleteId && (
+        <ConfirmModal
+          title={t('admin.delete')}
+          message={t('admin.confirmDeleteFile')}
+          loading={confirmLoading}
+          t={t}
+          onConfirm={async () => {
+            setConfirmLoading(true);
+            const actionKey = `delete:${confirmDeleteId}`;
+            setActionLoading((prev) => new Set(prev).add(actionKey));
+            try {
+              await deleteUserFile(userId, confirmDeleteId);
+              setFiles((prev) => prev.filter((file) => file.id !== confirmDeleteId));
+              toast.success(t('admin.deleteFileSuccess'));
+              setConfirmDeleteId(null);
+            } catch (err: unknown) {
+              toast.error(getApiErrorMessage(err, t('admin.deleteFileError')));
+            } finally {
+              setConfirmLoading(false);
+              setActionLoading((prev) => {
+                const next = new Set(prev);
+                next.delete(actionKey);
+                return next;
+              });
+            }
+          }}
+          onClose={() => setConfirmDeleteId(null)}
+        />
+      )}
+    </>
   );
 }
