@@ -37,25 +37,32 @@ function SettingInput({ setting, editingValue, t, formatBytes, onSettingChange, 
   const hint = getSettingHint(setting.key, currentValue, formatBytes, t);
 
   return (
-    <>
-      <div className="flex items-center gap-3">
-        <input
-          type="text"
-          value={currentValue}
-          onChange={handleChange}
-          className="flex-1 w-full border border-gray-300 rounded-lg px-3 py-1.5 focus:ring focus:ring-blue-100 outline-none text-sm"
-          aria-label={`Setting ${setting.key}`}
-        />
-        <span className="text-xs text-gray-400 w-24 text-right flex-shrink-0">{hint}</span>
+    <div className="flex flex-col gap-3">
+      <div>
+        <span className="block font-mono text-xs font-semibold text-slate-500 truncate mb-1">
+          {setting.key}
+        </span>
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={currentValue}
+            onChange={handleChange}
+            className="flex-1 w-full border border-gray-300 rounded-lg px-3 py-1.5 focus:ring focus:ring-blue-100 outline-none text-sm"
+            aria-label={`Setting ${setting.key}`}
+          />
+          <span className="text-xs text-gray-400 w-24 text-right flex-shrink-0">{hint}</span>
+        </div>
       </div>
-      <button
-        onClick={handleUpdate}
-        disabled={!isChanged}
-        className="px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:bg-gray-100 disabled:text-gray-400 rounded-md text-sm font-medium transition-colors"
-      >
-        {t('admin.update')}
-      </button>
-    </>
+      <div className="flex justify-end">
+        <button
+          onClick={handleUpdate}
+          disabled={!isChanged}
+          className="w-full px-3 py-1.5 bg-blue-50 text-blue-600 hover:bg-blue-100 disabled:bg-gray-100 disabled:text-gray-400 rounded-md text-sm font-medium transition-colors"
+        >
+          {t('admin.update')}
+        </button>
+      </div>
+    </div>
   );
 }
 
