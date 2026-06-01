@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import axios from 'axios';
-import { api, abortUpload, createFolder } from '@/lib/api';
+import { api, abortUpload, createFolderBatch } from '@/lib/api';
 import { useAuth } from '@/components/auth-context';
 import { useAppSelector } from '@/lib/store';
 import { loadUploadConfig } from '@/lib/upload-config-slice';
@@ -347,25 +347,20 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Sort directories by depth (parent before child)
-    const dirs = Array.from(dirSet).sort((a, b) => a.split('/').length - b.split('/').length);
+    const dirs = Array.from(dirSet);
 
     // Create folders on backend and cache folderId mapping
     const folderMap = new Map<string, string>();
 
-    for (const dir of dirs) {
-      const parts = dir.split('/');
-      const name = parts[parts.length - 1];
-      const parentPath = parts.slice(0, -1).join('/');
-      const parentId = parentPath ? folderMap.get(parentPath) : folderId;
-
+    if (dirs.length > 0) {
       try {
-        const folder = await createFolder(name, parentId);
-        folderMap.set(dir, folder.id);
+        const batchResult = await createFolderBatch(dirs, folderId);
+        Object.entries(batchResult).forEach(([path, id]) => {
+          folderMap.set(path, id);
+        });
       } catch (error: unknown) {
         const msg = axios.isAxiosError(error) ? error.response?.data?.message || error.message : error instanceof Error ? error.message : String(error);
-        console.warn(`Failed to create folder "${dir}":`, msg);
-        folderMap.set(dir, parentId || '');
+        console.warn('Failed to create folders in batch:', msg);
       }
     }
 

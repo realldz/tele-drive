@@ -54,6 +54,22 @@ export class FolderController {
     return result;
   }
 
+  @Post('batch')
+  async createBatch(
+    @Body() body: { paths: string[]; parentId?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const result = await this.folderService.createBatch(
+      body.paths,
+      req.user.userId,
+      body.parentId || undefined,
+    );
+    this.logger.log(
+      `Batch folders created: count=${body.paths.length}, userId=${req.user.userId}, parentId=${body.parentId || 'root'}`,
+    );
+    return result;
+  }
+
   @Get('content')
   getContent(
     @Query() pagination: PaginationQueryDto,
