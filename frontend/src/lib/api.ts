@@ -159,6 +159,11 @@ export async function createFolder(name: string, parentId?: string) {
   return res.data;
 }
 
+export async function createFolderBatch(paths: string[], parentId?: string): Promise<Record<string, string>> {
+  const res = await api.post(`/folders/batch`, { paths, parentId });
+  return res.data;
+}
+
 export async function deleteFolder(id: string) {
   return api.delete(`/folders/${id}`);
 }

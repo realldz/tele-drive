@@ -93,6 +93,49 @@ export class FolderService {
   }
 
   /**
+   * Tạo nhiều folder hàng loạt (dùng cho upload thư mục con)
+   */
+  async createBatch(
+    paths: string[],
+    userId: string,
+    parentId?: string,
+  ): Promise<Record<string, string>> {
+    const sortedPaths = [...paths].sort(
+      (a, b) => a.split('/').length - b.split('/').length,
+    );
+
+    const folderMap = new Map<string, string>();
+    const result: Record<string, string> = {};
+
+    for (const dir of sortedPaths) {
+      const parts = dir.split('/');
+      const name = parts[parts.length - 1];
+      const parentPath = parts.slice(0, -1).join('/');
+      const currentParentId = parentPath ? folderMap.get(parentPath) : parentId;
+
+      try {
+        const folder = await this.create(
+          name,
+          userId,
+          currentParentId,
+          'merge',
+        );
+        folderMap.set(dir, folder.id);
+        result[dir] = folder.id;
+      } catch (error: unknown) {
+        this.logger.warn(
+          `Failed to create batch folder "${dir}": ${error instanceof Error ? error.message : String(error)}`,
+        );
+        const fallbackId = currentParentId || '';
+        folderMap.set(dir, fallbackId);
+        result[dir] = fallbackId;
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Danh sách folders — scope theo userId, ẩn soft-deleted
    */
   async findAll(userId: string, parentId?: string) {
