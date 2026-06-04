@@ -14,8 +14,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   S3_PUBLIC_ACCESS_ENABLED: 'true', // Cho phép public S3 bucket access toàn cục
   MAX_BUFFER_FILE_SIZE: '52428800', // 50 MB - kích thước file đệm tối đa
   MAX_BUFFER_DISK_MB: '2048', // 2 GB - dung lượng đệm tối đa trên đĩa
-  MAX_BATCH_SIZE: '10', // Số tệp tối đa trong 1 batch đồng bộ
-  MAX_BATCH_TOTAL_SIZE: '314572800', // 300 MB - tổng dung lượng tối đa 1 batch
+  DISPATCH_CONCURRENCY: '0', // Số worker chạy song song (0 = tự động)
   BUFFER_TTL_HOURS: '24', // 24 giờ - thời gian hết hạn của tệp đệm
   BUFFER_MAX_RETRIES: '3', // 3 lần - số lần thử lại tối đa khi đồng bộ lỗi
 };
@@ -49,6 +48,15 @@ export class SettingsService implements OnModuleInit {
     }
     if (seeded > 0) {
       this.logger.log(`Seeded ${seeded} default system settings`);
+    }
+
+    // Clean up obsolete settings
+    const obsoleteKeys = ['MAX_BATCH_SIZE', 'MAX_BATCH_TOTAL_SIZE'];
+    const deleteRes = await this.prisma.systemSetting.deleteMany({
+      where: { key: { in: obsoleteKeys } },
+    });
+    if (deleteRes.count > 0) {
+      this.logger.log(`Cleaned up ${deleteRes.count} obsolete system settings`);
     }
   }
 

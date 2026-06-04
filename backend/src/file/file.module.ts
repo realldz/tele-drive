@@ -14,7 +14,8 @@ import { FileStorageUploadService } from './file-storage-upload.service';
 import { FileMaintenanceService } from './file-maintenance.service';
 import { TempStorageModule } from '../common/temp-storage/temp-storage.module';
 import { UploadBufferService } from './upload-buffer.service';
-import { UploadDispatcherService } from './upload-dispatcher.service';
+import { UploadQueueProcessor } from './upload-queue.processor';
+import { QueueModule } from '../queue';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { UploadDispatcherService } from './upload-dispatcher.service';
     AuthModule,
     NameConflictModule,
     TempStorageModule,
+    QueueModule,
   ],
   controllers: [FileController],
   providers: [
@@ -35,7 +37,7 @@ import { UploadDispatcherService } from './upload-dispatcher.service';
     TransferReadService,
     UploadSessionService,
     UploadBufferService,
-    UploadDispatcherService,
+    UploadQueueProcessor,
   ],
   exports: [
     FileMetadataService,

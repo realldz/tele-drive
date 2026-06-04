@@ -571,7 +571,7 @@ export default function Dashboard() {
         setCurrentFolderId(item.id);
       } else {
         const file = item as FileRecord;
-        if (file.status === 'complete') setPreviewFileId(file.id);
+        if (file.status === 'complete' || file.status === 'buffered') setPreviewFileId(file.id);
       }
     }
   }, [selection, orderedIds]);

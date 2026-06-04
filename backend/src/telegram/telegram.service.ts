@@ -1,8 +1,37 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectBot } from 'nestjs-telegraf';
 import { Telegraf, Telegram } from 'telegraf';
 import { Readable } from 'stream';
+import Redis from 'ioredis';
+import { randomUUID } from 'crypto';
+import { REDIS_CLIENT } from '../redis';
+
+const ACQUIRE_SLOT_LUA = `
+  local key = KEYS[1]
+  local now = tonumber(ARGV[1])
+  local windowMs = tonumber(ARGV[2])
+  local limit = tonumber(ARGV[3])
+  local uuid = ARGV[4]
+
+  redis.call('ZREMRANGEBYSCORE', key, '-inf', now - windowMs)
+  
+  local latest = redis.call('ZRANGE', key, -1, -1, 'WITHSCORES')
+  if latest and #latest >= 2 then
+    local latestScore = tonumber(latest[2])
+    if now - latestScore < 1000 then
+      return 0
+    end
+  end
+
+  local count = redis.call('ZCARD', key)
+  if count < limit then
+    redis.call('ZADD', key, now, uuid)
+    redis.call('PEXPIRE', key, windowMs + 10000)
+    return 1
+  end
+  return 0
+`;
 
 /** Transient error codes that should trigger a retry */
 const RETRYABLE_CODES = new Set([
@@ -127,9 +156,9 @@ export class TelegramService implements OnModuleInit {
   private readonly botIdList: bigint[] = [];
   /** Main bot's numeric Telegram ID */
   private mainBotId = 0n;
+  /** Round-robin counter for distributing uploads across bots */
+  private rrIndex = 0;
 
-  /** Per-bot sliding window rate limiter for sendDocument calls (botId → timestamps) */
-  private readonly sendTimestamps = new Map<bigint, number[]>();
   private readonly SEND_RATE_LIMIT: number;
   private readonly SEND_RATE_WINDOW_MS = 60_000;
 
@@ -141,6 +170,7 @@ export class TelegramService implements OnModuleInit {
   constructor(
     @InjectBot() private readonly bot: Telegraf,
     private readonly configService: ConfigService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {
     this.chatId = this.configService.get<string>('TELEGRAM_CHAT_ID') || '';
 
@@ -187,7 +217,6 @@ export class TelegramService implements OnModuleInit {
         this.botMap.set(botId, this.initBots[i]);
         this.botTokenMap.set(botId, token);
         this.botIdList.push(botId);
-        this.sendTimestamps.set(botId, []);
         if (i === 0) this.mainBotId = botId;
         this.logger.log(
           `Bot ${i}: id=${botId}, username=@${result.value.username}`,
@@ -224,37 +253,71 @@ export class TelegramService implements OnModuleInit {
 
   // ─── Rate Limiter ──────────────────────────────────────────────────
 
-  /** Count available slots for a specific bot within the sliding window */
-  private getAvailableSlots(botId: bigint): number {
-    const now = Date.now();
-    const ts = this.sendTimestamps.get(botId);
-    if (!ts) return 0;
-    while (ts.length > 0 && ts[0] <= now - this.SEND_RATE_WINDOW_MS) {
-      ts.shift();
-    }
-    return this.SEND_RATE_LIMIT - ts.length;
-  }
-
   /**
    * Trả về thời gian chờ (ms) cho đến khi có slot upload tiếp theo.
    * 0 nếu có slot sẵn.
    */
-  getWaitTimeMs(): number {
-    for (const botId of this.botIdList) {
-      if (this.getAvailableSlots(botId) > 0) return 0;
-    }
+  async getWaitTimeMs(): Promise<number> {
     if (this.botIdList.length === 0) return 0;
     const now = Date.now();
-    return Math.max(
-      0,
-      Math.min(
-        ...this.botIdList.map((botId) => {
-          const ts = this.sendTimestamps.get(botId);
-          if (!ts || ts.length === 0) return 0;
-          return ts[0] + this.SEND_RATE_WINDOW_MS - now;
-        }),
-      ),
-    );
+    const pipeline = this.redis.pipeline();
+    for (const botId of this.botIdList) {
+      const key = `ratelimit:upload:${botId}`;
+      pipeline.zremrangebyscore(key, '-inf', now - this.SEND_RATE_WINDOW_MS);
+      pipeline.zcard(key);
+      pipeline.zrange(key, 0, 0, 'WITHSCORES');
+      pipeline.zrange(key, -1, -1, 'WITHSCORES');
+    }
+    const results = await pipeline.exec();
+    if (!results) return 0;
+
+    let minWait = this.SEND_RATE_WINDOW_MS;
+    let anyAvailable = false;
+
+    for (let i = 0; i < this.botIdList.length; i++) {
+      const offset = i * 4;
+      const cardResult = results[offset + 1];
+      const oldestResult = results[offset + 2];
+      const latestResult = results[offset + 3];
+
+      if (cardResult) {
+        const count = cardResult[1] as number;
+        if (count < this.SEND_RATE_LIMIT) {
+          // Has capacity in 60s window. Now check 1s interval.
+          let wait = 0;
+          if (latestResult) {
+            const items = latestResult[1] as string[];
+            if (items && items.length >= 2) {
+              const latestScore = parseInt(items[1], 10);
+              wait = latestScore + 1000 - now;
+            }
+          }
+          if (wait <= 0) {
+            anyAvailable = true;
+            return 0; // Bot is immediately available
+          }
+          if (wait < minWait) {
+            minWait = wait;
+          }
+        } else {
+          // Window is full. Must wait for oldest slot to expire.
+          let wait = this.SEND_RATE_WINDOW_MS;
+          if (oldestResult) {
+            const items = oldestResult[1] as string[];
+            if (items && items.length >= 2) {
+              const oldestScore = parseInt(items[1], 10);
+              wait = oldestScore + this.SEND_RATE_WINDOW_MS - now;
+            }
+          }
+          if (wait < minWait) {
+            minWait = wait;
+          }
+        }
+      }
+    }
+
+    if (anyAvailable) return 0;
+    return Math.max(0, minWait);
   }
 
   /**
@@ -265,39 +328,56 @@ export class TelegramService implements OnModuleInit {
   async acquireUploadSlot(
     signal?: AbortSignal,
   ): Promise<{ botClient: Telegram; botId: bigint }> {
+    const uuid = randomUUID();
     while (true) {
       if (signal?.aborted) throw new Error('Upload cancelled');
 
-      let bestBotId = this.botIdList[0] ?? 0n;
-      let bestAvail = 0;
-      for (const botId of this.botIdList) {
-        const avail = this.getAvailableSlots(botId);
-        if (avail > bestAvail) {
-          bestAvail = avail;
-          bestBotId = botId;
+      const now = Date.now();
+      let acquiredBotId: bigint | null = null;
+      const botCount = this.botIdList.length;
+      // Round-robin: start from a different bot each call
+      const startIdx = this.rrIndex++ % botCount;
+
+      for (let i = 0; i < botCount; i++) {
+        const botId = this.botIdList[(startIdx + i) % botCount];
+        const key = `ratelimit:upload:${botId}`;
+        try {
+          const result = await this.redis.eval(
+            ACQUIRE_SLOT_LUA,
+            1,
+            key,
+            now.toString(),
+            this.SEND_RATE_WINDOW_MS.toString(),
+            this.SEND_RATE_LIMIT.toString(),
+            uuid,
+          );
+          if (Number(result) === 1) {
+            acquiredBotId = botId;
+            break;
+          }
+        } catch (err) {
+          this.logger.error(
+            `Failed to acquire slot for bot ${botId} in Redis: ${err instanceof Error ? err.message : String(err)}`,
+          );
         }
       }
-      if (bestAvail > 0) {
-        this.sendTimestamps.get(bestBotId)!.push(Date.now());
-        this.logger.debug(
-          `Upload slot acquired: bot ${bestBotId} (${bestAvail - 1} slots remaining)`,
-        );
-        return { botClient: this.botMap.get(bestBotId)!, botId: bestBotId };
+
+      if (acquiredBotId !== null) {
+        this.logger.debug(`Upload slot acquired: bot ${acquiredBotId}`);
+        return {
+          botClient: this.botMap.get(acquiredBotId)!,
+          botId: acquiredBotId,
+        };
       }
+
       // All bots full — wait for the earliest slot to expire
-      const now = Date.now();
-      const minWait = Math.min(
-        ...this.botIdList.map((botId) => {
-          const ts = this.sendTimestamps.get(botId);
-          if (!ts || ts.length === 0) return 0;
-          return ts[0] + this.SEND_RATE_WINDOW_MS - now + 100;
-        }),
-      );
+      const minWait = await this.getWaitTimeMs();
+      const waitMs = minWait > 0 ? minWait + 100 : 1000;
       this.logger.debug(
-        `Rate limiter: all ${this.botIdList.length} bot(s) full, waiting ${minWait}ms`,
+        `Rate limiter: all ${this.botIdList.length} bot(s) full, waiting ${waitMs}ms`,
       );
       await new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(resolve, minWait);
+        const timer = setTimeout(resolve, waitMs);
         if (signal) {
           if (signal.aborted) {
             clearTimeout(timer);

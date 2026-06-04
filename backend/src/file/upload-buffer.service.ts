@@ -18,6 +18,8 @@ import { SettingsService } from '../settings/settings.service';
 import { FileRecord, FileChunk } from '@prisma/client';
 import { CryptoService } from '../crypto/crypto.service';
 import * as crypto from 'crypto';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
 
 @Injectable()
 export class UploadBufferService {
@@ -29,6 +31,7 @@ export class UploadBufferService {
     private readonly nameConflictService: NameConflictService,
     private readonly cryptoService: CryptoService,
     private readonly settingsService: SettingsService,
+    @InjectQueue('upload-dispatch') private readonly uploadQueue: Queue,
   ) {}
 
   async shouldBuffer(size: number): Promise<boolean> {
@@ -73,6 +76,13 @@ export class UploadBufferService {
     folderId?: string;
     conflictAction?: ConflictAction;
   }): Promise<FileRecord> {
+    if (params.size <= 0) {
+      throw new HttpException(
+        'Empty files are not supported',
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     // 1. Check user quota
     await this.checkQuota(params.userId, params.size);
 
@@ -124,6 +134,36 @@ export class UploadBufferService {
       this.logger.log(
         `File buffered: "${targetFilename}" (${params.size} bytes, userId: ${params.userId}, key: ${storageKey})`,
       );
+
+      // Enqueue upload job
+      const maxRetries = await this.settingsService.getCachedSetting(
+        'BUFFER_MAX_RETRIES',
+        3,
+        (v) => parseInt(v, 10),
+      );
+
+      await this.uploadQueue
+        .add(
+          'dispatch-file',
+          {
+            type: 'file',
+            recordId: record.id,
+            tempStorageKey: storageKey,
+            userId: params.userId,
+          },
+          {
+            jobId: `file-${record.id}`,
+            attempts: maxRetries,
+            backoff: { type: 'exponential', delay: 5000 },
+            removeOnComplete: true,
+            removeOnFail: 100,
+          },
+        )
+        .catch((err) => {
+          this.logger.error(
+            `Failed to enqueue job for file ${record.id}: ${err}`,
+          );
+        });
 
       return record;
     } catch (err) {
@@ -192,6 +232,38 @@ export class UploadBufferService {
           encryptionIv,
         },
       });
+
+      // Enqueue upload job
+      const maxRetries = await this.settingsService.getCachedSetting(
+        'BUFFER_MAX_RETRIES',
+        3,
+        (v) => parseInt(v, 10),
+      );
+
+      await this.uploadQueue
+        .add(
+          'dispatch-chunk',
+          {
+            type: 'chunk',
+            chunkId: chunk.id,
+            fileRecordId: params.fileRecordId,
+            chunkIndex: params.chunkIndex,
+            tempStorageKey: storageKey,
+            userId: params.userId,
+          },
+          {
+            jobId: `chunk-${chunk.id}`,
+            attempts: maxRetries,
+            backoff: { type: 'exponential', delay: 5000 },
+            removeOnComplete: true,
+            removeOnFail: 100,
+          },
+        )
+        .catch((err) => {
+          this.logger.error(
+            `Failed to enqueue job for chunk ${chunk.id}: ${err}`,
+          );
+        });
 
       return chunk;
     } catch (err) {
