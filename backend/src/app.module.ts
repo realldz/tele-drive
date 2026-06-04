@@ -15,6 +15,7 @@ import { AppLoggerModule } from './common/logger/logger.module';
 import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
 import { CoreAppModule } from './core-app.module';
 import { TransferAppModule } from './transfer-app.module';
+import { TempStorageModule } from './common/temp-storage/temp-storage.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { TransferAppModule } from './transfer-app.module';
     CryptoModule,
     CoreAppModule,
     TransferAppModule,
+    TempStorageModule,
   ],
   controllers: [AppController],
   providers: [

@@ -181,7 +181,9 @@ export class FolderService {
     const filesWhere: Record<string, unknown> = {
       folderId: folderId || null,
       userId,
-      status: { in: ['complete', 'uploading'] as const },
+      status: {
+        in: ['complete', 'uploading', 'buffered', 'buffer_failed'] as const,
+      },
       deletedAt: null,
     };
 

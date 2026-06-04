@@ -61,6 +61,7 @@ services:
       PORT: 3001
       DATABASE_URL: postgresql://tele_drive:tele_drive@postgres:5432/tele_drive
       TELEGRAM_API_ROOT: http://nginx:8088
+      IS_TRANSFER_SERVICE: "false"
     volumes:
       - ./backend/.logs:/app/.logs
     depends_on:
@@ -86,8 +87,11 @@ services:
       PORT: 3001
       DATABASE_URL: postgresql://tele_drive:tele_drive@postgres:5432/tele_drive
       TELEGRAM_API_ROOT: http://nginx:8088
+      UPLOAD_BUFFER_DIR: /data/upload-buffer
+      IS_TRANSFER_SERVICE: "true"
     volumes:
       - ./backend/.logs:/app/.logs
+      - upload-buffer:/data/upload-buffer
     depends_on:
       postgres:
         condition: service_healthy
@@ -127,3 +131,4 @@ services:
 volumes:
   telegram-data:
   postgres-data:
+  upload-buffer:

@@ -166,6 +166,7 @@ export class TrashCleanupService {
       for (const file of trashFiles) {
         try {
           await this.fileLifecycleService.purgeFilesFromTelegram([file]);
+          await this.fileLifecycleService.purgeTempFiles([file]);
           await this.prisma.$transaction(async (tx) => {
             await tx.fileRecord.delete({ where: { id: file.id } });
             if (file.status === 'complete') {
@@ -252,6 +253,7 @@ export class TrashCleanupService {
       for (const file of expiredFiles) {
         try {
           await this.fileLifecycleService.purgeFilesFromTelegram([file]);
+          await this.fileLifecycleService.purgeTempFiles([file]);
           await this.prisma.$transaction(async (tx) => {
             await tx.fileRecord.delete({ where: { id: file.id } });
             if (file.status === 'complete') {

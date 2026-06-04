@@ -208,6 +208,10 @@ export async function abortUpload(fileId: string) {
   return api.post(`/files/upload/${fileId}/abort`);
 }
 
+export async function retryBuffer(id: string) {
+  return api.post(`/files/${id}/buffer-retry`);
+}
+
 // ── Signed Download URL ─────────────────────────────────────────────────────
 
 export interface SignedDownloadUrl {
@@ -439,6 +443,25 @@ export async function readAdminLogs(params: {
   }
 
   const res = await api.get(`/admin/logs/read?${query}`);
+  return res.data;
+}
+
+// ── Admin Buffer ─────────────────────────────────────────────────────────────
+
+export interface BufferStats {
+  bufferedCount: number;
+  failedCount: number;
+  tempStorageUsedBytes: string;
+  oldestBufferedAgeMs: number;
+}
+
+export async function fetchBufferStats(): Promise<BufferStats> {
+  const res = await api.get('/admin/buffer-stats');
+  return res.data;
+}
+
+export async function retryAllFailedBuffers(): Promise<{ retriedCount: number }> {
+  const res = await api.post('/admin/buffer-retry');
   return res.data;
 }
 

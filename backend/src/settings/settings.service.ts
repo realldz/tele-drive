@@ -12,6 +12,12 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   DOWNLOAD_URL_TTL_SECONDS: '300', // 5 phút — thời hạn signed download URL
   STREAM_COOKIE_TTL_SECONDS: '3600', // 1 giờ — thời hạn stream cookie
   S3_PUBLIC_ACCESS_ENABLED: 'true', // Cho phép public S3 bucket access toàn cục
+  MAX_BUFFER_FILE_SIZE: '52428800', // 50 MB - kích thước file đệm tối đa
+  MAX_BUFFER_DISK_MB: '2048', // 2 GB - dung lượng đệm tối đa trên đĩa
+  MAX_BATCH_SIZE: '10', // Số tệp tối đa trong 1 batch đồng bộ
+  MAX_BATCH_TOTAL_SIZE: '314572800', // 300 MB - tổng dung lượng tối đa 1 batch
+  BUFFER_TTL_HOURS: '24', // 24 giờ - thời gian hết hạn của tệp đệm
+  BUFFER_MAX_RETRIES: '3', // 3 lần - số lần thử lại tối đa khi đồng bộ lỗi
 };
 
 @Injectable()

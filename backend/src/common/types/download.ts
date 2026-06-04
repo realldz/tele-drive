@@ -1,10 +1,12 @@
 interface ChunkInfo {
   id: string;
-  telegramFileId: string;
+  telegramFileId: string | null;
   botId: bigint;
   telegramMessageId: number | null;
   iv: Buffer | null;
   size: number;
+  isBuffered?: boolean;
+  tempStorageKey?: string | null;
 }
 
 export interface SingleFileDownloadInfo {
@@ -30,4 +32,16 @@ export interface ChunkedDownloadInfo {
   mimeType: string;
 }
 
-export type DownloadInfo = SingleFileDownloadInfo | ChunkedDownloadInfo;
+export interface BufferedDownloadInfo {
+  filename: string;
+  size: bigint | number;
+  isBuffered: true;
+  tempStorageKey: string;
+  mimeType: string;
+  isChunked?: boolean;
+}
+
+export type DownloadInfo =
+  | SingleFileDownloadInfo
+  | ChunkedDownloadInfo
+  | BufferedDownloadInfo;

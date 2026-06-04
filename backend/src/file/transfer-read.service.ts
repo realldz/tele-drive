@@ -1,4 +1,5 @@
 import {
+  Inject,
   Injectable,
   Logger,
   NotFoundException,
@@ -11,7 +12,13 @@ import { Readable, Transform } from 'stream';
 import type { Response } from 'express';
 import { CryptoService } from '../crypto/crypto.service';
 import { SettingsService } from '../settings/settings.service';
-import type { DownloadInfo } from '../common/types/download';
+import type {
+  DownloadInfo,
+  SingleFileDownloadInfo,
+  ChunkedDownloadInfo,
+} from '../common/types/download';
+import { TEMP_STORAGE } from '../common/temp-storage';
+import type { TempStorage } from '../common/temp-storage';
 
 @Injectable()
 export class TransferReadService {
@@ -23,6 +30,7 @@ export class TransferReadService {
     private readonly telegram: TelegramService,
     private readonly cryptoService: CryptoService,
     private readonly settingsService: SettingsService,
+    @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
   ) {}
 
   async isMultiThreadEnabled(): Promise<boolean> {
@@ -54,7 +62,12 @@ export class TransferReadService {
     userId: string,
   ): Promise<{ url: string; expiresAt: string }> {
     const file = await this.prisma.fileRecord.findFirst({
-      where: { id: fileId, userId, status: 'complete', deletedAt: null },
+      where: {
+        id: fileId,
+        userId,
+        status: { in: ['complete', 'buffered'] },
+        deletedAt: null,
+      },
       select: { id: true },
     });
     if (!file) throw new NotFoundException('File not found');
@@ -84,7 +97,7 @@ export class TransferReadService {
     if (!file || file.deletedAt) {
       throw new NotFoundException('Shared file not found');
     }
-    if (file.status !== 'complete') {
+    if (file.status !== 'complete' && file.status !== 'buffered') {
       throw new BadRequestException('File upload not completed yet');
     }
 
@@ -105,7 +118,11 @@ export class TransferReadService {
     }
 
     const fileRecord = await this.prisma.fileRecord.findFirst({
-      where: { id: payload.fid, status: 'complete', deletedAt: null },
+      where: {
+        id: payload.fid,
+        status: { in: ['complete', 'buffered'] },
+        deletedAt: null,
+      },
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
     });
     if (!fileRecord) throw new NotFoundException('File not found');
@@ -121,7 +138,7 @@ export class TransferReadService {
       where: {
         id: fileId,
         userId: cookieSubject,
-        status: 'complete',
+        status: { in: ['complete', 'buffered'] },
         deletedAt: null,
       },
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
@@ -139,7 +156,7 @@ export class TransferReadService {
     const fileRecord = await this.prisma.fileRecord.findFirst({
       where: {
         id: fileId,
-        status: 'complete',
+        status: { in: ['complete', 'buffered'] },
         deletedAt: null,
         visibility: 'PUBLIC_LINK',
       },
@@ -158,7 +175,7 @@ export class TransferReadService {
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
     });
     if (!fileRecord) throw new NotFoundException('File not found');
-    if (fileRecord.status !== 'complete') {
+    if (fileRecord.status !== 'complete' && fileRecord.status !== 'buffered') {
       throw new BadRequestException('File upload not completed yet');
     }
 
@@ -173,7 +190,7 @@ export class TransferReadService {
     if (!fileRecord || fileRecord.deletedAt) {
       throw new NotFoundException('Shared file not found');
     }
-    if (fileRecord.status !== 'complete') {
+    if (fileRecord.status !== 'complete' && fileRecord.status !== 'buffered') {
       throw new BadRequestException('File upload not completed yet');
     }
 
@@ -191,18 +208,33 @@ export class TransferReadService {
     encryptedKey: string | null;
     encryptionIv: string | null;
     mimeType: string;
+    status: string;
+    tempStorageKey: string | null;
     chunks: Array<{
       id: string;
-      telegramFileId: string;
+      telegramFileId: string | null;
       botId: bigint;
       telegramMessageId: number | null;
       encryptionIv: string | null;
       size: number | bigint;
+      status?: string;
+      tempStorageKey?: string | null;
     }>;
   }): DownloadInfo {
     let dek: Buffer | null = null;
     if (fileRecord.isEncrypted && fileRecord.encryptedKey) {
       dek = this.cryptoService.decryptKey(fileRecord.encryptedKey);
+    }
+
+    if (fileRecord.status === 'buffered' && fileRecord.tempStorageKey) {
+      return {
+        filename: fileRecord.filename,
+        size: fileRecord.size,
+        isBuffered: true,
+        tempStorageKey: fileRecord.tempStorageKey,
+        mimeType: fileRecord.mimeType,
+        isChunked: false,
+      };
     }
 
     if (!fileRecord.isChunked && fileRecord.telegramFileId) {
@@ -228,6 +260,8 @@ export class TransferReadService {
       telegramMessageId: chunk.telegramMessageId,
       iv: chunk.encryptionIv ? Buffer.from(chunk.encryptionIv, 'hex') : null,
       size: Number(chunk.size),
+      isBuffered: chunk.status === 'buffered',
+      tempStorageKey: chunk.tempStorageKey,
     }));
 
     return {
@@ -273,7 +307,7 @@ export class TransferReadService {
   }
 
   private pipeStreamToResponse(
-    fetchBody: ReadableStream,
+    fetchBody: ReadableStream | Readable,
     res: Response,
     options: {
       decrypt?: { dek: Buffer; iv: Buffer; offset?: number };
@@ -281,7 +315,10 @@ export class TransferReadService {
     } = {},
   ): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-      const rawStream = Readable.fromWeb(fetchBody as any);
+      const rawStream =
+        typeof (fetchBody as any).getReader === 'function'
+          ? Readable.fromWeb(fetchBody as any)
+          : (fetchBody as Readable);
       rawStream.on('error', (err) => {
         if (!res.destroyed) res.end();
         reject(err);
@@ -356,28 +393,10 @@ export class TransferReadService {
       res.setHeader('Accept-Ranges', 'bytes');
     }
 
-    if (!downloadInfo.isChunked) {
-      const url = await this.resolveFileLink(
-        downloadInfo.telegramFileId,
-        downloadInfo.botId,
-        downloadInfo.telegramMessageId,
-        null,
-      );
-      const fetchRes = await fetchWithRetry(url);
-      if (!fetchRes.ok || !fetchRes.body) {
-        this.logger.error(
-          `Failed to fetch file from Telegram: "${downloadInfo.filename}" (status: ${fetchRes.status}, url: ${url})`,
-        );
-        res.status(500).send('Trich xuat file tu Telegram that bai');
-        return;
-      }
-
+    if ('isBuffered' in downloadInfo && downloadInfo.isBuffered) {
       try {
-        await this.pipeStreamToResponse(fetchRes.body, res, {
-          decrypt:
-            downloadInfo.isEncrypted && downloadInfo.dek && downloadInfo.iv
-              ? { dek: downloadInfo.dek, iv: downloadInfo.iv }
-              : undefined,
+        const stream = await this.tempStorage.read(downloadInfo.tempStorageKey);
+        await this.pipeStreamToResponse(stream, res, {
           endResponse: true,
         });
       } catch (err: unknown) {
@@ -397,8 +416,51 @@ export class TransferReadService {
       return;
     }
 
+    const info = downloadInfo as SingleFileDownloadInfo | ChunkedDownloadInfo;
+
+    if (!info.isChunked) {
+      const url = await this.resolveFileLink(
+        info.telegramFileId,
+        info.botId,
+        info.telegramMessageId,
+        null,
+      );
+      const fetchRes = await fetchWithRetry(url);
+      if (!fetchRes.ok || !fetchRes.body) {
+        this.logger.error(
+          `Failed to fetch file from Telegram: "${info.filename}" (status: ${fetchRes.status}, url: ${url})`,
+        );
+        res.status(500).send('Trich xuat file tu Telegram that bai');
+        return;
+      }
+
+      try {
+        await this.pipeStreamToResponse(fetchRes.body, res, {
+          decrypt:
+            info.isEncrypted && info.dek && info.iv
+              ? { dek: info.dek, iv: info.iv }
+              : undefined,
+          endResponse: true,
+        });
+      } catch (err: unknown) {
+        if (this.isClientDisconnect(err)) {
+          this.logger.debug(
+            `Client disconnected during download: "${info.filename}"`,
+          );
+        } else {
+          this.logger.error(
+            `Download failed: "${info.filename}"`,
+            err instanceof Error ? err.message : String(err),
+          );
+          if (!res.headersSent) res.status(500).end();
+          else if (!res.destroyed) res.end();
+        }
+      }
+      return;
+    }
+
     try {
-      const chunks = downloadInfo.chunks;
+      const chunks = info.chunks;
       const totalChunks = chunks.length;
 
       for (let i = 0; i < totalChunks; i++) {
@@ -407,34 +469,46 @@ export class TransferReadService {
           p < Math.min(i + 1 + this.PREFETCH_AHEAD, totalChunks);
           p++
         ) {
-          this.resolveFileLink(
-            chunks[p].telegramFileId,
-            chunks[p].botId,
-            chunks[p].telegramMessageId,
-            chunks[p].id,
-            `prefetch chunk ${p + 1}/${totalChunks} of "${downloadInfo.filename}"`,
-          );
+          if (!chunks[p].isBuffered) {
+            void this.resolveFileLink(
+              chunks[p].telegramFileId!,
+              chunks[p].botId,
+              chunks[p].telegramMessageId,
+              chunks[p].id,
+              `prefetch chunk ${p + 1}/${totalChunks} of "${info.filename}"`,
+            );
+          }
         }
 
-        const url = await this.resolveFileLink(
-          chunks[i].telegramFileId,
-          chunks[i].botId,
-          chunks[i].telegramMessageId,
-          chunks[i].id,
-          `chunk ${i + 1}/${totalChunks} of "${downloadInfo.filename}"`,
-        );
-
-        const fetchRes = await fetchWithRetry(url);
-        if (!fetchRes.ok || !fetchRes.body) {
-          throw new Error(
-            `Failed to fetch chunk ${i + 1}/${totalChunks} from Telegram`,
+        let chunkStream: Readable;
+        const key = chunks[i].tempStorageKey;
+        if (chunks[i].isBuffered && key) {
+          chunkStream = await this.tempStorage.read(key);
+        } else {
+          const url = await this.resolveFileLink(
+            chunks[i].telegramFileId!,
+            chunks[i].botId,
+            chunks[i].telegramMessageId,
+            chunks[i].id,
+            `chunk ${i + 1}/${totalChunks} of "${info.filename}"`,
           );
+
+          const fetchRes = await fetchWithRetry(url);
+          if (!fetchRes.ok || !fetchRes.body) {
+            throw new Error(
+              `Failed to fetch chunk ${i + 1}/${totalChunks} from Telegram`,
+            );
+          }
+          chunkStream = Readable.fromWeb(fetchRes.body as any);
         }
 
-        await this.pipeStreamToResponse(fetchRes.body, res, {
+        await this.pipeStreamToResponse(chunkStream, res, {
           decrypt:
-            downloadInfo.isEncrypted && downloadInfo.dek && chunks[i].iv
-              ? { dek: downloadInfo.dek, iv: chunks[i].iv! }
+            !chunks[i].isBuffered &&
+            info.isEncrypted &&
+            info.dek &&
+            chunks[i].iv
+              ? { dek: info.dek, iv: chunks[i].iv! }
               : undefined,
         });
       }
@@ -442,11 +516,11 @@ export class TransferReadService {
     } catch (error: unknown) {
       if (this.isClientDisconnect(error)) {
         this.logger.debug(
-          `Client disconnected during chunked download: "${downloadInfo.filename}"`,
+          `Client disconnected during chunked download: "${info.filename}"`,
         );
       } else {
         this.logger.error(
-          `Chunked download failed: "${downloadInfo.filename}"`,
+          `Chunked download failed: "${info.filename}"`,
           error instanceof Error ? error.stack : String(error),
         );
         if (!res.headersSent) {
@@ -528,29 +602,16 @@ export class TransferReadService {
       res.setHeader('Content-Disposition', 'inline');
     }
 
-    if (!downloadInfo.isChunked) {
-      const url = await this.resolveFileLink(
-        downloadInfo.telegramFileId,
-        downloadInfo.botId,
-        downloadInfo.telegramMessageId,
-        null,
-      );
-      const fetchRes = await fetchWithRetry(url, {
-        headers: { Range: `bytes=${start}-${end}` },
-      });
-      if (!fetchRes.ok || !fetchRes.body) {
-        this.logger.error(
-          `Failed to fetch from Telegram: "${downloadInfo.filename}"`,
-        );
-        return res.status(500).end();
-      }
-
+    if ('isBuffered' in downloadInfo && downloadInfo.isBuffered) {
       try {
-        await this.pipeStreamToResponse(fetchRes.body, res, {
-          decrypt:
-            downloadInfo.isEncrypted && downloadInfo.dek && downloadInfo.iv
-              ? { dek: downloadInfo.dek, iv: downloadInfo.iv, offset: start }
-              : undefined,
+        const stream = await this.tempStorage.read(
+          downloadInfo.tempStorageKey,
+          {
+            start,
+            end,
+          },
+        );
+        await this.pipeStreamToResponse(stream, res, {
           endResponse: true,
         });
       } catch (err: unknown) {
@@ -570,9 +631,51 @@ export class TransferReadService {
       return;
     }
 
+    const info = downloadInfo as SingleFileDownloadInfo | ChunkedDownloadInfo;
+
+    if (!info.isChunked) {
+      const url = await this.resolveFileLink(
+        info.telegramFileId,
+        info.botId,
+        info.telegramMessageId,
+        null,
+      );
+      const fetchRes = await fetchWithRetry(url, {
+        headers: { Range: `bytes=${start}-${end}` },
+      });
+      if (!fetchRes.ok || !fetchRes.body) {
+        this.logger.error(`Failed to fetch from Telegram: "${info.filename}"`);
+        return res.status(500).end();
+      }
+
+      try {
+        await this.pipeStreamToResponse(fetchRes.body, res, {
+          decrypt:
+            info.isEncrypted && info.dek && info.iv
+              ? { dek: info.dek, iv: info.iv, offset: start }
+              : undefined,
+          endResponse: true,
+        });
+      } catch (err: unknown) {
+        if (this.isClientDisconnect(err)) {
+          this.logger.debug(
+            `Client disconnected during ${disposition}: "${info.filename}"`,
+          );
+        } else {
+          this.logger.error(
+            `${disposition} failed: "${info.filename}"`,
+            err instanceof Error ? err.message : String(err),
+          );
+          if (!res.headersSent) res.status(500).end();
+          else if (!res.destroyed) res.end();
+        }
+      }
+      return;
+    }
+
     let currentOffset = 0;
     const chunksToFetch: {
-      telegramFileId: string;
+      telegramFileId: string | null;
       botId: bigint;
       telegramMessageId: number | null;
       id: string | null;
@@ -581,9 +684,11 @@ export class TransferReadService {
       fetchStart: number;
       fetchEnd: number;
       byteOffsetInChunk: number;
+      isBuffered: boolean;
+      tempStorageKey: string | null;
     }[] = [];
 
-    for (const chunk of downloadInfo.chunks) {
+    for (const chunk of info.chunks) {
       const chunkStart = currentOffset;
       const chunkEnd = currentOffset + chunk.size - 1;
 
@@ -601,6 +706,8 @@ export class TransferReadService {
           fetchStart,
           fetchEnd,
           byteOffsetInChunk: fetchStart,
+          isBuffered: !!chunk.isBuffered,
+          tempStorageKey: chunk.tempStorageKey || null,
         });
       }
       currentOffset += chunk.size;
@@ -615,33 +722,44 @@ export class TransferReadService {
           p < Math.min(i + 1 + this.PREFETCH_AHEAD, chunksToFetch.length);
           p++
         ) {
-          this.resolveFileLink(
-            chunksToFetch[p].telegramFileId,
-            chunksToFetch[p].botId,
-            chunksToFetch[p].telegramMessageId,
-            chunksToFetch[p].id,
-          );
+          if (!chunksToFetch[p].isBuffered) {
+            void this.resolveFileLink(
+              chunksToFetch[p].telegramFileId!,
+              chunksToFetch[p].botId,
+              chunksToFetch[p].telegramMessageId,
+              chunksToFetch[p].id,
+            );
+          }
         }
 
-        const url = await this.resolveFileLink(
-          chunkReq.telegramFileId,
-          chunkReq.botId,
-          chunkReq.telegramMessageId,
-          chunkReq.id,
-        );
-        const fetchRes = await fetchWithRetry(url, {
-          headers: {
-            Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}`,
-          },
-        });
-        if (!fetchRes.ok || !fetchRes.body)
-          throw new Error('Fetch chunk error');
+        let chunkStream: Readable;
+        if (chunkReq.isBuffered && chunkReq.tempStorageKey) {
+          chunkStream = await this.tempStorage.read(chunkReq.tempStorageKey, {
+            start: chunkReq.fetchStart,
+            end: chunkReq.fetchEnd,
+          });
+        } else {
+          const url = await this.resolveFileLink(
+            chunkReq.telegramFileId!,
+            chunkReq.botId,
+            chunkReq.telegramMessageId,
+            chunkReq.id,
+          );
+          const fetchRes = await fetchWithRetry(url, {
+            headers: {
+              Range: `bytes=${chunkReq.fetchStart}-${chunkReq.fetchEnd}`,
+            },
+          });
+          if (!fetchRes.ok || !fetchRes.body)
+            throw new Error('Fetch chunk error');
+          chunkStream = Readable.fromWeb(fetchRes.body as any);
+        }
 
-        await this.pipeStreamToResponse(fetchRes.body, res, {
+        await this.pipeStreamToResponse(chunkStream, res, {
           decrypt:
-            downloadInfo.isEncrypted && downloadInfo.dek && chunkReq.iv
+            !chunkReq.isBuffered && info.isEncrypted && info.dek && chunkReq.iv
               ? {
-                  dek: downloadInfo.dek,
+                  dek: info.dek,
                   iv: chunkReq.iv,
                   offset: chunkReq.byteOffsetInChunk,
                 }
@@ -652,11 +770,11 @@ export class TransferReadService {
     } catch (err: unknown) {
       if (this.isClientDisconnect(err)) {
         this.logger.debug(
-          `Client disconnected during ${disposition}: "${downloadInfo.filename}"`,
+          `Client disconnected during ${disposition}: "${info.filename}"`,
         );
       } else {
         this.logger.error(
-          `${disposition} error: "${downloadInfo.filename}"`,
+          `${disposition} error: "${info.filename}"`,
           err instanceof Error ? err.message : String(err),
         );
       }

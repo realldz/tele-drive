@@ -14,6 +14,7 @@ import { AppLoggerModule } from './common/logger/logger.module';
 import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
 import { StaleUploadCleanupService } from './common/stale-upload-cleanup.service';
 import { TransferAppModule } from './transfer-app.module';
+import { TempStorageModule } from './common/temp-storage/temp-storage.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { TransferAppModule } from './transfer-app.module';
     PrismaModule,
     CryptoModule,
     TransferAppModule,
+    TempStorageModule,
   ],
   controllers: [AppController],
   providers: [
