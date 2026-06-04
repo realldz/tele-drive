@@ -16,6 +16,8 @@ import { RequestLoggingInterceptor } from './common/interceptors/request-logging
 import { CoreAppModule } from './core-app.module';
 import { TransferAppModule } from './transfer-app.module';
 import { TempStorageModule } from './common/temp-storage/temp-storage.module';
+import { RedisModule } from './redis';
+import { QueueModule } from './queue';
 
 @Module({
   imports: [
@@ -23,6 +25,8 @@ import { TempStorageModule } from './common/temp-storage/temp-storage.module';
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
+    RedisModule,
+    QueueModule,
     TelegrafModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({

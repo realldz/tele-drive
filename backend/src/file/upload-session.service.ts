@@ -301,7 +301,7 @@ export class UploadSessionService {
     const maxConcurrent = await this.getMaxConcurrentChunks();
     const active = this.activeUploads.get(userId) || 0;
     if (active >= maxConcurrent) {
-      const waitMs = this.telegram.getWaitTimeMs();
+      const waitMs = await this.telegram.getWaitTimeMs();
       const retryAfter = Math.max(3, Math.ceil(waitMs / 1000));
       throw new HttpException(
         {

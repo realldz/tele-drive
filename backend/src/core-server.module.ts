@@ -14,6 +14,8 @@ import { BandwidthModule } from './common/bandwidth.module';
 import { AppLoggerModule } from './common/logger/logger.module';
 import { RequestLoggingInterceptor } from './common/interceptors/request-logging.interceptor';
 import { CoreAppModule } from './core-app.module';
+import { RedisModule } from './redis';
+import { QueueModule } from './queue';
 
 @Module({
   imports: [
@@ -21,6 +23,8 @@ import { CoreAppModule } from './core-app.module';
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
+    RedisModule,
+    QueueModule,
     TelegrafModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: (configService: ConfigService) => ({

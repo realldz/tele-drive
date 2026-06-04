@@ -9,7 +9,6 @@ const BYTE_SETTING_KEYS = [
   'DEFAULT_GUEST_BANDWIDTH',
   'DEFAULT_DAILY_BANDWIDTH_LIMIT',
   'MAX_BUFFER_FILE_SIZE',
-  'MAX_BATCH_TOTAL_SIZE',
 ];
 const SECONDS_SETTING_KEYS = ['DOWNLOAD_URL_TTL_SECONDS', 'STREAM_COOKIE_TTL_SECONDS'];
 
@@ -32,6 +31,7 @@ function getSettingHint(
   if (SECONDS_SETTING_KEYS.includes(key)) return `${value}s`;
   if (key === 'ENABLE_MULTI_THREAD_DOWNLOAD') return value === 'true' ? t('admin.enabled') : t('admin.disabled');
   if (key === 'MAX_BUFFER_DISK_MB') return `${value} MB`;
+  if (key === 'DISPATCH_CONCURRENCY') return value === '0' ? 'Auto' : `${value} workers`;
   if (key === 'BUFFER_TTL_HOURS') return `${value}h`;
   if (key === 'BUFFER_MAX_RETRIES') return `${value} retries`;
   return value;
@@ -59,8 +59,7 @@ const KEY_TO_GROUP: Record<string, TabId> = {
 
   MAX_BUFFER_FILE_SIZE: 'buffer',
   MAX_BUFFER_DISK_MB: 'buffer',
-  MAX_BATCH_SIZE: 'buffer',
-  MAX_BATCH_TOTAL_SIZE: 'buffer',
+  DISPATCH_CONCURRENCY: 'buffer',
   BUFFER_TTL_HOURS: 'buffer',
   BUFFER_MAX_RETRIES: 'buffer',
 
