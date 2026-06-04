@@ -282,9 +282,27 @@ export class TransferReadService {
     chunkDbId: string | null,
     context?: string,
   ): Promise<string> {
+    // 1. If the uploader bot is in the map, use it directly
     if (this.telegram.isBotAvailable(botId)) {
       return this.telegram.getFileLink(telegramFileId, botId, context);
     }
+
+    // 2. Bot not in map — try getFileLink via main bot fallback
+    //    (Local Bot API servers share file access across all bots)
+    this.logger.debug(
+      `Bot ${botId} not in map, trying main bot fallback for fileId: ${telegramFileId}`,
+    );
+    try {
+      return await this.telegram.getFileLink(
+        telegramFileId,
+        this.telegram.mainBotTelegramId,
+        context,
+      );
+    } catch {
+      // Main bot can't access this file_id either — need recovery
+    }
+
+    // 3. Expensive recovery: forward original message to get a new file_id
     if (!telegramMessageId) {
       throw new Error(`Bot ${botId} unavailable and no messageId for recovery`);
     }
