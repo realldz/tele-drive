@@ -622,7 +622,12 @@ export class TelegramService implements OnModuleInit {
   async recoverFileId(
     telegramMessageId: number,
   ): Promise<{ fileId: string; botId: bigint }> {
-    const mainBot = this.botMap.get(this.mainBotId)!;
+    const mainBot = this.botMap.get(this.mainBotId);
+    if (!mainBot) {
+      throw new Error(
+        `Cannot recover file: Telegram main bot is not initialized or unavailable (mainBotId: ${this.mainBotId})`,
+      );
+    }
     const forwarded = await this.withRetry('recoverFileId', () =>
       mainBot.forwardMessage(this.chatId, this.chatId, telegramMessageId),
     );
