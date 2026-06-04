@@ -1,7 +1,9 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { TEMP_STORAGE } from './temp-storage';
+import type { TempStorage } from './temp-storage';
 
 @Injectable()
 export class StaleUploadCleanupService {
@@ -13,6 +15,7 @@ export class StaleUploadCleanupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegram: TelegramService,
+    @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
   ) {}
 
   @Cron('0 */6 * * *') // Every 6 hours
@@ -23,7 +26,7 @@ export class StaleUploadCleanupService {
 
     const staleUploads = await this.prisma.fileRecord.findMany({
       where: {
-        status: { in: ['uploading', 'aborted'] },
+        status: { in: ['uploading', 'aborted', 'buffer_failed'] },
         updatedAt: { lt: cutoff },
       },
       include: { chunks: true },
@@ -37,8 +40,16 @@ export class StaleUploadCleanupService {
     let cleaned = 0;
     for (const file of staleUploads) {
       try {
-        // Delete chunks from Telegram
+        // Delete buffered files from temp storage
+        if (file.tempStorageKey) {
+          await this.tempStorage.delete(file.tempStorageKey).catch(() => {});
+        }
+
+        // Delete chunks from Telegram and temp storage
         for (const chunk of file.chunks) {
+          if (chunk.tempStorageKey) {
+            await this.tempStorage.delete(chunk.tempStorageKey).catch(() => {});
+          }
           if (chunk.telegramMessageId) {
             try {
               await this.telegram.deleteMessage(
@@ -70,8 +81,10 @@ export class StaleUploadCleanupService {
         this.logger.log(
           `Cleaned stale upload: "${file.filename}" (id: ${file.id}, chunks: ${file.chunks.length})`,
         );
-      } catch (err) {
-        this.logger.error(`Failed to clean stale upload ${file.id}: ${err}`);
+      } catch (err: unknown) {
+        this.logger.error(
+          `Failed to clean stale upload ${file.id}: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
 

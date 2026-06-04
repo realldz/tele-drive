@@ -11,6 +11,7 @@ import Breadcrumbs from '@/components/breadcrumbs';
 import ContextMenu from '@/components/context-menu';
 import SelectionActionBar from '@/components/selection-action-bar';
 import { useUpload } from '@/components/upload-context';
+import { useBufferSync } from '@/hooks/use-buffer-sync';
 import DashboardTopbar from '@/components/dashboard/dashboard-topbar';
 import DashboardContent from '@/components/dashboard/dashboard-content';
 import DashboardDialogs from '@/components/dashboard/dashboard-dialogs';
@@ -23,6 +24,7 @@ import {
   isConflictError, parseConflictResponse,
   fetchFolderContentInitial,
   fetchFolderContentNextPage,
+  retryBuffer,
 } from '@/lib/api';
 import ConflictDialog from '@/components/conflict-dialog';
 import type { ConflictInfo } from '@/lib/api';
@@ -40,6 +42,11 @@ export default function Dashboard() {
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [folders, setFolders] = useState<FolderRecord[]>([]);
   const [files, setFiles] = useState<FileRecord[]>([]);
+
+  // Poll status of buffered files
+  useBufferSync(files, (id, newStatus) => {
+    setFiles(prev => prev.map(f => f.id === id ? { ...f, status: newStatus } : f));
+  });
   const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
   const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set());
   const [actionLoading, setActionLoading] = useState<Set<string>>(new Set());
@@ -347,6 +354,16 @@ export default function Dashboard() {
     finally { setActionLoading(prev => { const next = new Set(prev); next.delete(id); return next; }); }
   }, [fetchContent, t]);
 
+  const handleRetryBuffer = useCallback(async (id: string) => {
+    try {
+      await retryBuffer(id);
+      setFiles(prev => prev.map(f => f.id === id ? { ...f, status: 'buffered', bufferRetries: 0 } : f));
+      toast.success(t('upload.complete'));
+    } catch {
+      toast.error(t('upload.failed'));
+    }
+  }, [t]);
+
   const handleDownload = useCallback(async (fileId: string, filename: string) => {
     setDownloadingFiles(prev => new Set(prev).add(fileId));
     toast.loading(t('dashboard.downloadStarted'), { icon: '⬇️', duration: 2000 });
@@ -648,6 +665,7 @@ export default function Dashboard() {
               onDragLeave={handleDragLeave} onDrop={handleDrop}
               onContextMenu={openContextMenu}
               onDownload={handleDownload} onDeleteStuckFile={handleDeleteStuckFile}
+              onRetryBuffer={handleRetryBuffer}
             />
           </div>
         </div>

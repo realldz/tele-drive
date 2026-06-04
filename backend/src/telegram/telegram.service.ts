@@ -94,6 +94,10 @@ export class TelegramService implements OnModuleInit {
   private readonly logger = new Logger(TelegramService.name);
   private readonly chatId: string;
 
+  get telegramChatId(): string {
+    return this.chatId;
+  }
+
   /** Max retry attempts for transient errors */
   private readonly MAX_RETRIES = 3;
   /** Base delay in ms for exponential backoff (used when no Retry-After is provided) */

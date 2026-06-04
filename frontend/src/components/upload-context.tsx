@@ -253,57 +253,71 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     if (processingRef.current) return;
     processingRef.current = true;
 
-    try {
-      while (true) {
-        const nextItem = queueRef.current.find(item => item.status === 'pending');
-        if (!nextItem) break;
+    const processItem = async (item: QueueItem) => {
+      updateItem(item.id, { status: 'uploading' });
 
-        updateItem(nextItem.id, { status: 'uploading' });
-
-        try {
-          if (nextItem.file.size <= maxChunkSize) {
-            await uploadSimple(nextItem);
-          } else {
-            await uploadChunked(nextItem);
-          }
-
-          const currentItem = queueRef.current.find(q => q.id === nextItem.id);
-          if (currentItem && currentItem.status !== 'cancelled') {
-            updateItem(nextItem.id, { status: 'complete', progress: 100 });
-            onUploadSuccessRef.current?.();
-            refreshQuota();
-          }
-        } catch (error: unknown) {
-          if (axios.isCancel(error) || (error instanceof Error && error.message === 'Upload cancelled')) {
-            // Already handled by cancelItem
-          } else if (axios.isAxiosError(error) && error.response?.status === 409) {
-            updateItem(nextItem.id, {
-              status: 'error',
-              errorMessage: 'conflict',
-              conflictInfo: {
-                type: 'file',
-                name: nextItem.file.name,
-                existingItemId: error.response.data?.existingItemId || '',
-              },
-            });
-          } else {
-            const errorMessage = axios.isAxiosError(error)
-              ? error.response?.data?.message || error.message || 'Upload failed'
-              : error instanceof Error ? error.message : 'Upload failed';
-            updateItem(nextItem.id, {
-              status: 'error',
-              errorMessage,
-            });
-          }
+      try {
+        if (item.file.size <= maxChunkSize) {
+          await uploadSimple(item);
+        } else {
+          await uploadChunked(item);
         }
 
-        abortControllersRef.current.delete(nextItem.id);
+        const currentItem = queueRef.current.find(q => q.id === item.id);
+        if (currentItem && currentItem.status !== 'cancelled') {
+          updateItem(item.id, { status: 'complete', progress: 100 });
+          onUploadSuccessRef.current?.();
+          refreshQuota();
+        }
+      } catch (error: unknown) {
+        if (axios.isCancel(error) || (error instanceof Error && error.message === 'Upload cancelled')) {
+          // Already handled by cancelItem
+        } else if (axios.isAxiosError(error) && error.response?.status === 409) {
+          updateItem(item.id, {
+            status: 'error',
+            errorMessage: 'conflict',
+            conflictInfo: {
+              type: 'file',
+              name: item.file.name,
+              existingItemId: error.response.data?.existingItemId || '',
+            },
+          });
+        } else {
+          const errorMessage = axios.isAxiosError(error)
+            ? error.response?.data?.message || error.message || 'Upload failed'
+            : error instanceof Error ? error.message : 'Upload failed';
+          updateItem(item.id, {
+            status: 'error',
+            errorMessage,
+          });
+        }
+      } finally {
+        abortControllersRef.current.delete(item.id);
+      }
+    };
+
+    try {
+      while (true) {
+        const pending = queueRef.current.filter(item => item.status === 'pending');
+        if (pending.length === 0) break;
+
+        const smallFiles = pending.filter(i => i.file.size <= maxChunkSize);
+        const largeFile = pending.find(i => i.file.size > maxChunkSize);
+
+        if (smallFiles.length > 0) {
+          const batch = smallFiles.slice(0, 5);
+          await Promise.allSettled(batch.map(item => processItem(item)));
+        } else if (largeFile) {
+          await processItem(largeFile);
+        } else {
+          break;
+        }
       }
     } finally {
       processingRef.current = false;
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [maxChunkSize, uploadSimple, uploadChunked, updateItem]);
+  }, [maxChunkSize, uploadSimple, uploadChunked, updateItem, refreshQuota]);
 
   // Auto-process queue when items are added
   useEffect(() => {

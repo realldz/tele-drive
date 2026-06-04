@@ -3,9 +3,12 @@ import {
   Logger,
   NotFoundException,
   ConflictException,
+  Inject,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { TEMP_STORAGE } from '../common/temp-storage';
+import type { TempStorage } from '../common/temp-storage';
 
 @Injectable()
 export class FileLifecycleService {
@@ -15,6 +18,7 @@ export class FileLifecycleService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly telegram: TelegramService,
+    @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
   ) {}
 
   private async acquireDeletionLock(userId: string): Promise<() => void> {
@@ -67,8 +71,26 @@ export class FileLifecycleService {
         }
       } catch (err) {
         this.logger.warn(
-          `Failed to delete Telegram message ${messageId}: ${err}`,
+          `Failed to delete Telegram message ${messageId}: ${err instanceof Error ? err.message : String(err)}`,
         );
+      }
+    }
+  }
+
+  async purgeTempFiles(
+    files: Array<{
+      tempStorageKey: string | null;
+      chunks: Array<{ tempStorageKey: string | null }>;
+    }>,
+  ): Promise<void> {
+    for (const file of files) {
+      if (file.tempStorageKey) {
+        await this.tempStorage.delete(file.tempStorageKey).catch(() => {});
+      }
+      for (const chunk of file.chunks) {
+        if (chunk.tempStorageKey) {
+          await this.tempStorage.delete(chunk.tempStorageKey).catch(() => {});
+        }
       }
     }
   }
@@ -87,6 +109,7 @@ export class FileLifecycleService {
     if (!fileRecord) return;
 
     await this.purgeFilesFromTelegram([fileRecord]);
+    await this.purgeTempFiles([fileRecord]);
 
     await this.prisma.$transaction(async (tx) => {
       await tx.fileRecord.delete({ where: { id } });
@@ -122,6 +145,7 @@ export class FileLifecycleService {
       if (!fileRecord) throw new NotFoundException('File not found in trash');
 
       await this.purgeFilesFromTelegram([fileRecord]);
+      await this.purgeTempFiles([fileRecord]);
 
       await this.prisma.$transaction(async (tx) => {
         await tx.fileRecord.delete({ where: { id } });
@@ -162,6 +186,7 @@ export class FileLifecycleService {
       }
 
       await this.purgeFilesFromTelegram(files);
+      await this.purgeTempFiles(files);
 
       await this.prisma.$transaction(async (tx) => {
         await tx.fileRecord.deleteMany({
@@ -221,6 +246,7 @@ export class FileLifecycleService {
       }
 
       await this.purgeFilesFromTelegram(files);
+      await this.purgeTempFiles(files);
 
       await this.prisma.$transaction(async (tx) => {
         if (fileIds.length > 0) {

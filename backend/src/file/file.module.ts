@@ -12,6 +12,9 @@ import { FileMetadataService } from './file-metadata.service';
 import { FileLifecycleService } from './file-lifecycle.service';
 import { FileStorageUploadService } from './file-storage-upload.service';
 import { FileMaintenanceService } from './file-maintenance.service';
+import { TempStorageModule } from '../common/temp-storage/temp-storage.module';
+import { UploadBufferService } from './upload-buffer.service';
+import { UploadDispatcherService } from './upload-dispatcher.service';
 
 @Module({
   imports: [
@@ -20,6 +23,7 @@ import { FileMaintenanceService } from './file-maintenance.service';
     SettingsModule,
     AuthModule,
     NameConflictModule,
+    TempStorageModule,
   ],
   controllers: [FileController],
   providers: [
@@ -30,6 +34,8 @@ import { FileMaintenanceService } from './file-maintenance.service';
     TrashCleanupService,
     TransferReadService,
     UploadSessionService,
+    UploadBufferService,
+    UploadDispatcherService,
   ],
   exports: [
     FileMetadataService,
@@ -38,6 +44,7 @@ import { FileMaintenanceService } from './file-maintenance.service';
     FileMaintenanceService,
     TransferReadService,
     UploadSessionService,
+    UploadBufferService,
   ],
 })
 export class FileModule {}

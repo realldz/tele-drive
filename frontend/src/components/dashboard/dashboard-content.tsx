@@ -1,5 +1,5 @@
 import React, { useCallback } from 'react';
-import { Folder, Globe, MoreVertical, Loader2, Download } from 'lucide-react';
+import { Folder, Globe, MoreVertical, Loader2, Download, CloudUpload, AlertTriangle } from 'lucide-react';
 import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
 import { getFileIcon } from '@/lib/file-icon';
 import { formatBytes } from '@/lib/api';
@@ -37,6 +37,7 @@ interface DashboardContentProps {
   onContextMenu: (e: React.MouseEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => void;
   onDownload: (fileId: string, filename: string) => void;
   onDeleteStuckFile: (e: React.MouseEvent, id: string) => void;
+  onRetryBuffer: (id: string) => void;
 }
 
 export default function DashboardContent({
@@ -64,6 +65,7 @@ export default function DashboardContent({
   onContextMenu,
   onDownload,
   onDeleteStuckFile,
+  onRetryBuffer,
 }: DashboardContentProps) {
   const { t, locale } = useI18n();
 
@@ -197,7 +199,7 @@ export default function DashboardContent({
               {visibleFiles.map(file => (
                 <div key={file.id} data-selectable-id={file.id} draggable onDragStart={(e) => onDragStart(e, file, 'file')}
                   onClick={(e) => onItemClick(e, file, 'file')}
-                  onContextMenu={(e) => file.status === 'complete' && onContextMenu(e, file, 'file')}
+                  onContextMenu={(e) => file.status !== 'uploading' && onContextMenu(e, file, 'file')}
                   className={`p-4 bg-white border rounded-xl shadow-sm transition-all group flex flex-col justify-between cursor-pointer ${
                     selection.isSelected(file.id)
                       ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
@@ -210,7 +212,23 @@ export default function DashboardContent({
                       {file.visibility !== 'PRIVATE' && <Globe className="absolute -bottom-1 -right-1 w-3.5 h-3.5 text-green-600 bg-white rounded-full p-px" />}
                     </div>
                     <div className="overflow-hidden flex-1">
-                      <span className="font-semibold text-gray-800 text-sm truncate block" title={file.filename}>{file.filename}</span>
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <span className="font-semibold text-gray-800 text-sm truncate block" title={file.filename}>{file.filename}</span>
+                        {file.status === 'buffered' && (
+                          <span title={t('file.syncingToCloud')} className="flex-shrink-0 inline-flex items-center">
+                            <CloudUpload className="w-4 h-4 text-blue-400 animate-pulse" />
+                          </span>
+                        )}
+                        {file.status === 'buffer_failed' && (
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); onRetryBuffer(file.id); }} 
+                            title={t('file.syncFailed')} 
+                            className="flex-shrink-0 inline-flex items-center cursor-pointer hover:scale-110 transition-transform"
+                          >
+                            <AlertTriangle className="w-4 h-4 text-amber-500" />
+                          </button>
+                        )}
+                      </div>
                       <span className="text-xs text-gray-500 mt-1">
                         {file.status === 'uploading' ? (
                           <span className="text-blue-500 font-medium flex items-center gap-1"><Loader2 size={12} className="animate-spin" /> {t('dashboard.processing')}</span>
@@ -259,7 +277,7 @@ export default function DashboardContent({
                   {visibleFiles.map(file => (
                     <tr key={file.id} data-selectable-id={file.id} draggable onDragStart={(e) => onDragStart(e, file, 'file')}
                       onClick={(e) => onItemClick(e, file, 'file')}
-                      onContextMenu={(e) => file.status === 'complete' && onContextMenu(e, file, 'file')}
+                      onContextMenu={(e) => file.status !== 'uploading' && onContextMenu(e, file, 'file')}
                       className={`cursor-pointer transition-colors group ${
                         selection.isSelected(file.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
                       }`}
@@ -271,13 +289,29 @@ export default function DashboardContent({
                             {file.visibility !== 'PRIVATE' && <Globe className="absolute -bottom-1 -right-1 w-3 h-3 text-green-600 bg-white rounded-full p-px" />}
                           </div>
                           <div>
-                            <span className="font-medium text-gray-800 block truncate max-w-[150px] sm:max-w-xs md:max-w-sm">{file.filename}</span>
+                            <div className="flex items-center gap-1.5 min-w-0">
+                              <span className="font-medium text-gray-800 block truncate max-w-[150px] sm:max-w-xs md:max-w-sm">{file.filename}</span>
+                              {file.status === 'buffered' && (
+                                <span title={t('file.syncingToCloud')} className="flex-shrink-0 inline-flex items-center">
+                                  <CloudUpload className="w-4 h-4 text-blue-400 animate-pulse" />
+                                </span>
+                              )}
+                              {file.status === 'buffer_failed' && (
+                                <button 
+                                  onClick={(e) => { e.stopPropagation(); onRetryBuffer(file.id); }} 
+                                  title={t('file.syncFailed')} 
+                                  className="flex-shrink-0 inline-flex items-center cursor-pointer hover:scale-110 transition-transform"
+                                >
+                                  <AlertTriangle className="w-4 h-4 text-amber-500" />
+                                </button>
+                              )}
+                            </div>
                             {file.status === 'uploading' && (<span className="text-blue-500 text-xs font-medium flex items-center gap-1 mt-0.5"><Loader2 size={12} className="animate-spin" /> {t('dashboard.listProcessing')}</span>)}
                             <span className="text-xs text-gray-500 sm:hidden block mt-0.5">{formatBytes(Number(file.size))}</span>
                           </div>
                         </div>
                       </td>
-                      <td className="p-3 md:p-4 text-sm text-gray-600 hidden sm:table-cell">{file.status === 'complete' ? formatBytes(Number(file.size)) : '-'}</td>
+                      <td className="p-3 md:p-4 text-sm text-gray-600 hidden sm:table-cell">{file.status !== 'uploading' ? formatBytes(Number(file.size)) : '-'}</td>
                       <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">{formatDate(file.createdAt)}</td>
                       <td className="p-3 md:p-4 text-right whitespace-nowrap">
                         {file.status === 'uploading' ? (

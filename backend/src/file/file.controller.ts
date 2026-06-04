@@ -19,6 +19,7 @@ import {
   UploadedFile,
   UnauthorizedException,
   SetMetadata,
+  NotFoundException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -43,6 +44,9 @@ import { FileMetadataService } from './file-metadata.service';
 import { FileLifecycleService } from './file-lifecycle.service';
 import { FileMaintenanceService } from './file-maintenance.service';
 
+import { PrismaService } from '../prisma/prisma.service';
+import { UploadBufferService } from './upload-buffer.service';
+
 const multerOptions = {
   storage: memoryStorage(),
   limits: { fileSize: MAX_CHUNK_SIZE + 1024 * 1024 },
@@ -59,8 +63,10 @@ export class FileController {
     private readonly fileMaintenanceService: FileMaintenanceService,
     private readonly transferReadService: TransferReadService,
     private readonly uploadSessionService: UploadSessionService,
+    private readonly uploadBufferService: UploadBufferService,
     private readonly cryptoService: CryptoService,
     private readonly trashCleanupService: TrashCleanupService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Public()
@@ -73,6 +79,25 @@ export class FileController {
     };
   }
 
+  @Get('buffer-status')
+  async getBufferStatus(
+    @Query('ids') ids: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    if (!ids) {
+      return [];
+    }
+    const fileIds = ids.split(',').filter(Boolean).slice(0, 50);
+    const files = await this.prisma.fileRecord.findMany({
+      where: {
+        id: { in: fileIds },
+        userId: req.user.userId,
+      },
+      select: { id: true, status: true },
+    });
+    return files;
+  }
+
   @Post('upload')
   @UseInterceptors(FileInterceptor('file', multerOptions))
   async upload(
@@ -82,6 +107,25 @@ export class FileController {
     onConflict: 'overwrite' | 'rename' | 'error' | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
+    const shouldBuffer = await this.uploadBufferService.shouldBuffer(file.size);
+    if (shouldBuffer) {
+      try {
+        return await this.uploadBufferService.acceptFile({
+          buffer: file.buffer,
+          filename: Buffer.from(file.originalname, 'latin1').toString('utf8'),
+          mimeType: file.mimetype,
+          size: file.size,
+          userId: req.user.userId,
+          folderId,
+          conflictAction: onConflict as ConflictAction | undefined,
+        });
+      } catch (err) {
+        this.logger.warn(
+          `Failed to buffer file "${file.originalname}" (${file.size} bytes) for user ${req.user.userId}, falling back to direct upload. Error: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+    }
+
     const result = await this.uploadSessionService.uploadFile(
       file,
       req.user.userId,
@@ -123,7 +167,7 @@ export class FileController {
       index,
       req.user.userId,
       req,
-    );
+    ) as Promise<unknown>;
   }
 
   @Post('upload/:fileId/complete')
@@ -211,7 +255,7 @@ export class FileController {
   @Public()
   @Head('d/:token')
   @HttpCode(HttpStatus.OK)
-  async checkSignedToken(@Param('token') token: string, @Res() res: Response) {
+  checkSignedToken(@Param('token') token: string, @Res() res: Response) {
     const payload = this.cryptoService.verifySignedToken(token);
     if (!payload)
       throw new UnauthorizedException('Invalid or expired download link');
@@ -269,7 +313,7 @@ export class FileController {
 
   @Public()
   @Delete('stream-cookie')
-  async clearStreamCookie(@Res({ passthrough: true }) res: Response) {
+  clearStreamCookie(@Res({ passthrough: true }) res: Response) {
     res.clearCookie('stream_token', { path: '/' });
     return { success: true };
   }
@@ -456,7 +500,7 @@ export class FileController {
   @Public()
   @UseGuards(OptionalJwtGuard)
   @Get('share/:token')
-  getSharedFile(@Param('token') token: string, @Req() req: Request) {
+  getSharedFile(@Param('token') token: string) {
     return this.fileMetadataService.getSharedFileInfo(token);
   }
 
@@ -516,6 +560,27 @@ export class FileController {
       `File permanently deleted: id=${id}, userId=${req.user.userId}`,
     );
     return result;
+  }
+
+  @Post(':id/buffer-retry')
+  async retryBuffer(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    const file = await this.prisma.fileRecord.findFirst({
+      where: {
+        id,
+        userId: req.user.userId,
+        status: 'buffer_failed',
+      },
+    });
+    if (!file) {
+      throw new NotFoundException('File not found or not in failed status');
+    }
+    return this.prisma.fileRecord.update({
+      where: { id },
+      data: {
+        status: 'buffered',
+        bufferRetries: 0,
+      },
+    });
   }
 
   @UseGuards(AdminGuard)
