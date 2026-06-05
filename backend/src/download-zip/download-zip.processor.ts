@@ -125,6 +125,7 @@ export class DownloadZipProcessor
       );
     } catch (err) {
       this.logger.error(`ZIP job failed: ${jobId}`, err);
+      await this.cleanupJobFiles(jobId);
       await this.prisma.downloadJob
         .update({
           where: { id: jobId },
@@ -136,6 +137,11 @@ export class DownloadZipProcessor
         .catch(() => {});
       throw err;
     }
+  }
+
+  private async cleanupJobFiles(jobId: string): Promise<void> {
+    const dirPath = path.join(this.baseDir, 'zip', jobId);
+    await fs.promises.rm(dirPath, { recursive: true, force: true }).catch(() => {});
   }
 
   private async collectFiles(jobId: string): Promise<FileEntry[]> {
@@ -513,10 +519,7 @@ export class DownloadZipProcessor
       for (const part of parts) {
         await this.tempStorage.delete(part.key).catch(() => {});
       }
-      const dirPath = path.join(this.baseDir, 'zip', job.id);
-      await fs.promises
-        .rm(dirPath, { recursive: true, force: true })
-        .catch(() => {});
+      await this.cleanupJobFiles(job.id);
 
       await this.prisma.downloadJob.update({
         where: { id: job.id },
@@ -526,15 +529,24 @@ export class DownloadZipProcessor
     }
 
     const stuckCutoff = new Date(Date.now() - 2 * 60 * 60 * 1000);
-    const stuck = await this.prisma.downloadJob.updateMany({
+    const stuckJobs = await this.prisma.downloadJob.findMany({
       where: {
         status: { in: ['pending', 'collecting', 'zipping', 'splitting'] },
         createdAt: { lt: stuckCutoff },
       },
-      data: { status: 'failed', errorMessage: 'Job timed out' },
     });
-    if (stuck.count > 0) {
-      this.logger.warn(`Marked ${stuck.count} stuck ZIP jobs as failed`);
+
+    if (stuckJobs.length > 0) {
+      for (const job of stuckJobs) {
+        await this.cleanupJobFiles(job.id);
+        await this.prisma.downloadJob.update({
+          where: { id: job.id },
+          data: { status: 'failed', errorMessage: 'Job timed out' },
+        });
+      }
+      this.logger.warn(
+        `Marked ${stuckJobs.length} stuck ZIP jobs as failed and cleaned up`,
+      );
     }
   }
 
