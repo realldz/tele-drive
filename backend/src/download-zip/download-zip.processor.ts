@@ -6,7 +6,7 @@ import { Job } from 'bullmq';
 import { ZipArchive } from 'archiver';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Readable, PassThrough } from 'stream';
+import { Readable, PassThrough, Writable } from 'stream';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService, fetchWithRetry } from '../telegram/telegram.service';
 import { CryptoService } from '../crypto/crypto.service';
@@ -34,6 +34,99 @@ interface FileEntry {
   fileRecordId: string;
   relativePath: string; // e.g. "FolderA/SubFolder/file.txt"
   size: bigint;
+}
+
+class ZipSplitStream extends Writable {
+  private currentPart = 0;
+  private currentBytes = 0;
+  private maxPartSize: number;
+  private jobId: string;
+  private tempStorage: TempStorage;
+  private currentPassThrough!: PassThrough;
+  private currentUploadPromise!: Promise<void>;
+  public zipParts: { key: string; size: number; index: number }[] = [];
+
+  constructor(jobId: string, maxPartSize: number, tempStorage: TempStorage) {
+    super();
+    this.jobId = jobId;
+    this.maxPartSize = maxPartSize;
+    this.tempStorage = tempStorage;
+    this.startNewPart();
+  }
+
+  private startNewPart() {
+    this.currentPassThrough = new PassThrough();
+    const key = `zip/${this.jobId}/part${String(this.currentPart).padStart(3, '0')}.zip`;
+    this.currentUploadPromise = this.tempStorage.write(
+      key,
+      this.currentPassThrough,
+    );
+  }
+
+  _write(
+    chunk: Buffer,
+    encoding: string,
+    callback: (error?: Error | null) => void,
+  ) {
+    let offset = 0;
+
+    const writeChunk = async () => {
+      try {
+        while (offset < chunk.length) {
+          const remaining = this.maxPartSize - this.currentBytes;
+          const toWrite = Math.min(remaining, chunk.length - offset);
+
+          const slice = chunk.subarray(offset, offset + toWrite);
+          const canContinue = this.currentPassThrough.write(slice);
+
+          this.currentBytes += toWrite;
+          offset += toWrite;
+
+          if (this.currentBytes >= this.maxPartSize) {
+            this.currentPassThrough.end();
+            this.zipParts.push({
+              key: `zip/${this.jobId}/part${String(this.currentPart).padStart(3, '0')}.zip`,
+              size: this.currentBytes,
+              index: this.currentPart,
+            });
+
+            // Wait for current upload to complete before starting next to avoid infinite memory buffering
+            await this.currentUploadPromise;
+
+            this.currentPart++;
+            this.currentBytes = 0;
+            this.startNewPart();
+          }
+
+          if (!canContinue) {
+            await new Promise((resolve) =>
+              this.currentPassThrough.once('drain', resolve),
+            );
+          }
+        }
+        callback();
+      } catch (err) {
+        callback(err as Error);
+      }
+    };
+
+    void writeChunk();
+  }
+
+  _final(callback: (error?: Error | null) => void) {
+    if (this.currentBytes > 0) {
+      this.currentPassThrough.end();
+      this.zipParts.push({
+        key: `zip/${this.jobId}/part${String(this.currentPart).padStart(3, '0')}.zip`,
+        size: this.currentBytes,
+        index: this.currentPart,
+      });
+      this.currentUploadPromise.then(() => callback()).catch(callback);
+    } else {
+      this.currentPassThrough.end(); // end empty stream
+      this.currentUploadPromise.then(() => callback()).catch(callback);
+    }
+  }
 }
 
 @Processor('download-zip', { concurrency: 2 })
@@ -84,32 +177,11 @@ export class DownloadZipProcessor
         return;
       }
 
-      // Phase 2: Create ZIP
+      // Phase 2: Create ZIP (on-the-fly splitting)
       await this.updateStatus(jobId, 'zipping');
-      const zipDir = path.join(this.baseDir, 'zip', jobId);
-      await fs.promises.mkdir(zipDir, { recursive: true });
-      const zipPath = path.join(zipDir, 'archive.zip');
+      const zipParts = await this.createZip(jobId, entries, job);
 
-      await this.createZip(jobId, entries, zipPath, job);
-
-      // Phase 3: Split if > 2GB
-      const zipStat = await fs.promises.stat(zipPath);
-      let zipParts: { key: string; size: number; index: number }[];
-
-      if (BigInt(zipStat.size) > PART_SIZE) {
-        await this.updateStatus(jobId, 'splitting');
-        zipParts = await this.splitZip(zipPath, Number(PART_SIZE), jobId);
-        await fs.promises.unlink(zipPath).catch(() => {});
-      } else {
-        // Move single file to TempStorage key
-        const key = `zip/${jobId}/part000.zip`;
-        const readStream = fs.createReadStream(zipPath);
-        await this.tempStorage.write(key, readStream);
-        await fs.promises.unlink(zipPath).catch(() => {});
-        zipParts = [{ key, size: zipStat.size, index: 0 }];
-      }
-
-      // Phase 4: Mark ready
+      // Phase 3: Mark ready
       await this.prisma.downloadJob.update({
         where: { id: jobId },
         data: {
@@ -227,11 +299,14 @@ export class DownloadZipProcessor
   private async createZip(
     jobId: string,
     entries: FileEntry[],
-    zipPath: string,
     bullJob: Job,
-  ): Promise<void> {
+  ): Promise<{ key: string; size: number; index: number }[]> {
     const archive = new ZipArchive({ zlib: { level: 1 } });
-    const output = fs.createWriteStream(zipPath);
+    const output = new ZipSplitStream(
+      jobId,
+      Number(PART_SIZE),
+      this.tempStorage,
+    );
 
     archive.pipe(output);
 
@@ -302,13 +377,15 @@ export class DownloadZipProcessor
     await archive.finalize();
 
     await new Promise<void>((resolve, reject) => {
-      output.on('close', resolve);
+      output.on('finish', resolve);
       output.on('error', reject);
     });
 
     if (skippedFiles.length > 0) {
       this.logger.warn(`ZIP ${jobId}: skipped ${skippedFiles.length} files`);
     }
+
+    return output.zipParts;
   }
 
   private async fetchFileStream(fileRecordId: string): Promise<Readable> {
@@ -427,84 +504,6 @@ export class DownloadZipProcessor
     }
   }
 
-  private async splitZip(
-    zipPath: string,
-    partSizeBytes: number,
-    jobId: string,
-  ): Promise<{ key: string; size: number; index: number }[]> {
-    const parts: { key: string; size: number; index: number }[] = [];
-    const inputStream = fs.createReadStream(zipPath, {
-      highWaterMark: 64 * 1024,
-    });
-
-    let partIndex = 0;
-    let bytesWrittenToPart = 0;
-    let currentPartKey = `zip/${jobId}/part${String(partIndex).padStart(3, '0')}.zip`;
-    let currentPartPath = path.join(this.baseDir, currentPartKey);
-    await fs.promises.mkdir(path.dirname(currentPartPath), { recursive: true });
-    let output = fs.createWriteStream(currentPartPath);
-
-    for await (const chunk of inputStream) {
-      const buf = chunk as Buffer;
-      let offset = 0;
-
-      while (offset < buf.length) {
-        const remaining = partSizeBytes - bytesWrittenToPart;
-        const toWrite = Math.min(remaining, buf.length - offset);
-
-        output.write(buf.subarray(offset, offset + toWrite));
-        bytesWrittenToPart += toWrite;
-        offset += toWrite;
-
-        if (bytesWrittenToPart >= partSizeBytes) {
-          output.end();
-          await new Promise<void>((resolve) =>
-            output.on('finish', () => resolve()),
-          );
-
-          const readStream = fs.createReadStream(currentPartPath);
-          await this.tempStorage.write(currentPartKey, readStream);
-          await fs.promises.unlink(currentPartPath).catch(() => {});
-
-          parts.push({
-            key: currentPartKey,
-            size: bytesWrittenToPart,
-            index: partIndex,
-          });
-
-          partIndex++;
-          bytesWrittenToPart = 0;
-          currentPartKey = `zip/${jobId}/part${String(partIndex).padStart(3, '0')}.zip`;
-          currentPartPath = path.join(this.baseDir, currentPartKey);
-          output = fs.createWriteStream(currentPartPath);
-        }
-      }
-    }
-
-    if (bytesWrittenToPart > 0) {
-      output.end();
-      await new Promise<void>((resolve) =>
-        output.on('finish', () => resolve()),
-      );
-
-      const readStream = fs.createReadStream(currentPartPath);
-      await this.tempStorage.write(currentPartKey, readStream);
-      await fs.promises.unlink(currentPartPath).catch(() => {});
-
-      parts.push({
-        key: currentPartKey,
-        size: bytesWrittenToPart,
-        index: partIndex,
-      });
-    } else {
-      output.end();
-      await fs.promises.unlink(currentPartPath).catch(() => {});
-    }
-
-    this.logger.log(`Split ZIP into ${parts.length} parts for job ${jobId}`);
-    return parts;
-  }
-
   @Cron('*/5 * * * *')
   async cleanupExpiredZips(): Promise<void> {
     const expired = await this.prisma.downloadJob.findMany({
@@ -533,7 +532,7 @@ export class DownloadZipProcessor
     const stuckCutoff = new Date(Date.now() - 2 * 60 * 60 * 1000);
     const stuckJobs = await this.prisma.downloadJob.findMany({
       where: {
-        status: { in: ['pending', 'collecting', 'zipping', 'splitting'] },
+        status: { in: ['pending', 'collecting', 'zipping'] },
         createdAt: { lt: stuckCutoff },
       },
     });

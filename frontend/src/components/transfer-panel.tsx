@@ -221,7 +221,7 @@ export default function TransferPanel() {
 
           {/* Download Items */}
           {downloadJobs.map(job => {
-            const hasActive = ['pending', 'collecting', 'zipping', 'splitting'].includes(job.status);
+            const hasActive = ['pending', 'collecting', 'zipping'].includes(job.status);
             const progress =
               job.totalFiles > 0 ? Math.round((job.processedFiles / job.totalFiles) * 100) : 0;
 
@@ -235,9 +235,6 @@ export default function TransferPanel() {
                 break;
               case 'zipping':
                 statusLabel = t('downloadZip.zipping');
-                break;
-              case 'splitting':
-                statusLabel = t('downloadZip.splitting');
                 break;
               case 'ready':
                 statusLabel = t('downloadZip.ready');
