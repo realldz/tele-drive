@@ -8,6 +8,7 @@ import {
   getApiErrorMessage, 
   fetchSystemStats, 
   retryAllFailedBuffers,
+  clearFailedZipJobs,
   type SystemStats 
 } from '@/lib/api';
 import type { AdminDashboardSummary } from '@/lib/types';
@@ -20,6 +21,7 @@ export default function AdminDashboardPage() {
   const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
+  const [clearingZips, setClearingZips] = useState(false);
 
   const fetchData = useCallback(() => {
     return Promise.all([fetchAdminDashboardSummary(), fetchSystemStats()])
@@ -64,6 +66,20 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleClearZips = async () => {
+    setClearingZips(true);
+    try {
+      const res = await clearFailedZipJobs();
+      toast.success(t('admin.clearedZipJobsCount', { count: res.deletedCount }));
+      const stats = await fetchSystemStats();
+      setSystemStats(stats);
+    } catch (err: unknown) {
+      toast.error(getApiErrorMessage(err, 'Lỗi khi xoá lịch sử ZIP'));
+    } finally {
+      setClearingZips(false);
+    }
+  };
+
   if (loading || !summary) {
     return <Loader2 className="animate-spin text-blue-500 mx-auto mt-8" size={24} />;
   }
@@ -74,6 +90,8 @@ export default function AdminDashboardPage() {
       systemStats={systemStats} 
       onRetryAll={handleRetryAll} 
       retrying={retrying}
+      onClearZips={handleClearZips}
+      clearingZips={clearingZips}
       t={t} 
     />
   );

@@ -477,6 +477,11 @@ export async function retryAllFailedBuffers(): Promise<{ retriedCount: number }>
   return res.data;
 }
 
+export async function clearFailedZipJobs(): Promise<{ deletedCount: number }> {
+  const res = await api.delete('/admin/zip-failed-jobs');
+  return res.data;
+}
+
 // ── S3 Credentials ──────────────────────────────────────────────────────────
 
 export async function fetchS3Credentials() {

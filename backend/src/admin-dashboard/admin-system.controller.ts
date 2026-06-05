@@ -1,4 +1,11 @@
-import { Controller, Get, Post, UseGuards, Inject } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Delete,
+  UseGuards,
+  Inject,
+} from '@nestjs/common';
 import { AdminGuard } from '../auth/admin.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { TEMP_STORAGE } from '../common/temp-storage';
@@ -175,5 +182,13 @@ export class AdminSystemController {
     }
 
     return { retriedCount };
+  }
+
+  @Delete('zip-failed-jobs')
+  async clearFailedZips() {
+    const result = await this.prisma.downloadJob.deleteMany({
+      where: { status: 'failed' },
+    });
+    return { deletedCount: result.count };
   }
 }
