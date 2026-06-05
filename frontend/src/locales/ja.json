@@ -463,6 +463,12 @@
   "downloadZip.downloadPart": "パート {index} をダウンロード ({size})",
   "downloadZip.download": "ZIPをダウンロード",
   "downloadZip.downloadAll": "すべてダウンロード",
-  "downloadZip.activeJob": "実行中のZIPダウンロードタスクが既に存在します。",
-  "downloadZip.bandwidthExceeded": "1日のダウンロード帯域幅制限を超えました。"
+  "downloadZip.activeJob": "アクティブなZIPダウンロードが既に進行中です。",
+  "downloadZip.bandwidthExceeded": "1日のダウンロード帯域幅制限を超過しました。",
+  "admin.zipDashboard": "ZIPダウンロードステータス",
+  "admin.zipStatsDescription": "バックグラウンドのZIP圧縮プロセスを管理および監視します。",
+  "admin.activeZipJobs": "実行中のジョブ",
+  "admin.readyZipJobs": "準備完了",
+  "admin.failedZipJobs": "失敗したジョブ",
+  "admin.zipTempStorageUsed": "使用中の一時ストレージ"
 }

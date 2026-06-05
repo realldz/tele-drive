@@ -5,19 +5,55 @@ import { TEMP_STORAGE } from '../common/temp-storage';
 import type { TempStorage } from '../common/temp-storage';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @UseGuards(AdminGuard)
 @Controller('admin')
-export class AdminBufferController {
+export class AdminSystemController {
+  private readonly zipBaseDir: string;
   constructor(
     private readonly prisma: PrismaService,
     @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
     @InjectQueue('upload-dispatch') private readonly uploadQueue: Queue,
-  ) {}
+  ) {
+    this.zipBaseDir = path.join(
+      process.env.UPLOAD_BUFFER_DIR || './.upload-buffer',
+      'zip',
+    );
+  }
 
-  @Get('buffer-stats')
-  async getBufferStats() {
-    const [bufferedCount, failedCount, bufferedFiles] = await Promise.all([
+  private async getDirSize(dirPath: string): Promise<bigint> {
+    let size = 0n;
+    try {
+      const entries = await fs.promises.readdir(dirPath, {
+        withFileTypes: true,
+      });
+      for (const entry of entries) {
+        const fullPath = path.join(dirPath, entry.name);
+        if (entry.isDirectory()) {
+          size += await this.getDirSize(fullPath);
+        } else if (entry.isFile()) {
+          const stats = await fs.promises.stat(fullPath);
+          size += BigInt(stats.size);
+        }
+      }
+    } catch {
+      // Ignore errors if dir doesn't exist
+    }
+    return size;
+  }
+
+  @Get('system-stats')
+  async getSystemStats() {
+    const [
+      bufferedCount,
+      failedCount,
+      bufferedFiles,
+      zipActiveCount,
+      zipReadyCount,
+      zipFailedCount,
+    ] = await Promise.all([
       this.prisma.fileRecord.count({ where: { status: 'buffered' } }),
       this.prisma.fileRecord.count({ where: { status: 'buffer_failed' } }),
       this.prisma.fileRecord.findMany({
@@ -26,9 +62,15 @@ export class AdminBufferController {
         take: 1,
         select: { createdAt: true },
       }),
+      this.prisma.downloadJob.count({
+        where: { status: { in: ['collecting', 'zipping', 'splitting'] } },
+      }),
+      this.prisma.downloadJob.count({ where: { status: 'ready' } }),
+      this.prisma.downloadJob.count({ where: { status: 'failed' } }),
     ]);
 
     const tempStorageUsed = await this.tempStorage.getUsedBytes();
+    const zipTempStorageUsed = await this.getDirSize(this.zipBaseDir);
     const oldestAge = bufferedFiles[0]
       ? Date.now() - bufferedFiles[0].createdAt.getTime()
       : 0;
@@ -41,11 +83,19 @@ export class AdminBufferController {
     );
 
     return {
-      bufferedCount,
-      failedCount,
-      tempStorageUsedBytes: tempStorageUsed.toString(),
-      oldestBufferedAgeMs: oldestAge,
-      queue: jobCounts,
+      buffer: {
+        bufferedCount,
+        failedCount,
+        tempStorageUsedBytes: tempStorageUsed.toString(),
+        oldestBufferedAgeMs: oldestAge,
+        queue: jobCounts,
+      },
+      zip: {
+        activeCount: zipActiveCount,
+        readyCount: zipReadyCount,
+        failedCount: zipFailedCount,
+        tempStorageUsedBytes: zipTempStorageUsed.toString(),
+      },
     };
   }
 

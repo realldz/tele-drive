@@ -1,12 +1,12 @@
 'use client';
 
 import type { AdminDashboardSummary } from '@/lib/types';
-import { formatBytes, type BufferStats } from '@/lib/api';
+import { formatBytes, type SystemStats } from '@/lib/api';
 import { Loader2 } from 'lucide-react';
 
 interface AdminDashboardOverviewProps {
   summary: AdminDashboardSummary;
-  bufferStats: BufferStats | null;
+  systemStats: SystemStats | null;
   onRetryAll: () => Promise<void>;
   retrying: boolean;
   t: (key: string, params?: Record<string, string | number>) => string;
@@ -41,7 +41,7 @@ const formatAge = (ms: number) => {
 
 export default function AdminDashboardOverview({
   summary,
-  bufferStats,
+  systemStats,
   onRetryAll,
   retrying,
   t,
@@ -77,14 +77,14 @@ export default function AdminDashboardOverview({
       </div>
 
       {/* Buffer Dashboard */}
-      {bufferStats && (
+      {systemStats?.buffer && (
         <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-6">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">{t('admin.bufferDashboard')}</h2>
               <p className="text-sm text-gray-500">{t('admin.bufferStatsDescription')}</p>
             </div>
-            {bufferStats.failedCount > 0 && (
+            {systemStats.buffer.failedCount > 0 && (
               <button
                 onClick={onRetryAll}
                 disabled={retrying}
@@ -105,14 +105,14 @@ export default function AdminDashboardOverview({
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
               <div className="text-xs font-medium text-slate-500 uppercase">{t('admin.bufferedCount')}</div>
-              <div className="mt-2 text-2xl font-bold text-slate-900">{bufferStats.bufferedCount}</div>
+              <div className="mt-2 text-2xl font-bold text-slate-900">{systemStats.buffer.bufferedCount}</div>
             </div>
             
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
               <div className="text-xs font-medium text-slate-500 uppercase">{t('admin.bufferFailedCount')}</div>
               <div className="mt-2 text-2xl font-bold text-slate-900 flex items-center gap-2">
-                <span>{bufferStats.failedCount}</span>
-                {bufferStats.failedCount > 0 && (
+                <span>{systemStats.buffer.failedCount}</span>
+                {systemStats.buffer.failedCount > 0 && (
                   <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
                 )}
               </div>
@@ -121,16 +121,57 @@ export default function AdminDashboardOverview({
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
               <div className="text-xs font-medium text-slate-500 uppercase">{t('admin.tempStorageUsed')}</div>
               <div className="mt-2 text-2xl font-bold text-slate-900">
-                {formatBytes(Number(bufferStats.tempStorageUsedBytes))}
+                {formatBytes(Number(systemStats.buffer.tempStorageUsedBytes))}
               </div>
             </div>
 
             <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
               <div className="text-xs font-medium text-slate-500 uppercase">{t('admin.oldestBufferedAge')}</div>
               <div className="mt-2 text-2xl font-bold text-slate-900">
-                {bufferStats.oldestBufferedAgeMs > 0 
-                  ? formatAge(bufferStats.oldestBufferedAgeMs)
+                {systemStats.buffer.oldestBufferedAgeMs > 0 
+                  ? formatAge(systemStats.buffer.oldestBufferedAgeMs)
                   : '-'}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ZIP Dashboard */}
+      {systemStats?.zip && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-gray-100 pb-4">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">{t('admin.zipDashboard')}</h2>
+              <p className="text-sm text-gray-500">{t('admin.zipStatsDescription')}</p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="text-xs font-medium text-slate-500 uppercase">{t('admin.activeZipJobs')}</div>
+              <div className="mt-2 text-2xl font-bold text-slate-900">{systemStats.zip.activeCount}</div>
+            </div>
+            
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="text-xs font-medium text-slate-500 uppercase">{t('admin.readyZipJobs')}</div>
+              <div className="mt-2 text-2xl font-bold text-slate-900">{systemStats.zip.readyCount}</div>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="text-xs font-medium text-slate-500 uppercase">{t('admin.failedZipJobs')}</div>
+              <div className="mt-2 text-2xl font-bold text-slate-900 flex items-center gap-2">
+                <span>{systemStats.zip.failedCount}</span>
+                {systemStats.zip.failedCount > 0 && (
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                )}
+              </div>
+            </div>
+
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="text-xs font-medium text-slate-500 uppercase">{t('admin.zipTempStorageUsed')}</div>
+              <div className="mt-2 text-2xl font-bold text-slate-900">
+                {formatBytes(Number(systemStats.zip.tempStorageUsedBytes))}
               </div>
             </div>
           </div>

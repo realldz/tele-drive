@@ -49,7 +49,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           if (status.status === 'ready' && status.parts.length === 1) {
             const link = document.createElement('a');
             link.href = API_URL + status.parts[0].downloadUrl;
-            link.setAttribute('download', 'download.zip');
+            link.setAttribute('download', '');
             document.body.appendChild(link);
             link.click();
             link.remove();

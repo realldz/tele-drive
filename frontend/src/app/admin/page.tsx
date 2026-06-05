@@ -6,9 +6,9 @@ import { Loader2 } from 'lucide-react';
 import { 
   fetchAdminDashboardSummary, 
   getApiErrorMessage, 
-  fetchBufferStats, 
+  fetchSystemStats, 
   retryAllFailedBuffers,
-  type BufferStats 
+  type SystemStats 
 } from '@/lib/api';
 import type { AdminDashboardSummary } from '@/lib/types';
 import { useI18n } from '@/components/i18n-context';
@@ -17,15 +17,15 @@ import AdminDashboardOverview from './components/admin-dashboard-overview';
 export default function AdminDashboardPage() {
   const { t } = useI18n();
   const [summary, setSummary] = useState<AdminDashboardSummary | null>(null);
-  const [bufferStats, setBufferStats] = useState<BufferStats | null>(null);
+  const [systemStats, setSystemStats] = useState<SystemStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [retrying, setRetrying] = useState(false);
 
   const fetchData = useCallback(() => {
-    return Promise.all([fetchAdminDashboardSummary(), fetchBufferStats()])
+    return Promise.all([fetchAdminDashboardSummary(), fetchSystemStats()])
       .then(([summaryData, statsData]) => {
         setSummary(summaryData);
-        setBufferStats(statsData);
+        setSystemStats(statsData);
       })
       .catch((err: unknown) => {
         toast.error(getApiErrorMessage(err, t('admin.dashboardLoadError')));
@@ -40,10 +40,10 @@ export default function AdminDashboardPage() {
   useEffect(() => {
     if (loading) return;
     const interval = setInterval(() => {
-      Promise.all([fetchAdminDashboardSummary(), fetchBufferStats()])
+      Promise.all([fetchAdminDashboardSummary(), fetchSystemStats()])
         .then(([summaryData, statsData]) => {
           setSummary(summaryData);
-          setBufferStats(statsData);
+          setSystemStats(statsData);
         })
         .catch((err) => console.error('Silent stats refresh failed', err));
     }, 10000);
@@ -55,8 +55,8 @@ export default function AdminDashboardPage() {
     try {
       const res = await retryAllFailedBuffers();
       toast.success(t('admin.retriedCount', { count: res.retriedCount }));
-      const stats = await fetchBufferStats();
-      setBufferStats(stats);
+      const stats = await fetchSystemStats();
+      setSystemStats(stats);
     } catch (err: unknown) {
       toast.error(getApiErrorMessage(err, 'Lỗi khi thử lại đồng bộ'));
     } finally {
@@ -71,7 +71,7 @@ export default function AdminDashboardPage() {
   return (
     <AdminDashboardOverview 
       summary={summary} 
-      bufferStats={bufferStats} 
+      systemStats={systemStats} 
       onRetryAll={handleRetryAll} 
       retrying={retrying}
       t={t} 

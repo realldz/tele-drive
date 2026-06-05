@@ -464,6 +464,12 @@
   "downloadZip.downloadPart": "Tải xuống Phần {index} ({size})",
   "downloadZip.download": "Tải xuống ZIP",
   "downloadZip.downloadAll": "Tải xuống tất cả",
-  "downloadZip.activeJob": "Một tiến trình nén ZIP đang được thực hiện.",
-  "downloadZip.bandwidthExceeded": "Đã vượt quá giới hạn băng thông tải về hàng ngày."
+  "downloadZip.activeJob": "Một tiến trình nén ZIP khác đang chạy.",
+  "downloadZip.bandwidthExceeded": "Đã vượt quá giới hạn băng thông tải xuống trong ngày.",
+  "admin.zipDashboard": "Trạng thái nén file ZIP",
+  "admin.zipStatsDescription": "Quản lý và giám sát các tiến trình nén ZIP chạy nền.",
+  "admin.activeZipJobs": "Đang xử lý",
+  "admin.readyZipJobs": "Sẵn sàng",
+  "admin.failedZipJobs": "Thất bại",
+  "admin.zipTempStorageUsed": "Dung lượng bộ nhớ tạm"
 }
