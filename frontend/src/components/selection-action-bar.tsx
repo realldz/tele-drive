@@ -1,15 +1,16 @@
 'use client';
 
-import { Trash2, Move, RotateCcw, X } from 'lucide-react';
+import { Trash2, Move, RotateCcw, X, Download } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 
 interface SelectionActionBarProps {
   selectedCount: number;
   onClear: () => void;
-  variant?: 'dashboard' | 'trash';
+  variant?: 'dashboard' | 'trash' | 'shared';
   /** Dashboard actions */
   onDelete?: () => void;
   onMove?: () => void;
+  onDownload?: () => void;
   /** Trash actions */
   onRestore?: () => void;
   onPermanentDelete?: () => void;
@@ -22,6 +23,7 @@ export default function SelectionActionBar({
   variant = 'dashboard',
   onDelete,
   onMove,
+  onDownload,
   onRestore,
   onPermanentDelete,
   disabled = false,
@@ -39,36 +41,63 @@ export default function SelectionActionBar({
 
         <div className="w-px h-5 bg-gray-600" />
 
-        {variant === 'dashboard' ? (
+        {variant === 'dashboard' && (
           <>
             {onMove && (
               <button
                 onClick={onMove}
                 disabled={disabled}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg transition-colors cursor-pointer"
               >
                 <Move size={15} />
                 {t('selection.moveSelected')}
+              </button>
+            )}
+            {onDownload && (
+              <button
+                onClick={onDownload}
+                disabled={disabled}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors cursor-pointer"
+              >
+                <Download size={15} />
+                {t('selection.downloadSelected')}
               </button>
             )}
             {onDelete && (
               <button
                 onClick={onDelete}
                 disabled={disabled}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg transition-colors cursor-pointer"
               >
                 <Trash2 size={15} />
                 {t('selection.deleteSelected')}
               </button>
             )}
           </>
-        ) : (
+        )}
+
+        {variant === 'shared' && (
+          <>
+            {onDownload && (
+              <button
+                onClick={onDownload}
+                disabled={disabled}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors cursor-pointer"
+              >
+                <Download size={15} />
+                {t('selection.downloadSelected')}
+              </button>
+            )}
+          </>
+        )}
+
+        {variant === 'trash' && (
           <>
             {onRestore && (
               <button
                 onClick={onRestore}
                 disabled={disabled}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-lg transition-colors cursor-pointer"
               >
                 <RotateCcw size={15} />
                 {t('selection.restoreSelected')}
@@ -78,7 +107,7 @@ export default function SelectionActionBar({
               <button
                 onClick={onPermanentDelete}
                 disabled={disabled}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg transition-colors cursor-pointer"
               >
                 <Trash2 size={15} />
                 {t('selection.permanentDeleteSelected')}
@@ -91,7 +120,7 @@ export default function SelectionActionBar({
 
         <button
           onClick={onClear}
-          className="flex items-center gap-1 px-2 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-colors"
+          className="flex items-center gap-1 px-2 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-colors cursor-pointer"
           title={t('selection.deselectAll')}
         >
           <X size={15} />

@@ -5,8 +5,9 @@ import { AuthProvider } from "@/components/auth-context";
 import { I18nProvider } from "@/components/i18n-context";
 import { Toaster } from "react-hot-toast";
 import { UploadProvider } from "@/components/upload-context";
+import { DownloadProvider } from "@/components/download-context";
 import GlobalDropZone from "@/components/global-drop-zone";
-import UploadPanel from "@/components/upload-panel";
+import TransferPanel from "@/components/transfer-panel";
 import StoreProvider from "@/components/store-provider";
 import { RequestTrackerProvider } from "@/lib/request-tracker";
 import NavigationLoader from "@/components/navigation-loader";
@@ -45,15 +46,17 @@ export default function RootLayout({
           <AuthProvider>
             <StoreProvider>
               <UploadProvider>
-                <RequestTrackerProvider>
-                  <NavigationLoader>
-                    <GlobalDropZone />
-                    {children}
-                    <UploadPanel />
-                    <LoadingOverlay />
-                    <Toaster />
-                  </NavigationLoader>
-                </RequestTrackerProvider>
+                <DownloadProvider>
+                  <RequestTrackerProvider>
+                    <NavigationLoader>
+                      <GlobalDropZone />
+                      {children}
+                      <TransferPanel />
+                      <LoadingOverlay />
+                      <Toaster />
+                    </NavigationLoader>
+                  </RequestTrackerProvider>
+                </DownloadProvider>
               </UploadProvider>
             </StoreProvider>
           </AuthProvider>

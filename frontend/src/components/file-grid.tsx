@@ -22,6 +22,10 @@ interface FileGridProps {
   emptyMessage?: string;
   onItemClick: (e: React.MouseEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => void;
   onDownload: (fileId: string, filename: string) => void;
+  selection?: {
+    isSelected: (id: string) => boolean;
+  };
+  onContextMenu?: (e: React.MouseEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => void;
 }
 
 export default function FileGrid({
@@ -38,6 +42,8 @@ export default function FileGrid({
   emptyMessage,
   onItemClick,
   onDownload,
+  selection,
+  onContextMenu,
 }: FileGridProps) {
   const { t, locale } = useI18n();
 
@@ -85,7 +91,12 @@ export default function FileGrid({
                 <div
                   key={folder.id}
                   onClick={(e) => onItemClick(e, folder, 'folder')}
-                  className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm cursor-pointer transition-all group flex items-center justify-between hover:shadow-md hover:border-blue-300"
+                  onContextMenu={(e) => onContextMenu?.(e, folder, 'folder')}
+                  className={`p-4 bg-white border rounded-xl shadow-sm cursor-pointer transition-all group flex items-center justify-between ${
+                    selection?.isSelected(folder.id)
+                      ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                      : 'border-gray-200 hover:shadow-md hover:border-blue-300'
+                  }`}
                 >
                   <div className="flex items-center truncate pr-2">
                     <div className="relative mr-3 flex-shrink-0">
@@ -114,7 +125,10 @@ export default function FileGrid({
                     <tr
                       key={folder.id}
                       onClick={(e) => onItemClick(e, folder, 'folder')}
-                      className="cursor-pointer transition-colors hover:bg-gray-50"
+                      onContextMenu={(e) => onContextMenu?.(e, folder, 'folder')}
+                      className={`cursor-pointer transition-colors ${
+                        selection?.isSelected(folder.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
+                      }`}
                     >
                       <td className="p-3 md:p-4">
                         <div className="flex items-center gap-3">
@@ -148,7 +162,12 @@ export default function FileGrid({
                 <div
                   key={file.id}
                   onClick={(e) => onItemClick(e, file, 'file')}
-                  className="p-4 bg-white border border-gray-200 rounded-xl shadow-sm transition-all group flex flex-col justify-between cursor-pointer hover:shadow-md hover:border-blue-300"
+                  onContextMenu={(e) => onContextMenu?.(e, file, 'file')}
+                  className={`p-4 bg-white border rounded-xl shadow-sm transition-all group flex flex-col justify-between cursor-pointer ${
+                    selection?.isSelected(file.id)
+                      ? 'border-blue-500 bg-blue-50 ring-2 ring-blue-200'
+                      : 'border-gray-200 hover:shadow-md hover:border-blue-300'
+                  }`}
                 >
                   <div className="flex items-start mb-4">
                     <div className="relative w-10 h-10 rounded-lg bg-gray-50 flex items-center justify-center mr-3 border border-gray-100 flex-shrink-0">
@@ -202,7 +221,10 @@ export default function FileGrid({
                     <tr
                       key={file.id}
                       onClick={(e) => onItemClick(e, file, 'file')}
-                      className="cursor-pointer transition-colors hover:bg-gray-50"
+                      onContextMenu={(e) => onContextMenu?.(e, file, 'file')}
+                      className={`cursor-pointer transition-colors ${
+                        selection?.isSelected(file.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
+                      }`}
                     >
                       <td className="p-3 md:p-4">
                         <div className="flex items-center gap-3">

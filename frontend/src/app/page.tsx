@@ -11,6 +11,7 @@ import Breadcrumbs from '@/components/breadcrumbs';
 import ContextMenu from '@/components/context-menu';
 import SelectionActionBar from '@/components/selection-action-bar';
 import { useUpload } from '@/components/upload-context';
+import { useDownload } from '@/components/download-context';
 import { useBufferSync } from '@/hooks/use-buffer-sync';
 import DashboardTopbar from '@/components/dashboard/dashboard-topbar';
 import DashboardContent from '@/components/dashboard/dashboard-content';
@@ -38,6 +39,7 @@ export default function Dashboard() {
   const { isReady, token } = useRequireAuth();
   const { t, locale } = useI18n();
   const { setCurrentFolderId: setUploadFolderId, setOnUploadSuccess, addFiles, addFolder, resolveConflict, queue } = useUpload();
+  const { startDownload } = useDownload();
 
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
   const [folders, setFolders] = useState<FolderRecord[]>([]);
@@ -389,6 +391,49 @@ export default function Dashboard() {
     }
   }, [locale, t]);
 
+  // Batch download selected files/folders as ZIP
+  const handleBatchDownload = useCallback(async () => {
+    const ids = Array.from(selection.selectedIds);
+    const selectedFileIds = ids.filter(id => files.some(f => f.id === id));
+    const selectedFolderIds = ids.filter(id => folders.some(f => f.id === id));
+
+    // Single file, no folders → existing direct download
+    if (selectedFileIds.length === 1 && selectedFolderIds.length === 0) {
+      const file = files.find(f => f.id === selectedFileIds[0])!;
+      return handleDownload(file.id, file.filename);
+    }
+
+    // Build label
+    const label = selectedFolderIds.length === 1 && selectedFileIds.length === 0
+      ? folders.find(f => f.id === selectedFolderIds[0])?.name || 'download'
+      : `${ids.length} items`;
+
+    try {
+      await startDownload(
+        selectedFileIds.length > 0 ? selectedFileIds : undefined,
+        selectedFolderIds.length > 0 ? selectedFolderIds : undefined,
+        label,
+      );
+      selection.clearSelection();
+      toast.success(t('downloadZip.preparing'));
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        if (err.response?.status === 409) {
+          toast.error(t('downloadZip.activeJob'));
+          return;
+        }
+        if (err.response?.status === 429) {
+          const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset'], LOCALE_DATE_MAP[locale]);
+          toast.error(resetTime
+            ? t('dashboard.bandwidthExceededAt', { time: resetTime })
+            : t('downloadZip.bandwidthExceeded'));
+          return;
+        }
+      }
+      toast.error(t('downloadZip.failed'));
+    }
+  }, [selection, files, folders, startDownload, handleDownload, t, locale]);
+
   // Batch delete selected items
   const handleBatchDelete = useCallback(async () => {
     const ids = Array.from(selection.selectedIds);
@@ -680,6 +725,7 @@ export default function Dashboard() {
           onShare={() => handleOpenDialog('share')}
           onDetails={() => handleOpenDialog('details')}
           onDelete={handleContextMenuDelete}
+          onDownload={handleBatchDownload}
         />
       )}
 
@@ -690,6 +736,7 @@ export default function Dashboard() {
         variant="dashboard"
         onDelete={handleBatchDelete}
         onMove={handleBatchMoveOpen}
+        onDownload={handleBatchDownload}
       />
 
       {/* Dialogs */}

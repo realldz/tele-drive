@@ -2,9 +2,13 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useParams } from 'next/navigation';
-import { AlertCircle, ChevronRight, Home, UserCircle2, LayoutGrid, List } from 'lucide-react';
+import { AlertCircle, ChevronRight, Home, UserCircle2, LayoutGrid, List, Download } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 import { useAuth } from '@/components/auth-context';
+import { useSelection } from '@/hooks/use-selection';
+import { useDownload } from '@/components/download-context';
+import SelectionActionBar from '@/components/selection-action-bar';
+import ContextMenu from '@/components/context-menu';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import toast from 'react-hot-toast';
 
@@ -21,6 +25,8 @@ export default function SharedFolderPage() {
   const token = params.token as string;
   const { t } = useI18n();
   const { user } = useAuth();
+  const selection = useSelection();
+  const { startSharedDownload } = useDownload();
 
   const [rootFolder, setRootFolder] = useState<SharedFolderRoot | null>(null);
   const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
@@ -69,6 +75,28 @@ export default function SharedFolderPage() {
       return sortDirection === 'asc' ? cmp : -cmp;
     });
   }, [files, sortField, sortDirection]);
+
+  // Ordered IDs for shift select
+  const orderedIds = useMemo(
+    () => [...filteredFolders.map(f => f.id), ...filteredFiles.map(f => f.id)],
+    [filteredFolders, filteredFiles],
+  );
+
+  // Context menu state
+  const [contextMenu, setContextMenu] = useState<{
+    isOpen: boolean; x: number; y: number;
+    item: FileRecord | FolderRecord | null; type: 'file' | 'folder';
+  }>({ isOpen: false, x: 0, y: 0, item: null, type: 'file' });
+
+  // Close context menu on click anywhere
+  useEffect(() => {
+    const handler = () => setContextMenu(prev => ({ ...prev, isOpen: false }));
+    document.addEventListener('click', handler);
+    return () => document.removeEventListener('click', handler);
+  }, []);
+
+  // Clear selection when folder changes
+  useEffect(() => { selection.clearSelection(); }, [currentFolderId, selection]);
 
   const fetchContent = useCallback(async (isInitial = true) => {
     if (!token) return;
@@ -176,13 +204,67 @@ export default function SharedFolderPage() {
     }
   }, [token, t]);
 
-  const handleItemClick = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
-    if (type === 'folder') {
-      setCurrentFolderId(item.id);
-    } else {
-      setPreviewFile(item as FileRecord);
+  const openContextMenu = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
+    e.preventDefault(); e.stopPropagation();
+    if (!selection.isSelected(item.id)) {
+      selection.clearSelection();
+      selection.handleSelect(item.id, { ...e, ctrlKey: false, metaKey: false, shiftKey: false, stopPropagation: () => { } } as React.MouseEvent, orderedIds);
     }
-  }, []);
+    setTimeout(() => setContextMenu({ isOpen: true, x: e.clientX, y: e.clientY, item, type }), 0);
+  }, [selection, orderedIds]);
+
+  const handleBatchDownload = useCallback(async () => {
+    const ids = Array.from(selection.selectedIds);
+    const selectedFileIds = ids.filter(id => files.some(f => f.id === id));
+    const selectedFolderIds = ids.filter(id => folders.some(f => f.id === id));
+
+    // Case 1: Nothing selected → download entire shared folder
+    if (ids.length === 0) {
+      try {
+        await startSharedDownload(token, undefined, undefined, rootFolder?.name || 'shared-folder');
+        toast.success(t('downloadZip.preparing'));
+      } catch {
+        toast.error(t('downloadZip.failed'));
+      }
+      return;
+    }
+
+    // Case 2: Single file selected → direct download
+    if (selectedFileIds.length === 1 && selectedFolderIds.length === 0) {
+      const file = files.find(f => f.id === selectedFileIds[0])!;
+      return handleDownload(file.id, file.filename);
+    }
+
+    // Case 3: Multiple files/folders selected
+    const label = selectedFolderIds.length === 1 && selectedFileIds.length === 0
+      ? folders.find(f => f.id === selectedFolderIds[0])?.name || 'download'
+      : `${ids.length} items`;
+
+    try {
+      await startSharedDownload(
+        token,
+        selectedFileIds.length > 0 ? selectedFileIds : undefined,
+        selectedFolderIds.length > 0 ? selectedFolderIds : undefined,
+        label,
+      );
+      selection.clearSelection();
+      toast.success(t('downloadZip.preparing'));
+    } catch {
+      toast.error(t('downloadZip.failed'));
+    }
+  }, [selection, files, folders, startSharedDownload, token, rootFolder, handleDownload, t]);
+
+  const handleItemClick = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      selection.handleSelect(item.id, e, orderedIds);
+    } else {
+      if (type === 'folder') {
+        setCurrentFolderId(item.id);
+      } else {
+        setPreviewFile(item as FileRecord);
+      }
+    }
+  }, [selection, orderedIds]);
 
   const hasMore = hasMoreFolders || hasMoreFiles;
 
@@ -214,6 +296,13 @@ export default function SharedFolderPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              onClick={handleBatchDownload}
+              className="flex items-center gap-1.5 px-3 py-2 text-sm font-semibold bg-blue-600 hover:bg-blue-500 rounded-lg text-white transition-colors cursor-pointer shadow-sm hover:scale-102 active:scale-98"
+            >
+              <Download size={16} />
+              <span className="hidden sm:inline">{t('downloadZip.downloadAll')}</span>
+            </button>
             {/* View toggle */}
             <div className="flex bg-slate-800 p-1 rounded-lg">
               <button
@@ -279,6 +368,8 @@ export default function SharedFolderPage() {
             emptyMessage={t('shareFolder.emptyFolder')}
             onItemClick={handleItemClick}
             onDownload={handleDownload}
+            selection={selection}
+            onContextMenu={openContextMenu}
           />
         </div>
       </div>
@@ -287,6 +378,22 @@ export default function SharedFolderPage() {
         shareToken={token}
         file={previewFile}
         onClose={() => setPreviewFile(null)}
+      />
+
+      {/* Context Menu */}
+      {contextMenu.isOpen && contextMenu.item && (
+        <ContextMenu x={contextMenu.x} y={contextMenu.y} itemType={contextMenu.type}
+          selectionCount={selection.selectedCount}
+          onDownload={handleBatchDownload}
+        />
+      )}
+
+      {/* Selection Action Bar */}
+      <SelectionActionBar
+        selectedCount={selection.selectedCount}
+        onClear={selection.clearSelection}
+        variant="shared"
+        onDownload={handleBatchDownload}
       />
     </div>
   );

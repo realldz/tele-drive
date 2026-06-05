@@ -38,9 +38,10 @@ import { BullModule } from '@nestjs/bullmq';
       },
       inject: [ConfigService],
     }),
-    BullModule.registerQueue({
-      name: 'upload-dispatch',
-    }),
+    BullModule.registerQueue(
+      { name: 'upload-dispatch' },
+      { name: 'download-zip' },
+    ),
   ],
   exports: [BullModule],
 })

@@ -29,6 +29,7 @@ model User {
   folders             Folder[]
   files               FileRecord[]
   s3Credentials       S3Credential[]
+  downloadJobs        DownloadJob[]
   createdAt           DateTime     @default(now())
   updatedAt           DateTime     @updatedAt
   isCleaningTrash     Boolean      @default(false)
@@ -148,3 +149,25 @@ model FileChunk {
 
   @@unique([fileId, chunkIndex])
 }
+
+model DownloadJob {
+  id              String    @id @default(uuid())
+  userId          String?
+  user            User?     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shareToken      String?
+  status          String    @default("pending") // pending | collecting | zipping | splitting | ready | failed | expired
+  fileIds         Json      @default("[]")
+  folderIds       Json      @default("[]")
+  totalFiles      Int       @default(0)
+  processedFiles  Int       @default(0)
+  totalSize       BigInt    @default(0)
+  zipParts        Json      @default("[]")     // [{ key, size, index }]
+  errorMessage    String?
+  expiresAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, expiresAt])
+  @@index([userId, status])
+}
+

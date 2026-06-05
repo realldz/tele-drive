@@ -1138,10 +1138,7 @@ export class FolderService {
     return { url: `/files/d/${token}`, expiresAt };
   }
 
-  private async isDescendantOf(
-    folderId: string,
-    ancestorId: string,
-  ): Promise<boolean> {
+  async isDescendantOf(folderId: string, ancestorId: string): Promise<boolean> {
     let currentId: string | null = folderId;
     while (currentId) {
       if (currentId === ancestorId) return true;

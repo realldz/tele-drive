@@ -6,6 +6,8 @@ services:
       POSTGRES_DB: tele_drive
       POSTGRES_USER: tele_drive
       POSTGRES_PASSWORD: tele_drive
+    ports:
+      - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -20,6 +22,8 @@ services:
   redis:
     image: redis:7-alpine
     command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    ports:
+      - "6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:

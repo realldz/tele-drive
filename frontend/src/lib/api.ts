@@ -572,3 +572,38 @@ export async function getCleanupStatus(): Promise<TrashCleanupStatus> {
 export async function startCleanup(): Promise<void> {
   await api.post(`/files/trash/cleanup`);
 }
+
+// ── Batch Download ZIP ────────────────────────────────────────────────────────
+
+export interface DownloadZipPart {
+  index: number;
+  size: string;
+  downloadUrl: string;
+}
+
+export interface DownloadZipStatus {
+  jobId: string;
+  status: string;
+  totalFiles: number;
+  processedFiles: number;
+  totalSize: string;
+  parts: DownloadZipPart[];
+  expiresAt: string | null;
+  error: string | null;
+}
+
+export async function createDownloadZip(fileIds?: string[], folderIds?: string[]) {
+  const res = await api.post('/files/download-zip', { fileIds, folderIds });
+  return res.data as { jobId: string };
+}
+
+export async function createSharedDownloadZip(shareToken: string, fileIds?: string[], folderIds?: string[]) {
+  const res = await api.post('/files/download-zip/shared', { shareToken, fileIds, folderIds });
+  return res.data as { jobId: string };
+}
+
+export async function getDownloadZipStatus(jobId: string): Promise<DownloadZipStatus> {
+  const res = await api.get(`/files/download-zip/${jobId}/status`);
+  return res.data;
+}
+
