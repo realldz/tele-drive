@@ -359,9 +359,15 @@ export class DownloadZipService {
     this.activeStreams.set(jobId, (this.activeStreams.get(jobId) || 0) + 1);
 
     const partCount = parts.length;
+    const d = job.createdAt;
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+
     const ext =
-      partCount > 1 ? `.${String(partIndex + 1).padStart(3, '0')}` : '';
-    const filename = `download.zip${ext}`;
+      partCount > 1
+        ? `_part${String(partIndex + 1).padStart(2, '0')}.zip`
+        : '.zip';
+    const filename = `download_${timestamp}${ext}`;
 
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Length', String(part.size));

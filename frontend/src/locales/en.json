@@ -465,5 +465,11 @@
   "downloadZip.download": "Download ZIP",
   "downloadZip.downloadAll": "Download All",
   "downloadZip.activeJob": "An active ZIP download is already in progress.",
-  "downloadZip.bandwidthExceeded": "Daily download bandwidth limit exceeded."
+  "downloadZip.bandwidthExceeded": "Daily download bandwidth limit exceeded.",
+  "admin.zipDashboard": "ZIP Download Status",
+  "admin.zipStatsDescription": "Manage and monitor background ZIP archiving processes.",
+  "admin.activeZipJobs": "Active Jobs",
+  "admin.readyZipJobs": "Ready Jobs",
+  "admin.failedZipJobs": "Failed Jobs",
+  "admin.zipTempStorageUsed": "Temp Storage Used"
 }

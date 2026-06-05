@@ -303,7 +303,7 @@ export default function TransferPanel() {
                       <a
                         key={part.index}
                         href={API_URL + part.downloadUrl}
-                        download={`download.zip.${String(part.index + 1).padStart(3, '0')}`}
+                        download=""
                         className="flex items-center justify-between text-xs text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100/70 border border-blue-100 rounded px-2.5 py-1.5 transition-colors cursor-pointer font-medium"
                       >
                         <div className="flex items-center gap-1.5">

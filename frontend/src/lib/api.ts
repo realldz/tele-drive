@@ -455,8 +455,20 @@ export interface BufferStats {
   oldestBufferedAgeMs: number;
 }
 
-export async function fetchBufferStats(): Promise<BufferStats> {
-  const res = await api.get('/admin/buffer-stats');
+export interface ZipStats {
+  activeCount: number;
+  readyCount: number;
+  failedCount: number;
+  tempStorageUsedBytes: string;
+}
+
+export interface SystemStats {
+  buffer: BufferStats;
+  zip: ZipStats;
+}
+
+export async function fetchSystemStats(): Promise<SystemStats> {
+  const res = await api.get('/admin/system-stats');
   return res.data;
 }
 

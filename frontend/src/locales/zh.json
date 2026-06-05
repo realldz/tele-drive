@@ -463,6 +463,12 @@
   "downloadZip.downloadPart": "下载分卷 {index} ({size})",
   "downloadZip.download": "下载 ZIP",
   "downloadZip.downloadAll": "下载全部",
-  "downloadZip.activeJob": "已有一个活跃的 ZIP 下载任务在运行中。",
-  "downloadZip.bandwidthExceeded": "超出每日下载带宽限制。"
+  "downloadZip.activeJob": "已经有一个正在进行的 ZIP 下载任务。",
+  "downloadZip.bandwidthExceeded": "已超过每日下载带宽限制。",
+  "admin.zipDashboard": "ZIP下载状态",
+  "admin.zipStatsDescription": "管理和监控后台ZIP压缩进程。",
+  "admin.activeZipJobs": "活动作业",
+  "admin.readyZipJobs": "准备好",
+  "admin.failedZipJobs": "失败作业",
+  "admin.zipTempStorageUsed": "临时存储使用"
 }
