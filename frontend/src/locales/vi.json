@@ -471,5 +471,7 @@
   "admin.activeZipJobs": "Đang xử lý",
   "admin.readyZipJobs": "Sẵn sàng",
   "admin.failedZipJobs": "Thất bại",
-  "admin.zipTempStorageUsed": "Dung lượng bộ nhớ tạm"
+  "admin.zipTempStorageUsed": "Dung lượng bộ nhớ tạm",
+  "admin.clearFailedZips": "Xoá lịch sử lỗi",
+  "admin.clearedZipJobsCount": "Đã xoá thành công {count} tiến trình lỗi."
 }

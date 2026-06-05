@@ -9,6 +9,8 @@ interface AdminDashboardOverviewProps {
   systemStats: SystemStats | null;
   onRetryAll: () => Promise<void>;
   retrying: boolean;
+  onClearZips: () => Promise<void>;
+  clearingZips: boolean;
   t: (key: string, params?: Record<string, string | number>) => string;
 }
 
@@ -44,6 +46,8 @@ export default function AdminDashboardOverview({
   systemStats,
   onRetryAll,
   retrying,
+  onClearZips,
+  clearingZips,
   t,
 }: AdminDashboardOverviewProps) {
   return (
@@ -145,6 +149,22 @@ export default function AdminDashboardOverview({
               <h2 className="text-lg font-semibold text-gray-900">{t('admin.zipDashboard')}</h2>
               <p className="text-sm text-gray-500">{t('admin.zipStatsDescription')}</p>
             </div>
+            {systemStats.zip.failedCount > 0 && (
+              <button
+                onClick={onClearZips}
+                disabled={clearingZips}
+                className="inline-flex items-center justify-center bg-red-600 hover:bg-red-700 text-white font-medium text-sm px-4 py-2 rounded-xl transition-colors disabled:opacity-50 cursor-pointer"
+              >
+                {clearingZips ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin mr-2" />
+                    {t('dashboard.processing')}
+                  </>
+                ) : (
+                  t('admin.clearFailedZips')
+                )}
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

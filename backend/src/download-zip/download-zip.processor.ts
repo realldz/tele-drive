@@ -141,7 +141,9 @@ export class DownloadZipProcessor
 
   private async cleanupJobFiles(jobId: string): Promise<void> {
     const dirPath = path.join(this.baseDir, 'zip', jobId);
-    await fs.promises.rm(dirPath, { recursive: true, force: true }).catch(() => {});
+    await fs.promises
+      .rm(dirPath, { recursive: true, force: true })
+      .catch(() => {});
   }
 
   private async collectFiles(jobId: string): Promise<FileEntry[]> {

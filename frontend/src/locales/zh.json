@@ -468,7 +468,9 @@
   "admin.zipDashboard": "ZIP下载状态",
   "admin.zipStatsDescription": "管理和监控后台ZIP压缩进程。",
   "admin.activeZipJobs": "活动作业",
-  "admin.readyZipJobs": "准备好",
+  "admin.readyZipJobs": "就绪作业",
   "admin.failedZipJobs": "失败作业",
-  "admin.zipTempStorageUsed": "临时存储使用"
+  "admin.zipTempStorageUsed": "已用临时存储",
+  "admin.clearFailedZips": "清除失败作业",
+  "admin.clearedZipJobsCount": "成功清除了 {count} 个失败的作业。"
 }

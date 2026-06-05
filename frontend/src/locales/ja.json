@@ -470,5 +470,7 @@
   "admin.activeZipJobs": "実行中のジョブ",
   "admin.readyZipJobs": "準備完了",
   "admin.failedZipJobs": "失敗したジョブ",
-  "admin.zipTempStorageUsed": "使用中の一時ストレージ"
+  "admin.zipTempStorageUsed": "使用中の一時ストレージ",
+  "admin.clearFailedZips": "失敗したジョブをクリア",
+  "admin.clearedZipJobsCount": "{count} 個の失敗したジョブをクリアしました。"
 }
