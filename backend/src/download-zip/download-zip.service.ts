@@ -365,7 +365,7 @@ export class DownloadZipService {
 
     const ext =
       partCount > 1
-        ? `.zip.${String(partIndex + 1).padStart(3, '0')}`
+        ? `_part${String(partIndex + 1).padStart(2, '0')}.zip`
         : '.zip';
     const filename = `download_${timestamp}${ext}`;
 
