@@ -36,98 +36,7 @@ interface FileEntry {
   size: bigint;
 }
 
-class ZipSplitStream extends Writable {
-  private currentPart = 0;
-  private currentBytes = 0;
-  private maxPartSize: number;
-  private jobId: string;
-  private tempStorage: TempStorage;
-  private currentPassThrough!: PassThrough;
-  private currentUploadPromise!: Promise<void>;
-  public zipParts: { key: string; size: number; index: number }[] = [];
-
-  constructor(jobId: string, maxPartSize: number, tempStorage: TempStorage) {
-    super();
-    this.jobId = jobId;
-    this.maxPartSize = maxPartSize;
-    this.tempStorage = tempStorage;
-    this.startNewPart();
-  }
-
-  private startNewPart() {
-    this.currentPassThrough = new PassThrough();
-    const key = `zip/${this.jobId}/part${String(this.currentPart).padStart(3, '0')}.zip`;
-    this.currentUploadPromise = this.tempStorage.write(
-      key,
-      this.currentPassThrough,
-    );
-  }
-
-  _write(
-    chunk: Buffer,
-    encoding: string,
-    callback: (error?: Error | null) => void,
-  ) {
-    let offset = 0;
-
-    const writeChunk = async () => {
-      try {
-        while (offset < chunk.length) {
-          const remaining = this.maxPartSize - this.currentBytes;
-          const toWrite = Math.min(remaining, chunk.length - offset);
-
-          const slice = chunk.subarray(offset, offset + toWrite);
-          const canContinue = this.currentPassThrough.write(slice);
-
-          this.currentBytes += toWrite;
-          offset += toWrite;
-
-          if (this.currentBytes >= this.maxPartSize) {
-            this.currentPassThrough.end();
-            this.zipParts.push({
-              key: `zip/${this.jobId}/part${String(this.currentPart).padStart(3, '0')}.zip`,
-              size: this.currentBytes,
-              index: this.currentPart,
-            });
-
-            // Wait for current upload to complete before starting next to avoid infinite memory buffering
-            await this.currentUploadPromise;
-
-            this.currentPart++;
-            this.currentBytes = 0;
-            this.startNewPart();
-          }
-
-          if (!canContinue) {
-            await new Promise((resolve) =>
-              this.currentPassThrough.once('drain', resolve),
-            );
-          }
-        }
-        callback();
-      } catch (err) {
-        callback(err as Error);
-      }
-    };
-
-    void writeChunk();
-  }
-
-  _final(callback: (error?: Error | null) => void) {
-    if (this.currentBytes > 0) {
-      this.currentPassThrough.end();
-      this.zipParts.push({
-        key: `zip/${this.jobId}/part${String(this.currentPart).padStart(3, '0')}.zip`,
-        size: this.currentBytes,
-        index: this.currentPart,
-      });
-      this.currentUploadPromise.then(() => callback()).catch(callback);
-    } else {
-      this.currentPassThrough.end(); // end empty stream
-      this.currentUploadPromise.then(() => callback()).catch(callback);
-    }
-  }
-}
+// ZipSplitStream removed
 
 @Processor('download-zip', { concurrency: 2 })
 @Injectable()
@@ -301,13 +210,13 @@ export class DownloadZipProcessor
     entries: FileEntry[],
     bullJob: Job,
   ): Promise<{ key: string; size: number; index: number }[]> {
-    const archive = new ZipArchive({ zlib: { level: 1 } });
-    const output = new ZipSplitStream(
-      jobId,
-      Number(PART_SIZE),
-      this.tempStorage,
-    );
+    const zipParts: { key: string; size: number; index: number }[] = [];
+    let currentPartIndex = 0;
 
+    let archive = new ZipArchive({ zlib: { level: 1 } });
+    let output = new PassThrough();
+    let currentPartKey = `zip/${jobId}/part${String(currentPartIndex).padStart(3, '0')}.zip`;
+    let uploadPromise = this.tempStorage.write(currentPartKey, output);
     archive.pipe(output);
 
     let processed = 0;
@@ -315,6 +224,34 @@ export class DownloadZipProcessor
     const seenPaths = new Set<string>();
 
     for (const entry of entries) {
+      // Check if adding this file will exceed the part size (and the archive is not empty)
+      const currentSize = archive.pointer();
+      if (
+        currentSize > 0 &&
+        currentSize + Number(entry.size) > Number(PART_SIZE)
+      ) {
+        await archive.finalize();
+        await new Promise<void>((resolve, reject) => {
+          output.on('finish', resolve);
+          output.on('error', reject);
+        });
+        await uploadPromise;
+
+        zipParts.push({
+          key: currentPartKey,
+          size: archive.pointer(),
+          index: currentPartIndex,
+        });
+
+        // Start new part
+        currentPartIndex++;
+        archive = new ZipArchive({ zlib: { level: 1 } });
+        output = new PassThrough();
+        currentPartKey = `zip/${jobId}/part${String(currentPartIndex).padStart(3, '0')}.zip`;
+        uploadPromise = this.tempStorage.write(currentPartKey, output);
+        archive.pipe(output);
+      }
+
       // Build unique path
       let relPath = entry.relativePath;
       let counter = 1;
@@ -374,18 +311,25 @@ export class DownloadZipProcessor
       }
     }
 
+    // Finalize the last part
     await archive.finalize();
-
     await new Promise<void>((resolve, reject) => {
       output.on('finish', resolve);
       output.on('error', reject);
+    });
+    await uploadPromise;
+
+    zipParts.push({
+      key: currentPartKey,
+      size: archive.pointer(),
+      index: currentPartIndex,
     });
 
     if (skippedFiles.length > 0) {
       this.logger.warn(`ZIP ${jobId}: skipped ${skippedFiles.length} files`);
     }
 
-    return output.zipParts;
+    return zipParts;
   }
 
   private async fetchFileStream(fileRecordId: string): Promise<Readable> {
