@@ -230,12 +230,7 @@ export class DownloadZipProcessor
         currentSize > 0 &&
         currentSize + Number(entry.size) > Number(PART_SIZE)
       ) {
-        await archive.finalize();
-        await new Promise<void>((resolve, reject) => {
-          output.on('finish', resolve);
-          output.on('error', reject);
-        });
-        await uploadPromise;
+        await Promise.all([archive.finalize(), uploadPromise]);
 
         zipParts.push({
           key: currentPartKey,
@@ -312,12 +307,7 @@ export class DownloadZipProcessor
     }
 
     // Finalize the last part
-    await archive.finalize();
-    await new Promise<void>((resolve, reject) => {
-      output.on('finish', resolve);
-      output.on('error', reject);
-    });
-    await uploadPromise;
+    await Promise.all([archive.finalize(), uploadPromise]);
 
     zipParts.push({
       key: currentPartKey,
