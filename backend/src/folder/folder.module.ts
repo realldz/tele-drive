@@ -10,5 +10,6 @@ import { NameConflictModule } from '../common/name-conflict.module';
   imports: [FileModule, CryptoModule, AuthModule, NameConflictModule],
   providers: [FolderService],
   controllers: [FolderController],
+  exports: [FolderService],
 })
 export class FolderModule {}

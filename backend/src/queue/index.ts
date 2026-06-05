@@ -19,3 +19,11 @@ export interface UploadChunkJobData {
 }
 
 export type UploadJobData = UploadFileJobData | UploadChunkJobData;
+
+export const DOWNLOAD_ZIP_QUEUE = 'download-zip';
+
+export interface DownloadZipJobData {
+  jobId: string;
+  userId: string | null;
+  shareToken: string | null;
+}

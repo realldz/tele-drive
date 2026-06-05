@@ -1,6 +1,6 @@
 'use client';
 
-import { Edit2, Move, Share2, Trash2, Info, RotateCcw } from 'lucide-react';
+import { Edit2, Move, Share2, Trash2, Info, RotateCcw, Download } from 'lucide-react';
 import { useI18n } from '@/components/i18n-context';
 
 interface ContextMenuProps {
@@ -11,6 +11,7 @@ interface ContextMenuProps {
   onMove?: () => void;
   onShare?: () => void;
   onDelete?: (e: React.MouseEvent) => void;
+  onDownload?: () => void;
   onDetails?: () => void;
   /** Trash-specific actions */
   onRestore?: (e: React.MouseEvent) => void;
@@ -22,7 +23,7 @@ interface ContextMenuProps {
 export default function ContextMenu({
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   x, y, itemType: _itemType,
-  onRename, onMove, onShare, onDelete, onDetails,
+  onRename, onMove, onShare, onDelete, onDownload, onDetails,
   onRestore, onPermanentDelete,
   selectionCount = 1,
 }: ContextMenuProps) {
@@ -60,6 +61,16 @@ export default function ContextMenu({
           className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors"
         >
           <Edit2 size={16} /> {t('contextMenu.rename')}
+        </button>
+      )}
+
+      {/* Download — available for both single and batch */}
+      {onDownload && (
+        <button
+          onClick={onDownload}
+          className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors"
+        >
+          <Download size={16} /> {isBatch ? t('selection.downloadSelected') : t('contextMenu.download')}
         </button>
       )}
 
