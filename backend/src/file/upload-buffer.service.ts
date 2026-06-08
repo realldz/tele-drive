@@ -20,6 +20,7 @@ import { CryptoService } from '../crypto/crypto.service';
 import * as crypto from 'crypto';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { Readable, Transform } from 'stream';
 
 @Injectable()
 export class UploadBufferService {
@@ -68,13 +69,15 @@ export class UploadBufferService {
   }
 
   async acceptFile(params: {
-    buffer: Buffer;
+    buffer: Buffer | Readable;
     filename: string;
     mimeType: string;
     size: number;
     userId: string;
     folderId?: string;
     conflictAction?: ConflictAction;
+    skipConflictCheck?: boolean;
+    etag?: string;
   }): Promise<FileRecord> {
     if (params.size <= 0) {
       throw new HttpException(
@@ -87,7 +90,9 @@ export class UploadBufferService {
     await this.checkQuota(params.userId, params.size);
 
     // 2. Resolve conflict name
-    const targetFilename = await this.resolveFilename(params);
+    const targetFilename = params.skipConflictCheck
+      ? params.filename
+      : await this.resolveFilename(params);
 
     // 3. Check buffer capacity again
     const capacityOk = await this.shouldBuffer(params.size);
@@ -100,9 +105,30 @@ export class UploadBufferService {
 
     const storageKey = `buf/${crypto.randomUUID()}.tmp`;
 
+    let computedMd5 = '';
+    let writeData: Buffer | Readable;
+    let md5Hash: crypto.Hash | null = null;
+
+    if (Buffer.isBuffer(params.buffer)) {
+      computedMd5 = crypto
+        .createHash('md5')
+        .update(params.buffer)
+        .digest('hex');
+      writeData = params.buffer;
+    } else {
+      md5Hash = crypto.createHash('md5');
+      const md5Transform = new Transform({
+        transform(chunk, enc, cb) {
+          md5Hash!.update(chunk);
+          cb(null, chunk);
+        },
+      });
+      writeData = params.buffer.pipe(md5Transform);
+    }
+
     // Write file to temp storage first
     try {
-      await this.tempStorage.write(storageKey, params.buffer);
+      await this.tempStorage.write(storageKey, writeData);
     } catch (err) {
       this.logger.error(
         `Failed to write to temp storage for ${targetFilename}`,
@@ -113,6 +139,11 @@ export class UploadBufferService {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+
+    if (!computedMd5 && md5Hash) {
+      computedMd5 = md5Hash.digest('hex');
+    }
+    const finalEtag = params.etag || `"${computedMd5}"`;
 
     try {
       // Create DB Record with status: 'buffered'
@@ -127,6 +158,7 @@ export class UploadBufferService {
           totalChunks: 1,
           folderId: params.folderId || null,
           userId: params.userId,
+          etag: finalEtag,
           // encryption fields left null — set by dispatcher
         },
       });
@@ -178,7 +210,7 @@ export class UploadBufferService {
   }
 
   async acceptChunk(params: {
-    buffer: Buffer;
+    buffer: Buffer | Readable;
     size: number;
     fileRecordId: string;
     chunkIndex: number;
@@ -195,9 +227,30 @@ export class UploadBufferService {
 
     const storageKey = `chunk/${params.fileRecordId}/${params.chunkIndex}.tmp`;
 
+    let computedMd5 = '';
+    let writeData: Buffer | Readable;
+    let md5Hash: crypto.Hash | null = null;
+
+    if (Buffer.isBuffer(params.buffer)) {
+      computedMd5 = crypto
+        .createHash('md5')
+        .update(params.buffer)
+        .digest('hex');
+      writeData = params.buffer;
+    } else {
+      md5Hash = crypto.createHash('md5');
+      const md5Transform = new Transform({
+        transform(chunk, enc, cb) {
+          md5Hash!.update(chunk);
+          cb(null, chunk);
+        },
+      });
+      writeData = params.buffer.pipe(md5Transform);
+    }
+
     // Write chunk to temp storage
     try {
-      await this.tempStorage.write(storageKey, params.buffer);
+      await this.tempStorage.write(storageKey, writeData);
     } catch (err) {
       this.logger.error(
         `Failed to write chunk to temp storage for file ${params.fileRecordId} index ${params.chunkIndex}`,
@@ -208,6 +261,11 @@ export class UploadBufferService {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+
+    if (!computedMd5 && md5Hash) {
+      computedMd5 = md5Hash.digest('hex');
+    }
+    const finalEtag = `"${computedMd5}"`;
 
     try {
       const fileRecord = await this.prisma.fileRecord.findUnique({
@@ -230,6 +288,7 @@ export class UploadBufferService {
           tempStorageKey: storageKey,
           status: 'buffered',
           encryptionIv,
+          etag: finalEtag,
         },
       });
 
