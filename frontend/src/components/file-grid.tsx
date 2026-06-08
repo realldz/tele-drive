@@ -79,12 +79,9 @@ export default function FileGrid({
 
   return (
     <>
-      {/* Folders */}
-      {folders.length > 0 && (
-        <div className="mb-8">
-          <h2 className="text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider">
-            {t('dashboard.folders')}
-          </h2>
+      {/* Combined Folders and Files */}
+      {folders.length > 0 || files.length > 0 ? (
+        <div>
           {viewMode === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {folders.map(folder => (
@@ -106,58 +103,6 @@ export default function FileGrid({
                   </div>
                 </div>
               ))}
-            </div>
-          ) : (
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
-                    <th className="p-3 md:p-4 font-semibold cursor-pointer select-none" onClick={() => onSort('name')}>
-                      <span className="flex items-center gap-1">{t('dashboard.name')} {renderSortIcon('name')}</span>
-                    </th>
-                    <th className="p-3 md:p-4 font-semibold hidden sm:table-cell cursor-pointer select-none" onClick={() => onSort('createdAt')}>
-                      <span className="flex items-center gap-1">{t('dashboard.createdDate')} {renderSortIcon('createdAt')}</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {folders.map(folder => (
-                    <tr
-                      key={folder.id}
-                      onClick={(e) => onItemClick(e, folder, 'folder')}
-                      onContextMenu={(e) => onContextMenu?.(e, folder, 'folder')}
-                      className={`cursor-pointer transition-colors ${
-                        selection?.isSelected(folder.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <td className="p-3 md:p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="relative flex-shrink-0">
-                            <Folder className="w-6 h-6 text-blue-500" fill="currentColor" opacity={0.8} />
-                          </div>
-                          <span className="font-medium text-gray-800">{folder.name}</span>
-                        </div>
-                      </td>
-                      <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">
-                        {formatDate(folder.createdAt)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Files */}
-      {files.length > 0 && (
-        <div>
-          <h2 className="text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider">
-            {t('dashboard.files')}
-          </h2>
-          {viewMode === 'grid' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {files.map(file => (
                 <div
                   key={file.id}
@@ -207,7 +152,7 @@ export default function FileGrid({
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
                     <th className="p-3 md:p-4 font-semibold cursor-pointer select-none" onClick={() => onSort('name')}>
-                      <span className="flex items-center gap-1">{t('dashboard.fileName')} {renderSortIcon('name')}</span>
+                      <span className="flex items-center gap-1">{t('dashboard.name')} {renderSortIcon('name')}</span>
                     </th>
                     <th className="p-3 md:p-4 font-semibold hidden sm:table-cell">{t('dashboard.size')}</th>
                     <th className="p-3 md:p-4 font-semibold hidden sm:table-cell cursor-pointer select-none" onClick={() => onSort('createdAt')}>
@@ -217,6 +162,34 @@ export default function FileGrid({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
+                  {folders.map(folder => (
+                    <tr
+                      key={folder.id}
+                      onClick={(e) => onItemClick(e, folder, 'folder')}
+                      onContextMenu={(e) => onContextMenu?.(e, folder, 'folder')}
+                      className={`cursor-pointer transition-colors ${
+                        selection?.isSelected(folder.id) ? 'bg-blue-50' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <td className="p-3 md:p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="relative flex-shrink-0">
+                            <Folder className="w-6 h-6 text-blue-500" fill="currentColor" opacity={0.8} />
+                          </div>
+                          <span className="font-medium text-gray-800">{folder.name}</span>
+                        </div>
+                      </td>
+                      <td className="p-3 md:p-4 text-sm text-gray-600 hidden sm:table-cell">
+                        -
+                      </td>
+                      <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">
+                        {formatDate(folder.createdAt)}
+                      </td>
+                      <td className="p-3 md:p-4 text-right whitespace-nowrap">
+                        
+                      </td>
+                    </tr>
+                  ))}
                   {files.map(file => (
                     <tr
                       key={file.id}
@@ -266,7 +239,7 @@ export default function FileGrid({
             </div>
           )}
         </div>
-      )}
+      ) : null}
 
       {hasMore && (
         <div ref={loadMoreRef} className="py-4 text-center text-gray-400 text-sm">

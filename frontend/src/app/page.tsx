@@ -101,8 +101,8 @@ export default function Dashboard() {
   const [showMobileSearch, setShowMobileSearch] = useState(false);
 
   // Sorting (list view)
-  const [sortField, setSortField] = useState<SortField>('createdAt');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [sortField, setSortField] = useState<SortField>('name');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
   // Selection
   const selection = useSelection();
@@ -124,24 +124,12 @@ export default function Dashboard() {
 
   // Filter + sort
   const filteredFolders = useMemo(() => {
-    const filtered = folders.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
-    return [...filtered].sort((a, b) => {
-      const cmp = sortField === 'name'
-        ? a.name.localeCompare(b.name)
-        : new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      return sortDirection === 'asc' ? cmp : -cmp;
-    });
-  }, [folders, searchQuery, sortField, sortDirection]);
+    return folders.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [folders, searchQuery]);
 
   const filteredFiles = useMemo(() => {
-    const filtered = files.filter(f => f.filename.toLowerCase().includes(searchQuery.toLowerCase()));
-    return [...filtered].sort((a, b) => {
-      const cmp = sortField === 'name'
-        ? a.filename.localeCompare(b.filename)
-        : new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      return sortDirection === 'asc' ? cmp : -cmp;
-    });
-  }, [files, searchQuery, sortField, sortDirection]);
+    return files.filter(f => f.filename.toLowerCase().includes(searchQuery.toLowerCase()));
+  }, [files, searchQuery]);
 
   // Ordered IDs for shift-select
   const orderedIds = useMemo(
@@ -219,10 +207,13 @@ export default function Dashboard() {
       const data = isLoadMoreCall
         ? await fetchFolderContentNextPage(
             currentFolderId,
-            nextFileCursor.current,
             nextFolderCursor.current,
+            nextFileCursor.current,
+            undefined, // search
+            sortField,
+            sortDirection
           )
-        : await fetchFolderContentInitial(currentFolderId);
+        : await fetchFolderContentInitial(currentFolderId, undefined, sortField, sortDirection);
 
       if (isLoadMoreCall) {
         setFolders(prev => {
@@ -254,7 +245,7 @@ export default function Dashboard() {
       setIsLoadingContent(false);
       setIsLoadMore(false);
     }
-  }, [currentFolderId, token]);
+  }, [currentFolderId, token, sortField, sortDirection]);
 
   const handleLoadMore = useCallback(() => {
     fetchContent(true);

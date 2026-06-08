@@ -96,11 +96,15 @@ export async function fetchFolderContent(
   folderId?: string,
   cursor?: string,
   search?: string,
+  sortField?: string,
+  sortDirection?: 'asc' | 'desc'
 ): Promise<PaginatedFolderContent & { data: FolderRecord[] | FileRecord[] }> {
   const params = new URLSearchParams();
   if (folderId) params.set('folderId', folderId);
   if (cursor) params.set('cursor', cursor);
   if (search) params.set('search', search);
+  if (sortField) params.set('sortField', sortField);
+  if (sortDirection) params.set('sortDirection', sortDirection);
   params.set('limit', '50');
   const res = await api.get(`/folders/content?${params}`);
   const result = res.data;
@@ -121,10 +125,14 @@ export async function fetchFolderContent(
 export async function fetchFolderContentInitial(
   folderId?: string,
   search?: string,
+  sortField?: string,
+  sortDirection?: 'asc' | 'desc'
 ): Promise<PaginatedFolderContent> {
   const params = new URLSearchParams();
   if (folderId) params.set('folderId', folderId);
   if (search) params.set('search', search);
+  if (sortField) params.set('sortField', sortField);
+  if (sortDirection) params.set('sortDirection', sortDirection);
   params.set('limit', '50');
   const res = await api.get(`/folders/content?${params}`);
   const result = res.data;
@@ -136,12 +144,16 @@ export async function fetchFolderContentNextPage(
   nextFolderCursor: string | null,
   nextFileCursor: string | null,
   search?: string,
+  sortField?: string,
+  sortDirection?: 'asc' | 'desc'
 ): Promise<{ folders: FolderRecord[]; files: FileRecord[]; nextFolderCursor: string | null; nextFileCursor: string | null }> {
   const params = new URLSearchParams();
   if (folderId) params.set('folderId', folderId);
   const cursor = nextFolderCursor ? nextFolderCursor : nextFileCursor;
   if (cursor) params.set('cursor', cursor);
   if (search) params.set('search', search);
+  if (sortField) params.set('sortField', sortField);
+  if (sortDirection) params.set('sortDirection', sortDirection);
   params.set('limit', '50');
   const res = await api.get(`/folders/content?${params}`);
   return res.data;
@@ -302,10 +314,14 @@ export async function setS3PublicAccess(folderId: string, enabled: boolean, list
 export async function fetchTrashFolders(
   cursor?: string,
   search?: string,
+  sortField?: string,
+  sortDirection?: 'asc' | 'desc'
 ): Promise<PaginatedResponse<TrashedFolder>> {
   const params = new URLSearchParams();
   if (cursor) params.set('cursor', cursor);
   if (search) params.set('search', search);
+  if (sortField) params.set('sortField', sortField);
+  if (sortDirection) params.set('sortDirection', sortDirection);
   params.set('limit', '20');
   const res = await api.get(`/folders/trash/list?${params}`);
   return res.data;
@@ -314,10 +330,14 @@ export async function fetchTrashFolders(
 export async function fetchTrashFiles(
   cursor?: string,
   search?: string,
+  sortField?: string,
+  sortDirection?: 'asc' | 'desc'
 ): Promise<PaginatedResponse<TrashedFile>> {
   const params = new URLSearchParams();
   if (cursor) params.set('cursor', cursor);
   if (search) params.set('search', search);
+  if (sortField) params.set('sortField', sortField);
+  if (sortDirection) params.set('sortDirection', sortDirection);
   params.set('limit', '20');
   const res = await api.get(`/files/trash/list?${params}`);
   return res.data;

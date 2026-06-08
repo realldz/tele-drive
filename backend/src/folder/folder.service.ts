@@ -15,7 +15,6 @@ import { PaginatedResponse } from '../common/types/paginated-response.type';
 import { PaginatedFolderContent } from '../common/types/paginated-folder-content.type';
 import type { ConflictAction } from '../common/name-conflict.service';
 import * as crypto from 'crypto';
-import { message } from 'telegraf/filters';
 
 @Injectable()
 export class FolderService {
@@ -173,6 +172,9 @@ export class FolderService {
     pagination: PaginationQueryDto,
   ): Promise<PaginatedFolderContent> {
     const limit = pagination.limit ?? 50;
+    const sortField = pagination.sortField || 'createdAt';
+    const sortDirection = pagination.sortDirection || 'desc';
+
     const parentWhere: Record<string, unknown> = {
       parentId: folderId || null,
       userId,
@@ -187,7 +189,6 @@ export class FolderService {
       deletedAt: null,
     };
 
-    // Apply search
     if (pagination.search) {
       parentWhere['name'] = {
         contains: pagination.search,
@@ -199,52 +200,46 @@ export class FolderService {
       };
     }
 
-    // Parse folder cursor
-    let isQueryNextFolder = false;
-    const fileWhere: Record<string, unknown> = { ...filesWhere };
+    let parsedCursor: { f?: string; fc?: string } = {};
     if (pagination.cursor) {
       try {
-        const parsed = JSON.parse(
-          Buffer.from(pagination.cursor, 'base64').toString('utf-8'),
+        const decoded = Buffer.from(pagination.cursor, 'base64').toString(
+          'utf-8',
         );
-        if (parsed.f) {
-          parentWhere['id'] = { lt: parsed.f };
-          isQueryNextFolder = true;
-        }
-        // Parse file cursor (base64 JSON with "fc" key)
-        if (parsed.fc) {
-          const [timestamp, id] = parsed.fc.split('_');
-          fileWhere.OR = [
-            { createdAt: { lt: new Date(timestamp) } },
-            { createdAt: new Date(timestamp), id: { lt: id } },
-          ];
-        }
-      } catch {
-        // Invalid cursor, ignore
-      }
-    }
-
-    // Determine if cursor is a file-only cursor (has fc but no f)
-    let isQueryNextFile = false;
-    if (pagination.cursor) {
-      try {
-        const parsed = JSON.parse(
-          Buffer.from(pagination.cursor, 'base64').toString('utf-8'),
-        );
-        if (parsed.fc && !parsed.f) {
-          isQueryNextFile = true;
-        }
+        const parsed = JSON.parse(decoded) as Record<string, unknown>;
+        parsedCursor = {
+          f: typeof parsed.f === 'string' ? parsed.f : undefined,
+          fc: typeof parsed.fc === 'string' ? parsed.fc : undefined,
+        };
       } catch {
         // ignore
       }
     }
 
-    // Fetch folders (skip only when we are exclusively paginating files)
+    const isQueryNextFile = !!(parsedCursor.fc && !parsedCursor.f);
+    const isQueryNextFolder = !!parsedCursor.f;
+
+    let folderOrderBy: any[] = [
+      { createdAt: sortDirection },
+      { id: sortDirection },
+    ];
+    if (sortField === 'name')
+      folderOrderBy = [{ name: sortDirection }, { id: sortDirection }];
+
+    let fileOrderBy: any[] = [
+      { createdAt: sortDirection },
+      { id: sortDirection },
+    ];
+    if (sortField === 'name')
+      fileOrderBy = [{ filename: sortDirection }, { id: sortDirection }];
+
     const folders = isQueryNextFile
       ? []
       : await this.prisma.folder.findMany({
           where: parentWhere,
-          orderBy: { id: 'desc' },
+          orderBy: folderOrderBy,
+          cursor: parsedCursor.f ? { id: parsedCursor.f } : undefined,
+          skip: parsedCursor.f ? 1 : 0,
           select: {
             id: true,
             name: true,
@@ -265,19 +260,18 @@ export class FolderService {
       ? Buffer.from(
           JSON.stringify({
             f: (folderItems[folderItems.length - 1] as { id: string }).id,
+            fc: parsedCursor.fc,
           }),
         ).toString('base64')
       : null;
 
-    // Fetch files:
-    // - Always fetch when NOT paginating folders (initial load or file-only cursor)
-    // - Also fetch when paginating folders but this is the LAST folder page (folderHasNext = false),
-    //   so the frontend receives the first page of files and nextFileCursor if needed.
     const shouldFetchFiles = !isQueryNextFolder || !folderHasNext;
     const files = shouldFetchFiles
       ? await this.prisma.fileRecord.findMany({
-          where: fileWhere,
-          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          where: filesWhere,
+          orderBy: fileOrderBy,
+          cursor: parsedCursor.fc ? { id: parsedCursor.fc } : undefined,
+          skip: parsedCursor.fc ? 1 : 0,
           select: {
             id: true,
             filename: true,
@@ -301,7 +295,7 @@ export class FolderService {
     const nextFileCursor = fileHasNext
       ? Buffer.from(
           JSON.stringify({
-            fc: `${(fileItems[fileItems.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(fileItems[fileItems.length - 1] as { id: string }).id}`,
+            fc: (fileItems[fileItems.length - 1] as { id: string }).id,
           }),
         ).toString('base64')
       : null;
@@ -309,7 +303,7 @@ export class FolderService {
     // Count totals
     const [totalFolders, totalFiles] = await Promise.all([
       this.prisma.folder.count({ where: parentWhere }),
-      this.prisma.fileRecord.count({ where: fileWhere }),
+      this.prisma.fileRecord.count({ where: filesWhere }),
     ]);
 
     return {
@@ -589,6 +583,9 @@ export class FolderService {
 
     if (pagination) {
       const limit = pagination.limit ?? 50;
+      const sortField = pagination.sortField || 'createdAt';
+      const sortDirection = pagination.sortDirection || 'desc';
+
       const folderWhere: Record<string, unknown> = {
         parentId: currentFolderId,
         deletedAt: null,
@@ -602,122 +599,84 @@ export class FolderService {
       if (pagination.search) {
         folderWhere['name'] = {
           contains: pagination.search,
-          mode: 'insensitive' as const,
+          mode: 'insensitive',
         };
         filesWhere['filename'] = {
           contains: pagination.search,
-          mode: 'insensitive' as const,
+          mode: 'insensitive',
         };
       }
 
-      // Parse cursor for combined pagination
+      let parsedCursor: { f?: string; fc?: string } = {};
       if (pagination.cursor) {
         try {
-          const parsed = JSON.parse(
-            Buffer.from(pagination.cursor, 'base64').toString('utf-8'),
+          const decoded = Buffer.from(pagination.cursor, 'base64').toString(
+            'utf-8',
           );
-          let isQueryNextFolder = false;
-          if (parsed.f) {
-            folderWhere['id'] = { lt: parsed.f };
-            isQueryNextFolder = true;
-          }
-          const fileWhere: Record<string, unknown> = { ...filesWhere };
-          if (parsed.fc) {
-            const [timestamp, id] = parsed.fc.split('_');
-            fileWhere.OR = [
-              { createdAt: { lt: new Date(timestamp) } },
-              { createdAt: new Date(timestamp), id: { lt: id } },
-            ];
-          }
-
-          let isQueryNextFile = false;
-          if (parsed.fc && !parsed.f) {
-            isQueryNextFile = true;
-          }
-
-          const folders = isQueryNextFile
-            ? []
-            : await this.prisma.folder.findMany({
-                where: folderWhere,
-                orderBy: { id: 'desc' },
-                take: limit + 1,
-              });
-          const foldersHasNext = folders.length > limit;
-          const folderItems = foldersHasNext ? folders.slice(0, -1) : folders;
-          const nextFolderCursor = foldersHasNext
-            ? Buffer.from(
-                JSON.stringify({
-                  f: (folderItems[folderItems.length - 1] as { id: string }).id,
-                }),
-              ).toString('base64')
-            : null;
-
-          const shouldFetchFiles = !isQueryNextFolder || !foldersHasNext;
-          const files = shouldFetchFiles
-            ? await this.prisma.fileRecord.findMany({
-                where: fileWhere,
-                orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-                take: limit + 1,
-              })
-            : [];
-          const filesHasNext = files.length > limit;
-          const fileItems = filesHasNext ? files.slice(0, -1) : files;
-          const nextFileCursor = filesHasNext
-            ? Buffer.from(
-                JSON.stringify({
-                  fc: `${(fileItems[fileItems.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(fileItems[fileItems.length - 1] as { id: string }).id}`,
-                }),
-              ).toString('base64')
-            : null;
-
-          const breadcrumbs = await this.buildSharedBreadcrumbs(
-            currentFolderId,
-            rootSharedFolder,
-          );
-
-          return {
-            rootFolder: rootSharedFolder,
-            currentFolderId,
-            folders: folderItems,
-            files: fileItems,
-            nextFolderCursor,
-            nextFileCursor,
-            breadcrumbs,
+          const parsed = JSON.parse(decoded) as Record<string, unknown>;
+          parsedCursor = {
+            f: typeof parsed.f === 'string' ? parsed.f : undefined,
+            fc: typeof parsed.fc === 'string' ? parsed.fc : undefined,
           };
         } catch {
-          // Invalid cursor format, fall through to default fetch
+          // ignore
         }
       }
 
-      // Default fetch without cursor
-      const folders = await this.prisma.folder.findMany({
-        where: folderWhere,
-        orderBy: { id: 'desc' },
-        take: limit + 1,
-      });
+      const isQueryNextFolder = !!parsedCursor.f;
+      const isQueryNextFile = !!parsedCursor.fc && !parsedCursor.f;
+
+      let folderOrderBy: any[] = [
+        { createdAt: sortDirection },
+        { id: sortDirection },
+      ];
+      if (sortField === 'name')
+        folderOrderBy = [{ name: sortDirection }, { id: sortDirection }];
+
+      const folders = isQueryNextFile
+        ? []
+        : await this.prisma.folder.findMany({
+            where: folderWhere,
+            orderBy: folderOrderBy,
+            cursor: parsedCursor.f ? { id: parsedCursor.f } : undefined,
+            skip: parsedCursor.f ? 1 : 0,
+            take: limit + 1,
+          });
       const foldersHasNext = folders.length > limit;
       const folderItems = foldersHasNext ? folders.slice(0, -1) : folders;
       const nextFolderCursor = foldersHasNext
         ? Buffer.from(
-            JSON.stringify({
-              f: (folderItems[folderItems.length - 1] as { id: string }).id,
-            }),
+            JSON.stringify({ f: folderItems[folderItems.length - 1].id }),
           ).toString('base64')
         : null;
 
-      const fileWhere: Record<string, unknown> = { ...filesWhere };
-      const files = await this.prisma.fileRecord.findMany({
-        where: fileWhere,
-        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-        take: limit + 1,
-      });
+      let fileOrderBy: any[] = [
+        { createdAt: sortDirection },
+        { id: sortDirection },
+      ];
+      if (sortField === 'name')
+        fileOrderBy = [{ filename: sortDirection }, { id: sortDirection }];
+
+      const shouldFetchFiles = !isQueryNextFolder || !foldersHasNext;
+      let fileCursorId = parsedCursor.fc;
+      if (fileCursorId && fileCursorId.includes('_')) {
+        fileCursorId = fileCursorId.split('_')[1];
+      }
+
+      const files = shouldFetchFiles
+        ? await this.prisma.fileRecord.findMany({
+            where: filesWhere,
+            orderBy: fileOrderBy,
+            cursor: fileCursorId ? { id: fileCursorId } : undefined,
+            skip: fileCursorId ? 1 : 0,
+            take: limit + 1,
+          })
+        : [];
       const filesHasNext = files.length > limit;
       const fileItems = filesHasNext ? files.slice(0, -1) : files;
       const nextFileCursor = filesHasNext
         ? Buffer.from(
-            JSON.stringify({
-              fc: `${(fileItems[fileItems.length - 1] as { createdAt: Date }).createdAt.toISOString()}_${(fileItems[fileItems.length - 1] as { id: string }).id}`,
-            }),
+            JSON.stringify({ fc: fileItems[fileItems.length - 1].id }),
           ).toString('base64')
         : null;
 

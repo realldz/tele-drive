@@ -355,10 +355,10 @@ export default function TrashPage() {
               </div>
             ) : (
               <div className="space-y-8">
-                {/* Folders */}
-                {trashedFolders.length > 0 && (
+                {/* Combined Folders and Files */}
+                {(trashedFolders.length > 0 || trashedFiles.length > 0) && (
                   <div>
-                    <h3 className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">{t('trash.folders')}</h3>
+                    <h3 className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">{t('trash.files')}</h3>
                     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
                       <table className="w-full text-left border-collapse">
                         <tbody className="divide-y divide-gray-100">
@@ -401,19 +401,6 @@ export default function TrashPage() {
                               </td>
                             </tr>
                           ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* Files */}
-                {trashedFiles.length > 0 && (
-                  <div>
-                    <h3 className="text-xs font-bold text-gray-400 mb-3 uppercase tracking-wider">{t('trash.files')}</h3>
-                    <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-                      <table className="w-full text-left border-collapse">
-                        <tbody className="divide-y divide-gray-100">
                           {trashedFiles.map(file => (
                             <tr key={file.id} data-selectable-id={file.id}
                               onClick={(e) => handleItemClick(e, file)}
