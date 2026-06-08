@@ -20,4 +20,12 @@ export class PaginationQueryDto {
   @IsOptional()
   @IsString()
   folderId?: string;
+
+  @IsOptional()
+  @IsString()
+  sortField?: string;
+
+  @IsOptional()
+  @IsString()
+  sortDirection?: 'asc' | 'desc';
 }

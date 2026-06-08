@@ -58,23 +58,9 @@ export default function SharedFolderPage() {
   }, [sortField]);
 
   // Filter + sort
-  const filteredFolders = useMemo(() => {
-    return [...folders].sort((a, b) => {
-      const cmp = sortField === 'name'
-        ? a.name.localeCompare(b.name)
-        : new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      return sortDirection === 'asc' ? cmp : -cmp;
-    });
-  }, [folders, sortField, sortDirection]);
+  const filteredFolders = folders;
 
-  const filteredFiles = useMemo(() => {
-    return [...files].sort((a, b) => {
-      const cmp = sortField === 'name'
-        ? a.filename.localeCompare(b.filename)
-        : new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      return sortDirection === 'asc' ? cmp : -cmp;
-    });
-  }, [files, sortField, sortDirection]);
+  const filteredFiles = files;
 
   // Ordered IDs for shift select
   const orderedIds = useMemo(
@@ -113,6 +99,8 @@ export default function SharedFolderPage() {
         const cursor = foldersCursor.current || filesCursor.current;
         if (cursor) params.set('cursor', cursor);
       }
+      params.set('sortField', sortField);
+      params.set('sortDirection', sortDirection);
 
       const query = params.toString();
       const url = query
@@ -145,7 +133,7 @@ export default function SharedFolderPage() {
       setIsLoading(false);
       setIsLoadingMore(false);
     }
-  }, [token, currentFolderId, t]);
+  }, [token, currentFolderId, t, sortField, sortDirection]);
 
   const fetchContentRef = useRef(fetchContent);
   fetchContentRef.current = fetchContent;
@@ -155,7 +143,7 @@ export default function SharedFolderPage() {
     filesCursor.current = null;
     setHasMoreFolders(true);
     setHasMoreFiles(true);
-  }, [currentFolderId, token]);
+  }, [currentFolderId, token, sortField, sortDirection]);
 
   useEffect(() => {
     fetchContent(true);

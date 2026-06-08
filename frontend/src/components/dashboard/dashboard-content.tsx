@@ -101,10 +101,9 @@ export default function DashboardContent({
 
   return (
     <>
-      {/* Folders */}
-      {filteredFoldersCount > 0 && (
-        <div className="mb-8">
-          <h2 className="text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider">{t('dashboard.folders')}</h2>
+      {/* Combined Folders and Files */}
+      {filteredFoldersCount > 0 || filteredFilesCount > 0 ? (
+        <div>
           {viewMode === 'grid' ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {visibleFolders.map(folder => (
@@ -136,66 +135,6 @@ export default function DashboardContent({
                   </div>
                 </div>
               ))}
-            </div>
-          ) : (
-            <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
-                    <th className="p-3 md:p-4 font-semibold cursor-pointer select-none" onClick={() => onSort('name')}>
-                      <span className="flex items-center gap-1">{t('dashboard.name')} {renderSortIcon('name')}</span>
-                    </th>
-                    <th className="p-3 md:p-4 font-semibold hidden sm:table-cell cursor-pointer select-none" onClick={() => onSort('createdAt')}>
-                      <span className="flex items-center gap-1">{t('dashboard.createdDate')} {renderSortIcon('createdAt')}</span>
-                    </th>
-                    <th className="p-3 md:p-4 font-semibold text-right whitespace-nowrap">{t('dashboard.options')}</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {visibleFolders.map(folder => (
-                    <tr key={folder.id} data-selectable-id={folder.id}
-                      onClick={(e) => onItemClick(e, folder, 'folder')}
-                      draggable
-                      onDragStart={(e) => onDragStart(e, folder, 'folder')} onDragOver={(e) => onDragOver(e, folder.id)}
-                      onDragLeave={onDragLeave} onDrop={(e) => onDrop(e, folder.id)}
-                      onContextMenu={(e) => onContextMenu(e, folder, 'folder')}
-                      className={`cursor-pointer transition-colors group ${
-                        selection.isSelected(folder.id)
-                          ? 'bg-blue-50'
-                          : dragOverFolderId === folder.id ? 'bg-blue-50' : 'hover:bg-gray-50'
-                      }`}
-                    >
-                      <td className="p-3 md:p-4">
-                        <div className="flex items-center gap-3">
-                          <div className="relative flex-shrink-0">
-                            <Folder className="w-6 h-6 text-blue-500" fill="currentColor" opacity={0.8} />
-                            {folder.visibility !== 'PRIVATE' && <Globe className="absolute -bottom-1 -right-1 w-3 h-3 text-green-600 bg-white rounded-full p-px" />}
-                          </div>
-                          <span className="font-medium text-gray-800">{folder.name}</span>
-                        </div>
-                      </td>
-                      <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">{formatDate(folder.createdAt)}</td>
-                      <td className="p-3 md:p-4 text-right">
-                        <button onClick={(e) => { e.stopPropagation(); onContextMenu(e, folder, 'folder'); }}
-                          className="md:opacity-0 md:group-hover:opacity-100 p-1.5 text-gray-500 hover:bg-gray-200 rounded-md transition-opacity inline-flex items-center">
-                          <MoreVertical size={16} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Files */}
-      {filteredFilesCount > 0 && (
-        <div>
-          <h2 className="text-sm font-bold text-gray-500 mb-4 uppercase tracking-wider">{t('dashboard.files')}</h2>
-          {viewMode === 'grid' ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4">
               {visibleFiles.map(file => (
                 <div key={file.id} data-selectable-id={file.id} draggable onDragStart={(e) => onDragStart(e, file, 'file')}
                   onClick={(e) => onItemClick(e, file, 'file')}
@@ -264,16 +203,48 @@ export default function DashboardContent({
                 <thead>
                   <tr className="bg-gray-50 text-gray-500 text-xs uppercase tracking-wider border-b border-gray-200">
                     <th className="p-3 md:p-4 font-semibold cursor-pointer select-none" onClick={() => onSort('name')}>
-                      <span className="flex items-center gap-1">{t('dashboard.fileName')} {renderSortIcon('name')}</span>
+                      <span className="flex items-center gap-1">{t('dashboard.name')} {renderSortIcon('name')}</span>
                     </th>
                     <th className="p-3 md:p-4 font-semibold hidden sm:table-cell">{t('dashboard.size')}</th>
                     <th className="p-3 md:p-4 font-semibold hidden sm:table-cell cursor-pointer select-none" onClick={() => onSort('createdAt')}>
                       <span className="flex items-center gap-1">{t('dashboard.createdDate')} {renderSortIcon('createdAt')}</span>
                     </th>
-                    <th className="p-3 md:p-4 font-semibold text-right">{t('dashboard.options')}</th>
+                    <th className="p-3 md:p-4 font-semibold text-right whitespace-nowrap">{t('dashboard.options')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
+                  {visibleFolders.map(folder => (
+                    <tr key={folder.id} data-selectable-id={folder.id}
+                      onClick={(e) => onItemClick(e, folder, 'folder')}
+                      draggable
+                      onDragStart={(e) => onDragStart(e, folder, 'folder')} onDragOver={(e) => onDragOver(e, folder.id)}
+                      onDragLeave={onDragLeave} onDrop={(e) => onDrop(e, folder.id)}
+                      onContextMenu={(e) => onContextMenu(e, folder, 'folder')}
+                      className={`cursor-pointer transition-colors group ${
+                        selection.isSelected(folder.id)
+                          ? 'bg-blue-50'
+                          : dragOverFolderId === folder.id ? 'bg-blue-50' : 'hover:bg-gray-50'
+                      }`}
+                    >
+                      <td className="p-3 md:p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="relative flex-shrink-0">
+                            <Folder className="w-6 h-6 text-blue-500" fill="currentColor" opacity={0.8} />
+                            {folder.visibility !== 'PRIVATE' && <Globe className="absolute -bottom-1 -right-1 w-3 h-3 text-green-600 bg-white rounded-full p-px" />}
+                          </div>
+                          <span className="font-medium text-gray-800">{folder.name}</span>
+                        </div>
+                      </td>
+                      <td className="p-3 md:p-4 text-sm text-gray-600 hidden sm:table-cell">-</td>
+                      <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">{formatDate(folder.createdAt)}</td>
+                      <td className="p-3 md:p-4 text-right">
+                        <button onClick={(e) => { e.stopPropagation(); onContextMenu(e, folder, 'folder'); }}
+                          className="md:opacity-0 md:group-hover:opacity-100 p-1.5 text-gray-500 hover:bg-gray-200 rounded-md transition-opacity inline-flex items-center">
+                          <MoreVertical size={16} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
                   {visibleFiles.map(file => (
                     <tr key={file.id} data-selectable-id={file.id} draggable onDragStart={(e) => onDragStart(e, file, 'file')}
                       onClick={(e) => onItemClick(e, file, 'file')}
@@ -333,7 +304,7 @@ export default function DashboardContent({
             </div>
           )}
         </div>
-      )}
+      ) : null}
 
       {hasMore && (<div ref={loadMoreRef} className="py-4 text-center text-gray-400 text-sm">{t('dashboard.loading')}</div>)}
     </>
