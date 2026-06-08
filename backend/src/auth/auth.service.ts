@@ -23,8 +23,8 @@ export class AuthService {
    */
   async register(username: string, password: string) {
     // Kiểm tra username đã tồn tại chưa
-    const existing = await this.prisma.user.findUnique({
-      where: { username },
+    const existing = await this.prisma.user.findFirst({
+      where: { username: { equals: username, mode: 'insensitive' } },
     });
     if (existing) {
       this.logger.warn(
@@ -73,8 +73,8 @@ export class AuthService {
    * Đăng nhập — verify password, trả về JWT token.
    */
   async login(username: string, password: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { username },
+    const user = await this.prisma.user.findFirst({
+      where: { username: { equals: username, mode: 'insensitive' } },
     });
     if (!user) {
       this.logger.warn(`Login failed: user "${username}" not found`);
