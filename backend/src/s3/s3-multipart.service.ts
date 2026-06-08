@@ -8,6 +8,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { S3Service } from './s3.service';
+import { UploadBufferService } from '../file/upload-buffer.service';
 import { Transform, Readable } from 'stream';
 import * as crypto from 'crypto';
 import { escapeXml } from '../common/utils/xml';
@@ -42,6 +43,7 @@ export class S3MultipartService {
     private readonly telegramService: TelegramService,
     private readonly cryptoService: CryptoService,
     private readonly s3Service: S3Service,
+    private readonly uploadBufferService: UploadBufferService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -119,6 +121,7 @@ export class S3MultipartService {
     partNumber: number,
     userId: string,
     req: Readable,
+    contentLength: number = 0,
   ): Promise<{ etag: string; size: number }> {
     // partNumber is 1-based; chunkIndex is 0-based
     const chunkIndex = partNumber - 1;
@@ -153,6 +156,32 @@ export class S3MultipartService {
         (existing as any).etag ||
         `"${crypto.createHash('md5').update(String(chunkIndex)).digest('hex')}"`;
       return { etag: storedEtag, size: existing.size };
+    }
+
+    const capacityOk =
+      contentLength > 0
+        ? await this.uploadBufferService.shouldBuffer(contentLength)
+        : false;
+
+    if (capacityOk) {
+      try {
+        const chunk = await this.uploadBufferService.acceptChunk({
+          buffer: req,
+          size: contentLength,
+          fileRecordId: uploadId,
+          chunkIndex,
+          userId,
+        });
+
+        this.logger.log(
+          `S3 UploadPart buffered: uploadId=${uploadId}, part=${partNumber}, size=${contentLength}, ETag=${chunk.etag}`,
+        );
+        return { etag: chunk.etag!, size: chunk.size };
+      } catch (err) {
+        this.logger.warn(
+          `Buffering failed for part ${partNumber}, falling back to direct upload: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
 
     // Decrypt the DEK for this upload

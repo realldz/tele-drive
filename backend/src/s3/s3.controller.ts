@@ -16,6 +16,7 @@ import { S3Service } from './s3.service';
 import { S3MultipartService } from './s3-multipart.service';
 import { FileLifecycleService } from '../file/file-lifecycle.service';
 import { FileStorageUploadService } from '../file/file-storage-upload.service';
+import { UploadBufferService } from '../file/upload-buffer.service';
 import { TransferReadService } from '../file/transfer-read.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { CryptoService } from '../crypto/crypto.service';
@@ -127,6 +128,7 @@ export class S3Controller {
     private readonly telegramService: TelegramService,
     private readonly cryptoService: CryptoService,
     private readonly prisma: PrismaService,
+    private readonly uploadBufferService: UploadBufferService,
   ) {}
 
   // ---------------------------------------------------------------------------
@@ -386,19 +388,20 @@ export class S3Controller {
     const partNumberStr = this.qstr(req.query['partNumber']);
     if (uploadId && partNumberStr) {
       const partNumber = parseInt(partNumberStr, 10);
-      const { stream } = wrapRequestStream(req);
+      const { stream, contentLength } = wrapRequestStream(req);
       try {
         const { etag } = await this.s3Multipart.uploadPart(
           uploadId,
           partNumber,
           userId,
           stream,
+          contentLength,
         );
         res.setHeader('ETag', etag);
         res.status(200).end();
       } catch (err: unknown) {
         this.logger.error(
-          `S3 UploadPart error: ${uploadId}, ${partNumber}, ${err instanceof Error ? err.message : err}`,
+          `S3 UploadPart error: ${uploadId}, ${partNumber}, ${err instanceof Error ? err.message : String(err)}`,
           err instanceof Error ? err.stack : undefined,
         );
         this.sendS3Error(res, err);
@@ -751,6 +754,74 @@ export class S3Controller {
         bucket,
         key,
       );
+
+      const capacityOk =
+        contentLength > 0
+          ? await this.uploadBufferService.shouldBuffer(contentLength)
+          : false;
+
+      if (capacityOk) {
+        try {
+          const record = await this.uploadBufferService.acceptFile({
+            buffer: stream,
+            filename,
+            mimeType: contentType,
+            size: contentLength,
+            userId,
+            folderId: folderId || undefined,
+            skipConflictCheck: true,
+          });
+
+          const computedMd5Hex = record.etag?.replace(/"/g, '');
+
+          // Content-MD5 verification
+          if (contentMd5Header) {
+            const expectedMd5Hex = Buffer.from(
+              contentMd5Header,
+              'base64',
+            ).toString('hex');
+            if (expectedMd5Hex !== computedMd5Hex) {
+              this.logger.warn(
+                `S3 PutObject BadDigest: expected ${expectedMd5Hex}, got ${computedMd5Hex}`,
+              );
+              await this.prisma.fileRecord.delete({ where: { id: record.id } });
+              return res
+                .status(400)
+                .setHeader('Content-Type', 'application/xml')
+                .send(
+                  this.s3Service.buildErrorXml(
+                    'BadDigest',
+                    'The Content-MD5 you specified did not match what we received.',
+                  ),
+                );
+            }
+          }
+
+          if (existingFiles.length > 0) {
+            await this.prisma.fileRecord.updateMany({
+              where: {
+                id: { in: existingFiles.map((file) => file.id) },
+                userId,
+                deletedAt: null,
+              },
+              data: { deletedAt: new Date() },
+            });
+            this.logger.log(
+              `S3 PutObject overwrite moved ${existingFiles.length} existing object(s) to trash: s3://${bucket}/${key}`,
+            );
+          }
+
+          this.logger.log(
+            `S3 PutObject buffered: s3://${bucket}/${key} (${contentLength} bytes, ETag: ${record.etag})`,
+          );
+          res.setHeader('ETag', record.etag!);
+          return res.status(200).end();
+        } catch (err) {
+          this.logger.warn(
+            `Buffering failed for PutObject ${key}, falling back to direct upload: ${err instanceof Error ? err.message : String(err)}`,
+          );
+        }
+      }
 
       if (contentLength > 0 && contentLength <= MAX_CHUNK_SIZE) {
         // ── Small file path: buffer → verify Content-MD5 → encrypt → upload ──
