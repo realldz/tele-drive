@@ -89,10 +89,25 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	err = tgClient.Init(ctx, cfg.TelegramUploadBotTokens)
-	if err != nil {
-		log.Error("Failed to initialize TelegramClient", "error", err)
-		panic(err)
+	// Retry Telegram init with backoff (handles nginx DNS race in Docker)
+	{
+		var tgInitErr error
+		for attempt := 0; attempt < 10; attempt++ {
+			tgInitErr = tgClient.Init(ctx, cfg.TelegramUploadBotTokens)
+			if tgInitErr == nil {
+				break
+			}
+			log.Warn("TelegramClient init attempt failed, retrying...", "attempt", attempt+1, "error", tgInitErr)
+			select {
+			case <-ctx.Done():
+				tgInitErr = ctx.Err()
+			case <-time.After(time.Duration(2<<attempt) * time.Second):
+			}
+		}
+		if tgInitErr != nil {
+			log.Error("Failed to initialize TelegramClient after retries", "error", tgInitErr)
+			panic(tgInitErr)
+		}
 	}
 	log.Info("Initialized TelegramClient bot pool", "botCount", len(cfg.TelegramUploadBotTokens)+1)
 
@@ -116,11 +131,75 @@ func main() {
 	zipBullWorker.Start(ctx, 2)
 	log.Info("Started download-zip queue worker", "concurrency", 2)
 
-	// 10. Start background Cron cleanups
+	// Create BullMQ client (needed for recovery and HTTP handlers)
+	bullMQClient := queue.NewBullMQClient(rdb)
+
+	// 10. Recover orphaned buffered files (no corresponding queue job)
+	{
+		var orphanedFiles []db.FileRecord
+		if err := database.Model(&db.FileRecord{}).Where("status = ?", "buffered").Find(&orphanedFiles).Error; err == nil {
+			for _, f := range orphanedFiles {
+				jobKey := fmt.Sprintf("bull:upload-dispatch:file-%s", f.ID)
+				exists, _ := rdb.Exists(ctx, jobKey).Result()
+				if exists == 0 {
+					tempKey := ""
+					if f.TempStorageKey != nil {
+						tempKey = *f.TempStorageKey
+					}
+					jobData := map[string]interface{}{
+						"type":           "file",
+						"recordId":       f.ID,
+						"tempStorageKey": tempKey,
+						"userId":         f.UserID,
+					}
+					maxRetries := settingsCache.GetCachedSettingInt("BUFFER_MAX_RETRIES", 3)
+					if err := bullMQClient.AddJob(context.Background(), "upload-dispatch", "dispatch-file", fmt.Sprintf("file-%s", f.ID), jobData, maxRetries); err != nil {
+						log.Warn("Failed to re-enqueue orphaned buffered file", "fileId", f.ID, "error", err)
+					} else {
+						log.Info("Re-enqueued orphaned buffered file", "fileId", f.ID, "filename", f.Filename)
+					}
+				}
+			}
+		} else {
+			log.Warn("Failed to query orphaned buffered files", "error", err)
+		}
+
+		var orphanedChunks []db.FileChunk
+		if err := database.Model(&db.FileChunk{}).Where("status = ?", "buffered").Find(&orphanedChunks).Error; err == nil {
+			for _, c := range orphanedChunks {
+				jobKey := fmt.Sprintf("bull:upload-dispatch:chunk-%s", c.ID)
+				exists, _ := rdb.Exists(ctx, jobKey).Result()
+				if exists == 0 {
+					tempKey := ""
+					if c.TempStorageKey != nil {
+						tempKey = *c.TempStorageKey
+					}
+					jobData := map[string]interface{}{
+						"type":           "chunk",
+						"chunkId":        c.ID,
+						"fileRecordId":   c.FileID,
+						"chunkIndex":     c.ChunkIndex,
+						"tempStorageKey": tempKey,
+						"userId":         "",
+					}
+					maxRetries := settingsCache.GetCachedSettingInt("BUFFER_MAX_RETRIES", 3)
+					if err := bullMQClient.AddJob(context.Background(), "upload-dispatch", "dispatch-chunk", fmt.Sprintf("chunk-%s", c.ID), jobData, maxRetries); err != nil {
+						log.Warn("Failed to re-enqueue orphaned buffered chunk", "chunkId", c.ID, "fileId", c.FileID, "error", err)
+					} else {
+						log.Info("Re-enqueued orphaned buffered chunk", "chunkId", c.ID, "fileId", c.FileID)
+					}
+				}
+			}
+		} else {
+			log.Warn("Failed to query orphaned buffered chunks", "error", err)
+		}
+	}
+
+	// 11. Start background Cron cleanups
 	cron.StartCronJobs(ctx, database, tgClient, tempStorage, settingsCache, log)
 	log.Info("Started background cron cleanup routines")
 
-	// 11. Set up Echo Web Server
+	// 12. Set up Echo Web Server
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
@@ -133,9 +212,6 @@ func main() {
 		AllowCredentials: true,
 		ExposeHeaders:    []string{"X-Bandwidth-Reset", "X-Request-ID", "Content-Length", "Content-Range", "ETag"},
 	}))
-
-	// Register REST File routes
-	bullMQClient := queue.NewBullMQClient(rdb)
 	fileHandler := handler.NewFileHandler(
 		database,
 		tgClient,
