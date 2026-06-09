@@ -64,7 +64,7 @@ func (h *FileHandler) RegisterRoutes(e *echo.Echo) {
 	streamMiddleware := middleware.StreamCookieMiddleware(h.cryptoEngine)
 
 	v1 := e.Group("/v1")
-	files := v1.Group("/files")
+	files := v1.Group("/transfer")
 
 	// Config (Public)
 	files.GET("/config", h.GetConfig)
