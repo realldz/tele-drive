@@ -237,6 +237,31 @@ func (uw *UploadWorker) processChunk(ctx context.Context, chunkID, fileRecordID 
 			return err
 		}
 
+		// Increment quota for this chunk
+		if err := tx.Model(&db.User{}).Where("id = ?", userID).Update(db.ColUsedSpace, gorm.Expr(db.ColUsedSpace+" + ?", int64(chunk.Size))).Error; err != nil {
+			return err
+		}
+
+		// Check if this is the last buffered chunk for this file
+		var pendingChunksCount int64
+		if err := tx.Model(&db.FileChunk{}).Where("\"fileId\" = ? AND status = ?", fileRecordID, "buffered").Count(&pendingChunksCount).Error; err != nil {
+			return err
+		}
+
+		if pendingChunksCount == 0 {
+			// Only set to complete if CompleteUpload hasn't already done so
+			var currentRecord db.FileRecord
+			if err := tx.Where("id = ?", fileRecordID).First(&currentRecord).Error; err != nil {
+				return err
+			}
+			if currentRecord.Status != "complete" {
+				if err := tx.Model(&db.FileRecord{}).Where("id = ?", fileRecordID).Update("status", "complete").Error; err != nil {
+					return err
+				}
+				uw.logger.Info("Chunked file fully complete", "filename", fileRecord.Filename, "size", fileRecord.Size)
+			}
+		}
+
 		return nil
 	})
 

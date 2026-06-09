@@ -374,6 +374,7 @@ func (s *S3Controller) doCopyObject(c echo.Context, userID string, destBucket st
 		Etag:              &inheritedEtag,
 		FolderID:          destFolderID,
 		UserID:            userID,
+		Visibility:        "PRIVATE",
 		CreatedAt:         time.Now(),
 		UpdatedAt:         time.Now(),
 	}

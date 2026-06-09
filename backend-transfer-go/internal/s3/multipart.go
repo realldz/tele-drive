@@ -116,6 +116,7 @@ func (s *S3MultipartService) CreateMultipartUpload(ctx context.Context, userID s
 		EncryptedKey:   &encryptedKey,
 		FolderID:       folderID,
 		UserID:         userID,
+		Visibility:     "PRIVATE",
 		CreatedAt:      time.Now(),
 		UpdatedAt:      time.Now(),
 	}
@@ -334,30 +335,35 @@ func (s *S3MultipartService) CompleteMultipartUpload(ctx context.Context, upload
 		}
 	}
 
-	// Count how many parts were already dispatched by the worker
-	var accountedSize int64
+	// Check if any parts are still buffered
+	hasBufferedChunks := false
 	for _, c := range chunks {
-		if c.TelegramFileID != nil && *c.TelegramFileID != "" {
-			accountedSize += int64(c.Size)
+		if c.Status == "buffered" {
+			hasBufferedChunks = true
+			break
 		}
 	}
-	remainingSize := totalSize - accountedSize
 
+	// CompleteMultipartUpload only sets metadata. The worker handles
+	// status='complete' and quota when the last buffered part is dispatched.
+	// If all parts are already on Telegram, finalize immediately.
 	err = s.database.Transaction(func(tx *gorm.DB) error {
-		// Update FileRecord
-		if err := tx.Model(&db.FileRecord{}).Where("id = ?", uploadID).Updates(map[string]interface{}{
-			"status":      "complete",
+		updates := map[string]interface{}{
 			"totalChunks": uploadedCount,
 			"size":        totalSize,
 			"etag":        finalEtag,
 			"updatedAt":   time.Now(),
-		}).Error; err != nil {
+		}
+		if !hasBufferedChunks {
+			updates["status"] = "complete"
+		}
+		if err := tx.Model(&db.FileRecord{}).Where("id = ?", uploadID).Updates(updates).Error; err != nil {
 			return err
 		}
 
-		// Update User usedSpace (only for unaccounted size)
-		if remainingSize > 0 {
-			if err := tx.Model(&db.User{}).Where("id = ?", userID).Update(db.ColUsedSpace, gorm.Expr(db.ColUsedSpace+" + ?", remainingSize)).Error; err != nil {
+		// If no buffered parts, account quota now (worker will handle it otherwise)
+		if !hasBufferedChunks {
+			if err := tx.Model(&db.User{}).Where("id = ?", userID).Update(db.ColUsedSpace, gorm.Expr(db.ColUsedSpace+" + ?", totalSize)).Error; err != nil {
 				return err
 			}
 		}

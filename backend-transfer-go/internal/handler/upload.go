@@ -123,6 +123,7 @@ func (h *FileHandler) Upload(c echo.Context) error {
 				TotalChunks:    1,
 				FolderID:       folderIDPtr,
 				UserID:         userID,
+				Visibility:     "PRIVATE",
 				Etag:           &etag,
 				CreatedAt:      time.Now(),
 				UpdatedAt:      time.Now(),
@@ -170,24 +171,25 @@ func (h *FileHandler) Upload(c echo.Context) error {
 		IsChunked:      false,
 		TotalChunks:    1,
 		Status:         "uploading",
-		IsEncrypted:    true,
-		EncryptionAlgo: stringAddr("aes-256-ctr"),
-		EncryptionIv:   stringAddr(hex.EncodeToString(iv)),
-		EncryptedKey:   &encryptedKey,
-		FolderID:       folderIDPtr,
-		UserID:         userID,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-	}
+			IsEncrypted:    true,
+			EncryptionAlgo: stringAddr("aes-256-ctr"),
+			EncryptionIv:   stringAddr(hex.EncodeToString(iv)),
+			EncryptedKey:   &encryptedKey,
+			FolderID:       folderIDPtr,
+			UserID:         userID,
+			Visibility:     "PRIVATE",
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+		}
 
-	if err := h.database.Create(&record).Error; err != nil {
-		return err
-	}
+		if err := h.database.Create(&record).Error; err != nil {
+			return err
+		}
 
-	hash := md5.New()
-	counter := &countingWriter{w: hash}
-	tee := io.TeeReader(src, counter)
-	encryptedStream, err := h.cryptoEngine.EncryptStream(tee, dek, iv)
+		hash := md5.New()
+		counter := &countingWriter{w: hash}
+		tee := io.TeeReader(src, counter)
+		encryptedStream, err := h.cryptoEngine.EncryptStream(tee, dek, iv)
 	if err != nil {
 		h.database.Delete(&record)
 		return err
@@ -305,22 +307,23 @@ func (h *FileHandler) InitUpload(c echo.Context) error {
 		IsChunked:      true,
 		TotalChunks:    input.TotalChunks,
 		Status:         "uploading",
-		IsEncrypted:    true,
-		EncryptionAlgo: stringAddr("aes-256-ctr"),
-		EncryptionIv:   stringAddr(hex.EncodeToString(iv)),
-		EncryptedKey:   &encryptedKey,
-		FolderID:       input.FolderID,
-		UserID:         userID,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
-	}
+			IsEncrypted:    true,
+			EncryptionAlgo: stringAddr("aes-256-ctr"),
+			EncryptionIv:   stringAddr(hex.EncodeToString(iv)),
+			EncryptedKey:   &encryptedKey,
+			FolderID:       input.FolderID,
+			UserID:         userID,
+			Visibility:     "PRIVATE",
+			CreatedAt:      time.Now(),
+			UpdatedAt:      time.Now(),
+		}
 
-	if err := h.database.Create(&record).Error; err != nil {
-		return err
-	}
+		if err := h.database.Create(&record).Error; err != nil {
+			return err
+		}
 
-	return c.JSON(http.StatusOK, record)
-}
+		return c.JSON(http.StatusOK, record)
+	}
 
 func (h *FileHandler) CompleteUpload(c echo.Context) error {
 	userID := c.Get("userId").(string)
@@ -380,18 +383,12 @@ func (h *FileHandler) CompleteUpload(c echo.Context) error {
 		}
 	}
 
-	// Count how many chunks were already dispatched by the worker
-	var accountedSize int64
-	for _, c := range chunks {
-		if c.TelegramFileID != nil && *c.TelegramFileID != "" {
-			accountedSize += int64(c.Size)
-		}
-	}
-	remainingSize := totalSize - accountedSize
-
+	// CompleteUpload only updates metadata (size, etag).
+	// The upload worker is responsible for setting status='complete'
+	// and incrementing quota when all chunks are dispatched to Telegram.
+	// This prevents races between CompleteUpload and async buffer dispatch.
 	err = h.database.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&db.FileRecord{}).Where("id = ?", fileID).Updates(map[string]interface{}{
-			"status":      "complete",
 			"totalChunks": len(chunks),
 			"size":        totalSize,
 			"etag":        finalEtag,
@@ -400,19 +397,13 @@ func (h *FileHandler) CompleteUpload(c echo.Context) error {
 			return err
 		}
 
-		if remainingSize > 0 {
-			if err := tx.Model(&db.User{}).Where("id = ?", userID).Update(db.ColUsedSpace, gorm.Expr(db.ColUsedSpace+" + ?", remainingSize)).Error; err != nil {
-				return err
-			}
-		}
-
+		// Soft-delete overwritten records
 		if len(replacedRecordIDs) > 0 {
 			now := time.Now()
 			if err := tx.Model(&db.FileRecord{}).Where("id IN ?", replacedRecordIDs).Update(db.ColDeletedAt, &now).Error; err != nil {
 				return err
 			}
 		}
-
 		return nil
 	})
 
@@ -420,10 +411,7 @@ func (h *FileHandler) CompleteUpload(c echo.Context) error {
 		return err
 	}
 
-	// Fetch final record
-	if err := h.database.Where("id = ?", fileID).First(&fileRecord).Error; err != nil {
-		// continue with empty results — best effort
-	}
+	h.database.Where("id = ?", fileID).First(&fileRecord)
 	return c.JSON(http.StatusOK, fileRecord)
 }
 
