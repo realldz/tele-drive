@@ -50,6 +50,7 @@ func TestS3Decryptor_DecryptSecret(t *testing.T) {
 // mockEncryptSecret mimics the Node.js S3AuthService.encryptSecret
 func mockEncryptSecret(masterSecret, secret string) (string, error) {
 	h := sha256.New()
+	h.Write([]byte("s3-credential-decryption:"))
 	h.Write([]byte(masterSecret))
 	masterKey := h.Sum(nil)
 

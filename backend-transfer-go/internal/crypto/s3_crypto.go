@@ -17,8 +17,9 @@ func NewS3Decryptor(masterSecret string) (*S3Decryptor, error) {
 	if masterSecret == "" {
 		return nil, errors.New("MASTER_SECRET environment variable is not set")
 	}
-	// Derive a 32-byte key from MASTER_SECRET using SHA256
+	// Derive a 32-byte key from MASTER_SECRET using SHA256 with domain separation
 	h := sha256.New()
+	h.Write([]byte("s3-credential-decryption:"))
 	h.Write([]byte(masterSecret))
 	key := h.Sum(nil)
 	return &S3Decryptor{masterKey: key}, nil

@@ -98,6 +98,7 @@ func (h *FileHandler) IssueStreamCookie(c echo.Context) error {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   int(ttl),
 	}
@@ -127,6 +128,7 @@ func (h *FileHandler) IssueGuestStreamCookie(c echo.Context) error {
 		Value:    token,
 		Path:     "/",
 		HttpOnly: true,
+		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
 		MaxAge:   int(ttl),
 	}

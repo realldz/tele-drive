@@ -13,6 +13,11 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+type JWTHeader struct {
+	Alg string `json:"alg"`
+	Typ string `json:"typ"`
+}
+
 type JWTClaims struct {
 	Sub      string `json:"sub"`
 	Username string `json:"username"`
@@ -26,28 +31,19 @@ func ParseJWT(tokenStr string, secret string) (*JWTClaims, error) {
 		return nil, errors.New("invalid token format")
 	}
 
-	headerSegment := parts[0]
-	payloadSegment := parts[1]
-	signatureSegment := parts[2]
-
-	// Verify signature
-	mac := hmac.New(sha256.New, []byte(secret))
-	mac.Write([]byte(headerSegment + "." + payloadSegment))
-	expectedSig := mac.Sum(nil)
-
 	// Base64Url decode helper
 	decodeBase64Url := func(s string) ([]byte, error) {
-		// pad first if needed
+		// Try JWT-standard base64url first (no padding, no trim needed)
+		if b, err := base64.RawURLEncoding.DecodeString(s); err == nil {
+			return b, nil
+		}
+		// Fallback: trim trailing _ padding chars, pad if needed, try variants
+		s = strings.TrimRight(s, "_")
 		if l := len(s) % 4; l > 0 {
 			s += strings.Repeat("=", 4-l)
 		}
-		// Try raw first
-		b, err := base64.RawURLEncoding.DecodeString(s)
-		if err == nil {
-			return b, nil
-		}
 		// Try standard url
-		b, err = base64.URLEncoding.DecodeString(s)
+		b, err := base64.URLEncoding.DecodeString(s)
 		if err == nil {
 			return b, nil
 		}
@@ -58,6 +54,29 @@ func ParseJWT(tokenStr string, secret string) (*JWTClaims, error) {
 		}
 		return base64.StdEncoding.DecodeString(s)
 	}
+
+	headerBytes, err := decodeBase64Url(parts[0])
+	if err != nil {
+		return nil, errors.New("invalid token header encoding")
+	}
+
+	var jwtHeader JWTHeader
+	if err := json.Unmarshal(headerBytes, &jwtHeader); err != nil {
+		return nil, errors.New("invalid token header format")
+	}
+
+	if jwtHeader.Alg != "HS256" {
+		return nil, errors.New("unsupported JWT algorithm: " + jwtHeader.Alg)
+	}
+
+	headerSegment := parts[0]
+	payloadSegment := parts[1]
+	signatureSegment := parts[2]
+
+	// Verify signature
+	mac := hmac.New(sha256.New, []byte(secret))
+	mac.Write([]byte(headerSegment + "." + payloadSegment))
+	expectedSig := mac.Sum(nil)
 
 	sig, err := decodeBase64Url(signatureSegment)
 	if err != nil {

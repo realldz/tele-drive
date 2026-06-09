@@ -64,12 +64,18 @@ func (e *CryptoEngine) GenerateIv() ([]byte, error) {
 
 // EncryptKey encrypts the DEK with the MASTER_SECRET using AES-256-CTR
 func (e *CryptoEngine) EncryptKey(dek []byte) (string, error) {
+	// Derive key with domain separation
+	h := sha256.New()
+	h.Write([]byte("file-key-encryption:"))
+	h.Write(e.masterSecret)
+	derivedKey := h.Sum(nil)
+
 	iv, err := e.GenerateIv()
 	if err != nil {
 		return "", err
 	}
 
-	block, err := aes.NewCipher(e.masterSecret)
+	block, err := aes.NewCipher(derivedKey)
 	if err != nil {
 		return "", err
 	}
@@ -98,7 +104,13 @@ func (e *CryptoEngine) DecryptKey(encryptedKey string) ([]byte, error) {
 		return nil, err
 	}
 
-	block, err := aes.NewCipher(e.masterSecret)
+	// Derive key with domain separation (same as EncryptKey)
+	h := sha256.New()
+	h.Write([]byte("file-key-encryption:"))
+	h.Write(e.masterSecret)
+	derivedKey := h.Sum(nil)
+
+	block, err := aes.NewCipher(derivedKey)
 	if err != nil {
 		return nil, err
 	}
