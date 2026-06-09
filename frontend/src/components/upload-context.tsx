@@ -161,9 +161,6 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       const end = Math.min(start + maxChunkSize, item.file.size);
       const chunkBlob = item.file.slice(start, end);
 
-      const chunkFormData = new FormData();
-      chunkFormData.append('chunk', chunkBlob, `chunk_${chunkIndex}`);
-
       const abortController = new AbortController();
       controllers.push(abortController);
 
@@ -171,11 +168,11 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       for (let attempt = 0; ; attempt++) {
         try {
           await api.post(
-            `/files/upload/${serverFileId}/chunk/${chunkIndex}`,
-            chunkFormData,
+            `/transfer/upload/${serverFileId}/chunk/${chunkIndex}`,
+            chunkBlob,
             {
               timeout: 0,
-              headers: { 'Content-Type': 'multipart/form-data' },
+              headers: { 'Content-Type': 'application/octet-stream' },
               signal: abortController.signal,
               onUploadProgress: (progressEvent) => {
                 chunkProgress[chunkIndex] = progressEvent.loaded || 0;
