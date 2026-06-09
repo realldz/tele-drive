@@ -90,13 +90,8 @@ func (uw *UploadWorker) processFile(ctx context.Context, recordID, tempStorageKe
 		return nil
 	}
 
-	if record.Status == "complete" {
-		uw.logger.Info("File record is already complete. Skipping.", "recordId", recordID)
-		return nil
-	}
-
-	if record.Status != "buffered" {
-		uw.logger.Warn("File record status mismatch", "recordId", recordID, "status", record.Status)
+	if record.TelegramFileID != nil && *record.TelegramFileID != "" {
+		uw.logger.Info("File already has TelegramFileID. Skipping.", "recordId", recordID)
 		return nil
 	}
 
