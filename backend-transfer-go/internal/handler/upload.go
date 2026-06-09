@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
@@ -17,140 +18,58 @@ import (
 
 func (h *FileHandler) Upload(c echo.Context) error {
 	userID := c.Get("userId").(string)
+	fileID := c.Param("fileId")
 
-	file, err := c.FormFile("file")
+	// Verify file record exists and belongs to user (created by NestJS InitUpload)
+	var fileRecord db.FileRecord
+	if err := h.database.Where("id = ? AND \"userId\" = ?", fileID, userID).First(&fileRecord).Error; err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "File record not found"})
+	}
+	if fileRecord.Status == "complete" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "File upload already completed"})
+	}
+
+	// Read raw binary body (no multipart)
+	body, err := io.ReadAll(c.Request().Body)
 	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "No file field in request"})
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Failed to read request body"})
 	}
+	defer c.Request().Body.Close()
+	size := int64(len(body))
 
-	folderID := c.FormValue("folderId")
-	var folderIDPtr *string
-	if folderID != "" {
-		folderIDPtr = &folderID
-	}
-
-	onConflict := c.QueryParam("onConflict") // "overwrite" | "rename" | "skip"
-
-	src, err := file.Open()
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-
-	size := file.Size
-
-	// Quota check
-	var user db.User
-	if err := h.database.Where("id = ?", userID).First(&user).Error; err != nil {
-		return err
-	}
-	if user.UsedSpace+size > user.Quota {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Storage quota exceeded."})
-	}
-
-	// Conflict resolution
-	targetFilename := file.Filename
-	var existingNames []string
-	if err := h.database.Model(&db.FileRecord{}).Where("\"folderId\" = ? AND \"userId\" = ? AND \"deletedAt\" IS NULL", folderIDPtr, userID).Pluck("filename", &existingNames); err != nil {
-		// Query failure prevents conflict detection; proceed with best effort
-	}
-	var existingFolders []string
-	if err := h.database.Model(&db.Folder{}).Where("\"parentId\" = ? AND \"userId\" = ? AND \"deletedAt\" IS NULL", folderIDPtr, userID).Pluck("name", &existingFolders); err != nil {
-		// Query failure prevents conflict detection; proceed with best effort
-	}
-	allNames := append(existingNames, existingFolders...)
-
-	hasConflict := false
-	var conflictFile db.FileRecord
-	errConflict := h.database.Where("\"folderId\" = ? AND filename = ? AND \"userId\" = ? AND \"deletedAt\" IS NULL", folderIDPtr, file.Filename, userID).First(&conflictFile).Error
-	if errConflict == nil {
-		hasConflict = true
-	}
-
-	if hasConflict {
-		if onConflict == "" || onConflict == "skip" {
-			suggestedName := GenerateUniqueName(file.Filename, allNames)
-			return c.JSON(http.StatusConflict, map[string]interface{}{
-				"message":       "A file or folder with this name already exists in the destination folder",
-				"type":          "file",
-				"id":            conflictFile.ID,
-				"name":          conflictFile.Filename,
-				"suggestedName": suggestedName,
-			})
-		} else if onConflict == "overwrite" {
-			now := time.Now()
-			h.database.Model(&conflictFile).Update(db.ColDeletedAt, &now)
-			h.database.Model(&db.User{}).Where("id = ?", userID).Update(db.ColUsedSpace, gorm.Expr("\"usedSpace\" - ?", conflictFile.Size))
-		} else if onConflict == "rename" {
-			targetFilename = GenerateUniqueName(file.Filename, allNames)
-		}
-	}
-
-	// Buffering check
-	capacityOk := false
+	// Buffer decision (same capacity check, no quota check)
 	maxSize := h.settingsCache.GetCachedSettingInt64("MAX_BUFFER_FILE_SIZE", 52428800)
-	if size <= maxSize {
-		usedBytes, err := h.tempStorage.GetUsedBytes()
-		if err == nil {
-			maxDiskMb := h.settingsCache.GetCachedSettingInt64("MAX_BUFFER_DISK_MB", 2048)
-			maxBytes := maxDiskMb * 1024 * 1024
-			threshold := int64(float64(maxBytes) * 0.8)
-			if usedBytes < threshold {
-				capacityOk = true
-			}
-		}
-	}
+	capacityOk := size <= maxSize && h.tempStorage.HasCapacity(h.settingsCache)
 
 	if capacityOk {
-		storageKey := fmt.Sprintf("buf/%s.tmp", generateUUID())
-		hash := md5.New()
-		counter := &countingWriter{w: hash}
-		tee := io.TeeReader(src, counter)
-
-		_, err = h.tempStorage.Write(storageKey, tee)
-		if err == nil {
-			md5Hex := hex.EncodeToString(hash.Sum(nil))
-			etag := fmt.Sprintf("\"%s\"", md5Hex)
-
-			record := db.FileRecord{
-				ID:             generateUUID(),
-				Filename:       targetFilename,
-				Size:           size,
-				MimeType:       file.Header.Get("Content-Type"),
-				Status:         "buffered",
-				TempStorageKey: &storageKey,
-				IsChunked:      false,
-				TotalChunks:    1,
-				FolderID:       folderIDPtr,
-				UserID:         userID,
-				Visibility:     "PRIVATE",
-				Etag:           &etag,
-				CreatedAt:      time.Now(),
-				UpdatedAt:      time.Now(),
-			}
-
-			if err := h.database.Create(&record).Error; err == nil {
+		storageKey := fmt.Sprintf("buf/%s.tmp", fileID)
+		if _, err := h.tempStorage.Write(storageKey, bytes.NewReader(body)); err == nil {
+			// Mark FileRecord as buffered (status already "uploading" from NestJS)
+			if err := h.database.Model(&db.FileRecord{}).Where("id = ?", fileID).Updates(map[string]interface{}{
+				"tempStorageKey": &storageKey,
+				"bufferRetries":  0,
+				"updatedAt":      time.Now(),
+			}).Error; err == nil {
 				jobData := map[string]interface{}{
 					"type":           "file",
-					"recordId":       record.ID,
+					"recordId":       fileID,
 					"tempStorageKey": storageKey,
 					"userId":         userID,
 				}
 				maxRetries := h.settingsCache.GetCachedSettingInt("BUFFER_MAX_RETRIES", 3)
-								if err := h.bullClient.AddJob(c.Request().Context(), "upload-dispatch", "dispatch-file", fmt.Sprintf("file-%s", record.ID), jobData, maxRetries); err != nil {
-					slog.Warn("AddJob failed for buffered file upload", "recordId", record.ID, "error", err)
+				if err := h.bullClient.AddJob(c.Request().Context(), "upload-dispatch", "dispatch-file", fmt.Sprintf("file-%s", fileID), jobData, maxRetries); err != nil {
+					slog.Warn("AddJob failed for buffered file upload", "fileId", fileID, "error", err)
 				}
-
-				return c.JSON(http.StatusOK, record)
-
-
+				return c.JSON(http.StatusOK, map[string]interface{}{
+					"status": "buffered",
+				})
 			}
 			_ = h.tempStorage.Delete(storageKey)
 		}
 	}
 
-	// Direct upload path
-	dek, err := h.cryptoEngine.GenerateFileKey()
+	// Direct upload path: encrypt → Telegram
+	dek, err := h.cryptoEngine.DecryptKey(*fileRecord.EncryptedKey)
 	if err != nil {
 		return err
 	}
@@ -158,72 +77,42 @@ func (h *FileHandler) Upload(c echo.Context) error {
 	if err != nil {
 		return err
 	}
-	encryptedKey, err := h.cryptoEngine.EncryptKey(dek)
+
+	hash := md5.New()
+	tee := io.TeeReader(bytes.NewReader(body), hash)
+	encryptedStream, err := h.cryptoEngine.EncryptStream(tee, dek, iv)
 	if err != nil {
 		return err
 	}
 
-	record := db.FileRecord{
-		ID:             generateUUID(),
-		Filename:       targetFilename,
-		Size:           size,
-		MimeType:       file.Header.Get("Content-Type"),
-		IsChunked:      false,
-		TotalChunks:    1,
-		Status:         "uploading",
-			IsEncrypted:    true,
-			EncryptionAlgo: stringAddr("aes-256-ctr"),
-			EncryptionIv:   stringAddr(hex.EncodeToString(iv)),
-			EncryptedKey:   &encryptedKey,
-			FolderID:       folderIDPtr,
-			UserID:         userID,
-			Visibility:     "PRIVATE",
-			CreatedAt:      time.Now(),
-			UpdatedAt:      time.Now(),
-		}
-
-		if err := h.database.Create(&record).Error; err != nil {
-			return err
-		}
-
-		hash := md5.New()
-		counter := &countingWriter{w: hash}
-		tee := io.TeeReader(src, counter)
-		encryptedStream, err := h.cryptoEngine.EncryptStream(tee, dek, iv)
+	telegramFileID, telegramMessageID, botID, err := h.telegramClient.UploadFile(c.Request().Context(), encryptedStream, fileRecord.Filename, size)
 	if err != nil {
-		h.database.Delete(&record)
-		return err
-	}
-
-	telegramFileID, telegramMessageID, botID, err := h.telegramClient.UploadFile(c.Request().Context(), encryptedStream, targetFilename, size)
-	if err != nil {
-		h.database.Delete(&record)
 		return err
 	}
 
 	md5Hex := hex.EncodeToString(hash.Sum(nil))
 	etag := fmt.Sprintf("\"%s\"", md5Hex)
+	ivStr := hex.EncodeToString(iv)
 
-	err = h.database.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&record).Updates(map[string]interface{}{
-			"telegramFileId":    telegramFileID,
-			"telegramMessageId": telegramMessageID,
-			"botId":             botID,
-			"status":            "complete",
-			"etag":              etag,
-		}).Error; err != nil {
-			return err
-		}
-
-		return tx.Model(&db.User{}).Where("id = ?", userID).Update(db.ColUsedSpace, gorm.Expr("\"usedSpace\" + ?", size)).Error
-	})
-
-	if err != nil {
+	// Update FileRecord with Telegram IDs (no status change, no quota)
+	if err := h.database.Model(&db.FileRecord{}).Where("id = ?", fileID).Updates(map[string]interface{}{
+		"telegramFileId":    telegramFileID,
+		"telegramMessageId": telegramMessageID,
+		"botId":             botID,
+		"encryptionIv":      ivStr,
+		"etag":              etag,
+	}).Error; err != nil {
 		_ = h.telegramClient.DeleteMessage(c.Request().Context(), telegramMessageID, botID)
 		return err
 	}
 
-	return c.JSON(http.StatusOK, record)
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"telegramFileId":    telegramFileID,
+		"telegramMessageId": telegramMessageID,
+		"botId":             botID,
+		"encryptionIv":      ivStr,
+		"etag":              etag,
+	})
 }
 
 func (h *FileHandler) InitUpload(c echo.Context) error {

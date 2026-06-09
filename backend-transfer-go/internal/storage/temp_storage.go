@@ -6,6 +6,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/realldz/tele-drive/backend-transfer-go/internal/db"
 )
 
 type TempStorage struct {
@@ -139,4 +141,16 @@ func (s *TempStorage) getDirSize(dirPath string) (int64, error) {
 		return 0, fmt.Errorf("failed to traverse directory: %w", err)
 	}
 	return size, nil
+}
+
+// HasCapacity checks whether temp storage has room for a new file.
+func (s *TempStorage) HasCapacity(settings *db.SettingsCache) bool {
+	usedBytes, err := s.GetUsedBytes()
+	if err != nil {
+		return false
+	}
+	maxDiskMb := settings.GetCachedSettingInt64("MAX_BUFFER_DISK_MB", 2048)
+	maxBytes := maxDiskMb * 1024 * 1024
+	threshold := int64(float64(maxBytes) * 0.8)
+	return usedBytes < threshold
 }
