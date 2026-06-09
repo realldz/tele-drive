@@ -63,19 +63,14 @@ func (e *CryptoEngine) GenerateIv() ([]byte, error) {
 }
 
 // EncryptKey encrypts the DEK with the MASTER_SECRET using AES-256-CTR
+// Must match the NestJS CryptoService.encryptKey for backward compatibility
 func (e *CryptoEngine) EncryptKey(dek []byte) (string, error) {
-	// Derive key with domain separation
-	h := sha256.New()
-	h.Write([]byte("file-key-encryption:"))
-	h.Write(e.masterSecret)
-	derivedKey := h.Sum(nil)
-
 	iv, err := e.GenerateIv()
 	if err != nil {
 		return "", err
 	}
 
-	block, err := aes.NewCipher(derivedKey)
+	block, err := aes.NewCipher(e.masterSecret)
 	if err != nil {
 		return "", err
 	}
@@ -88,6 +83,7 @@ func (e *CryptoEngine) EncryptKey(dek []byte) (string, error) {
 }
 
 // DecryptKey decrypts the DEK using the MASTER_SECRET and AES-256-CTR
+// Must match the NestJS CryptoService.decryptKey for backward compatibility
 func (e *CryptoEngine) DecryptKey(encryptedKey string) ([]byte, error) {
 	parts := strings.Split(encryptedKey, ":")
 	if len(parts) != 2 {
@@ -104,13 +100,7 @@ func (e *CryptoEngine) DecryptKey(encryptedKey string) ([]byte, error) {
 		return nil, err
 	}
 
-	// Derive key with domain separation (same as EncryptKey)
-	h := sha256.New()
-	h.Write([]byte("file-key-encryption:"))
-	h.Write(e.masterSecret)
-	derivedKey := h.Sum(nil)
-
-	block, err := aes.NewCipher(derivedKey)
+	block, err := aes.NewCipher(e.masterSecret)
 	if err != nil {
 		return nil, err
 	}
