@@ -83,9 +83,8 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 	}
 
 	capacityOk := false
-	maxChunkSize := int64(94371840) // 90 MB
 	maxSize := h.settingsCache.GetCachedSettingInt64("MAX_BUFFER_FILE_SIZE", 52428800)
-	if maxChunkSize <= maxSize {
+	if size <= maxSize {
 		usedBytes, err := h.tempStorage.GetUsedBytes()
 		if err == nil {
 			maxDiskMb := h.settingsCache.GetCachedSettingInt64("MAX_BUFFER_DISK_MB", 2048)
