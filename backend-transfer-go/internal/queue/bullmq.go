@@ -47,8 +47,10 @@ func (b *BullMQClient) AddJob(ctx context.Context, queueName string, jobName str
 
 	timestamp := time.Now().UnixNano() / int64(time.Millisecond)
 
+	// Use detached background context for Redis pipeline to prevent
+	// job loss when the HTTP request context is cancelled (client disconnect)
 	pipe := b.rdb.Pipeline()
-	pipe.HSet(ctx, jobKey, map[string]interface{}{
+	pipe.HSet(context.Background(), jobKey, map[string]interface{}{
 		"name":      jobName,
 		"data":      string(dataBytes),
 		"opts":      string(optsBytes),
@@ -59,12 +61,12 @@ func (b *BullMQClient) AddJob(ctx context.Context, queueName string, jobName str
 
 	// Add to wait list
 	waitKey := fmt.Sprintf("bull:%s:wait", queueName)
-	pipe.LPush(ctx, waitKey, jobID)
+	pipe.LPush(context.Background(), waitKey, jobID)
 
 	// Publish message to waiting-jobs channel to wake up workers
 	pubSubChan := fmt.Sprintf("bull:%s:waiting-jobs", queueName)
-	pipe.Publish(ctx, pubSubChan, jobID)
+	pipe.Publish(context.Background(), pubSubChan, jobID)
 
-	_, err = pipe.Exec(ctx)
+	_, err = pipe.Exec(context.Background())
 	return err
 }

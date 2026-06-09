@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -170,7 +171,9 @@ func (s *S3Controller) doPutObject(c echo.Context, userID string, bucket string,
 					"userId":         userID,
 				}
 				maxRetries := s.settingsCache.GetCachedSettingInt("BUFFER_MAX_RETRIES", 3)
-				_ = s.bullClient.AddJob(c.Request().Context(), "upload-dispatch", "dispatch-file", fmt.Sprintf("file-%s", record.ID), jobData, maxRetries)
+				if err := s.bullClient.AddJob(c.Request().Context(), "upload-dispatch", "dispatch-file", fmt.Sprintf("file-%s", record.ID), jobData, maxRetries); err != nil {
+					slog.Warn("AddJob failed for S3 buffered upload", "recordId", record.ID, "error", err)
+				}
 
 				c.Response().Header().Set("ETag", etag)
 				return c.NoContent(http.StatusOK)

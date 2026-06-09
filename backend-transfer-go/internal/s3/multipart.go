@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -209,7 +210,9 @@ func (s *S3MultipartService) UploadPart(ctx context.Context, uploadID string, pa
 					"userId":         userID,
 				}
 				maxRetries := s.settingsCache.GetCachedSettingInt("BUFFER_MAX_RETRIES", 3)
-				_ = s.bullClient.AddJob(ctx, "upload-dispatch", "dispatch-chunk", fmt.Sprintf("chunk-%s", chunk.ID), jobData, maxRetries)
+				if err := s.bullClient.AddJob(ctx, "upload-dispatch", "dispatch-chunk", fmt.Sprintf("chunk-%s", chunk.ID), jobData, maxRetries); err != nil {
+					slog.Warn("AddJob failed for S3 multipart buffered chunk", "chunkId", chunk.ID, "uploadId", uploadID, "error", err)
+				}
 
 				return etag, counter.count, nil
 			}

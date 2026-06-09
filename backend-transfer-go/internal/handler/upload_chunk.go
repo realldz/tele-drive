@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"time"
@@ -137,7 +138,9 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 					"userId":         userID,
 				}
 				maxRetries := h.settingsCache.GetCachedSettingInt("BUFFER_MAX_RETRIES", 3)
-				_ = h.bullClient.AddJob(c.Request().Context(), "upload-dispatch", "dispatch-chunk", fmt.Sprintf("chunk-%s", chunk.ID), jobData, maxRetries)
+				if err := h.bullClient.AddJob(c.Request().Context(), "upload-dispatch", "dispatch-chunk", fmt.Sprintf("chunk-%s", chunk.ID), jobData, maxRetries); err != nil {
+					slog.Warn("AddJob failed for buffered chunk upload", "chunkId", chunk.ID, "fileId", fileID, "error", err)
+				}
 
 				return c.JSON(http.StatusOK, chunk)
 			}

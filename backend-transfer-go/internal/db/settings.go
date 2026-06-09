@@ -22,7 +22,7 @@ func NewSettingsCache(db *DB) *SettingsCache {
 	return &SettingsCache{
 		db:    db,
 		cache: make(map[string]CachedValue),
-		ttl:   30 * time.Second,
+		ttl:   5 * time.Minute,
 	}
 }
 
