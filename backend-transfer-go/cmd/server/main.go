@@ -18,7 +18,6 @@ import (
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/handler"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/logger"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/queue"
-	"github.com/realldz/tele-drive/backend-transfer-go/internal/s3"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/storage"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/telegram"
 )
@@ -68,12 +67,6 @@ func main() {
 	cryptoEngine, err := crypto.NewCryptoEngine(cfg.MasterSecret)
 	if err != nil {
 		log.Error("Failed to initialize CryptoEngine", "error", err)
-		panic(err)
-	}
-
-	s3Decryptor, err := crypto.NewS3Decryptor(cfg.MasterSecret)
-	if err != nil {
-		log.Error("Failed to initialize S3Decryptor", "error", err)
 		panic(err)
 	}
 
@@ -223,24 +216,6 @@ func main() {
 		cfg.JWTSecret,
 	)
 	fileHandler.RegisterRoutes(e)
-
-	// Register S3 API routes
-	s3Service := s3.NewS3Service(database, settingsCache)
-	s3Multipart := s3.NewS3MultipartService(database, tgClient, cryptoEngine, s3Service, tempStorage, bullMQClient, settingsCache)
-	s3Authenticator := s3.NewS3Authenticator(database, s3Decryptor)
-	s3Controller := s3.NewS3Controller(
-		database,
-		s3Service,
-		s3Multipart,
-		tgClient,
-		cryptoEngine,
-		tempStorage,
-		bullMQClient,
-		settingsCache,
-		downloader,
-		s3Authenticator,
-	)
-	s3Controller.RegisterRoutes(e)
 
 	// Graceful shutdown listener
 	quit := make(chan os.Signal, 1)
