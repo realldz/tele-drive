@@ -369,6 +369,15 @@ func (h *FileHandler) CompleteUpload(c echo.Context) error {
 		}
 	}
 
+	// Count how many chunks were already dispatched by the worker
+	var accountedSize int64
+	for _, c := range chunks {
+		if c.TelegramFileID != nil && *c.TelegramFileID != "" {
+			accountedSize += int64(c.Size)
+		}
+	}
+	remainingSize := totalSize - accountedSize
+
 	err = h.database.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&db.FileRecord{}).Where("id = ?", fileID).Updates(map[string]interface{}{
 			"status":      "complete",
@@ -380,8 +389,10 @@ func (h *FileHandler) CompleteUpload(c echo.Context) error {
 			return err
 		}
 
-		if err := tx.Model(&db.User{}).Where("id = ?", userID).Update(db.ColUsedSpace, gorm.Expr("\"usedSpace\" + ?", totalSize)).Error; err != nil {
-			return err
+		if remainingSize > 0 {
+			if err := tx.Model(&db.User{}).Where("id = ?", userID).Update(db.ColUsedSpace, gorm.Expr(db.ColUsedSpace+" + ?", remainingSize)).Error; err != nil {
+				return err
+			}
 		}
 
 		if len(replacedRecordIDs) > 0 {

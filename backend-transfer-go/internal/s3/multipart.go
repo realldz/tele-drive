@@ -330,6 +330,15 @@ func (s *S3MultipartService) CompleteMultipartUpload(ctx context.Context, upload
 		}
 	}
 
+	// Count how many parts were already dispatched by the worker
+	var accountedSize int64
+	for _, c := range chunks {
+		if c.TelegramFileID != nil && *c.TelegramFileID != "" {
+			accountedSize += int64(c.Size)
+		}
+	}
+	remainingSize := totalSize - accountedSize
+
 	err = s.database.Transaction(func(tx *gorm.DB) error {
 		// Update FileRecord
 		if err := tx.Model(&db.FileRecord{}).Where("id = ?", uploadID).Updates(map[string]interface{}{
@@ -342,9 +351,11 @@ func (s *S3MultipartService) CompleteMultipartUpload(ctx context.Context, upload
 			return err
 		}
 
-		// Update User usedSpace
-		if err := tx.Model(&db.User{}).Where("id = ?", userID).Update(db.ColUsedSpace, gorm.Expr("\"usedSpace\" + ?", totalSize)).Error; err != nil {
-			return err
+		// Update User usedSpace (only for unaccounted size)
+		if remainingSize > 0 {
+			if err := tx.Model(&db.User{}).Where("id = ?", userID).Update(db.ColUsedSpace, gorm.Expr(db.ColUsedSpace+" + ?", remainingSize)).Error; err != nil {
+				return err
+			}
 		}
 
 		// Soft delete replaced records
