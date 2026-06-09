@@ -1,5 +1,11 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Injectable, Logger, Inject, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  Inject,
+  OnModuleDestroy,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { Job } from 'bullmq';
 // @ts-ignore: archiver v8 exports ZipArchive but @types/archiver is v7
@@ -42,7 +48,7 @@ interface FileEntry {
 @Injectable()
 export class DownloadZipProcessor
   extends WorkerHost
-  implements OnModuleDestroy
+  implements OnModuleDestroy, OnApplicationBootstrap
 {
   private readonly logger = new Logger(DownloadZipProcessor.name);
   private readonly baseDir: string;
@@ -490,5 +496,16 @@ export class DownloadZipProcessor
       where: { id: jobId },
       data: { status },
     });
+  }
+
+  async onApplicationBootstrap(): Promise<void> {
+    if (process.env.IS_TRANSFER_SERVICE === 'false') {
+      this.logger.log(
+        'IS_TRANSFER_SERVICE is false. Pausing download-zip queue worker.',
+      );
+      if (this.worker) {
+        await this.worker.pause();
+      }
+    }
   }
 }

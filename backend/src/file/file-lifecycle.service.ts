@@ -63,17 +63,35 @@ export class FileLifecycleService {
       }
     }
 
-    for (const { messageId, botId } of messages) {
-      try {
-        await this.telegram.deleteMessage(messageId, botId ?? undefined);
-        if (messages.length > 5) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-      } catch (err) {
-        this.logger.warn(
-          `Failed to delete Telegram message ${messageId}: ${err instanceof Error ? err.message : String(err)}`,
+    if (messages.length === 0) return;
+
+    try {
+      const transferUrl =
+        process.env.TRANSFER_API_URL || 'http://backend-transfer:3001';
+      const payload = messages.map((m) => ({
+        telegramMessageId: m.messageId,
+        botId: m.botId ? Number(m.botId) : 0,
+      }));
+
+      const res = await fetch(`${transferUrl}/internal/files/purge`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        this.logger.warn(`Failed to delegate purge: ${res.statusText}`);
+      } else {
+        this.logger.log(
+          `Delegated purge of ${messages.length} messages to Go Transfer`,
         );
       }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to connect to Go Transfer for purging: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

@@ -5,6 +5,7 @@ import { UserModule } from './user/user.module';
 import { SettingsModule } from './settings/settings.module';
 import { AdminLogModule } from './admin-log/admin-log.module';
 import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
+import { FileModule } from './file/file.module';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
     UserModule,
     SettingsModule,
     FolderModule,
+    FileModule,
     AdminLogModule,
     AdminDashboardModule,
   ],
@@ -20,6 +22,7 @@ import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
     UserModule,
     SettingsModule,
     FolderModule,
+    FileModule,
     AdminLogModule,
     AdminDashboardModule,
   ],

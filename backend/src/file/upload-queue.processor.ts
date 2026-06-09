@@ -54,6 +54,7 @@ export class UploadQueueProcessor
 
   async onModuleInit(): Promise<void> {
     if (process.env.IS_TRANSFER_SERVICE === 'false') {
+      if (this.worker) this.worker.pause();
       return;
     }
 

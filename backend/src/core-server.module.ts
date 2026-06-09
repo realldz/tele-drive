@@ -16,6 +16,8 @@ import { RequestLoggingInterceptor } from './common/interceptors/request-logging
 import { CoreAppModule } from './core-app.module';
 import { RedisModule } from './redis';
 import { QueueModule } from './queue';
+import { DownloadZipModule } from './download-zip/download-zip.module';
+import { S3Module } from './s3/s3.module';
 
 @Module({
   imports: [
@@ -44,7 +46,9 @@ import { QueueModule } from './queue';
     PrismaModule,
     CryptoModule,
     BandwidthModule,
+    S3Module,
     CoreAppModule,
+    DownloadZipModule,
   ],
   controllers: [AppController],
   providers: [

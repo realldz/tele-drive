@@ -1,4 +1,4 @@
-import { ValidationPipe, type Type } from '@nestjs/common';
+import { ValidationPipe, VersioningType, type Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import helmet from 'helmet';
@@ -70,6 +70,11 @@ export async function bootstrapNestApp(
   );
 
   app.use(cookieParser());
+
+  app.enableVersioning({
+    type: VersioningType.URI,
+    defaultVersion: '1',
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
