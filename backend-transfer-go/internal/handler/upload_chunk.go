@@ -48,7 +48,7 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 		h.mu.Unlock()
 	}()
 
-	file, err := c.FormFile("file")
+	file, err := c.FormFile("chunk")
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"message": "No file field in request"})
 	}
