@@ -74,9 +74,7 @@ func (h *FileHandler) RegisterRoutes(e *echo.Echo) {
 	// Authenticated endpoints
 	files.GET("/buffer-status", h.GetBufferStatus, authMiddleware)
 	files.POST("/upload", h.Upload, authMiddleware)
-	files.POST("/upload/init", h.InitUpload, authMiddleware)
 	files.POST("/upload/:fileId/chunk/:index", h.UploadChunk, authMiddleware)
-	files.POST("/upload/:fileId/complete", h.CompleteUpload, authMiddleware)
 	files.POST("/upload/:fileId/abort", h.AbortUpload, authMiddleware)
 	files.GET("/upload/:fileId/status", h.GetUploadStatus, authMiddleware)
 	files.POST("/:id/download-token", h.GenerateDownloadToken, authMiddleware)
