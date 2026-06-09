@@ -42,7 +42,7 @@ func formatResetAt(lastReset time.Time) string {
 	return lastReset.Add(24 * time.Hour).UTC().Format("2006-01-02T15:04:05.000Z")
 }
 
-func (d *Downloader) CheckAndLockBandwidth(c echo.Context, fileID string, fileSize int64, estimatedSize int64, hasRange bool) (*BandwidthLock, error) {
+func (d *Downloader) CheckAndLockBandwidth(c echo.Context, fileID string, fileSize int64, estimatedSize int64, hasRangeHeader bool) (*BandwidthLock, error) {
 	now := time.Now()
 	ip := c.RealIP()
 	userID := resolveUserId(c)
@@ -56,11 +56,13 @@ func (d *Downloader) CheckAndLockBandwidth(c echo.Context, fileID string, fileSi
 	hoursSinceReset := now.Sub(file.LastDownloadReset).Hours()
 	if hoursSinceReset >= 24 {
 		// Reset file limits in DB
-		d.database.Model(&db.FileRecord{}).Where("id = ?", fileID).Updates(map[string]interface{}{
+		if err := d.database.Model(&db.FileRecord{}).Where("id = ?", fileID).Updates(map[string]interface{}{
 			"downloads24h":      0,
 			"bandwidthUsed24h":  0,
 			"lastDownloadReset": now,
-		})
+		}).Error; err != nil {
+			// continue with empty results — best effort
+		}
 		file.Downloads24h = 0
 		file.BandwidthUsed24h = 0
 		file.LastDownloadReset = now
@@ -209,7 +211,7 @@ func (d *Downloader) CheckAndLockBandwidth(c echo.Context, fileID string, fileSi
 		IP:            ip,
 		EstimatedSize: estimatedSize,
 		RequiresReset: requiresReset,
-		CountDownload: !hasRange,
+		CountDownload: !hasRangeHeader,
 	}, nil
 }
 

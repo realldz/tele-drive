@@ -218,6 +218,7 @@ func (c *TelegramClient) withRetry(ctx context.Context, operation string, fn fun
 				continue
 			}
 
+			resp.Body.Close()
 			return resp, fmt.Errorf("telegram API error status=%d desc=%s", resp.StatusCode, tgResp.Description)
 		}
 

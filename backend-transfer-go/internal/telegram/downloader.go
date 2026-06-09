@@ -172,19 +172,29 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 	start := int64(0)
 	end := fileSize - 1
 
+	hasRangeHeader := rangeHeader != ""
 	isRange := false
 	if rangeHeader != "" && multiThread {
 		parts := strings.Split(rangeHeader, "=")
 		if len(parts) == 2 && parts[0] == "bytes" {
 			rangeParts := strings.Split(parts[1], "-")
 			if len(rangeParts) == 2 {
-				if s, err := strconv.ParseInt(rangeParts[0], 10, 64); err == nil {
+				if rangeParts[0] == "" {
+					// Suffix range: bytes=-500
+					if suffix, err := strconv.ParseInt(rangeParts[1], 10, 64); err == nil && suffix > 0 {
+						start = fileSize - suffix
+						if start < 0 {
+							start = 0
+						}
+						isRange = true
+					}
+				} else if s, err := strconv.ParseInt(rangeParts[0], 10, 64); err == nil {
 					start = s
 					isRange = true
-				}
-				if rangeParts[1] != "" {
-					if e, err := strconv.ParseInt(rangeParts[1], 10, 64); err == nil {
-						end = e
+					if rangeParts[1] != "" {
+						if e, err := strconv.ParseInt(rangeParts[1], 10, 64); err == nil {
+							end = e
+						}
 					}
 				}
 			}
@@ -203,7 +213,7 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 	contentLength := end - start + 1
 
 	// Lock & Check Bandwidth
-	lock, err := d.CheckAndLockBandwidth(c, info.ID, fileSize, contentLength, isRange)
+	lock, err := d.CheckAndLockBandwidth(c, info.ID, fileSize, contentLength, hasRangeHeader)
 	if err != nil {
 		return err
 	}

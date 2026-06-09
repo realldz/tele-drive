@@ -132,9 +132,19 @@ func (zw *ZipWorker) updateStatus(jobID string, status string) error {
 func (zw *ZipWorker) handleZipFailure(jobID string, err error) {
 	zw.logger.Error("ZIP job failed", "jobId", jobID, "error", err)
 
-	// Clean up storage zip directory
-	// In Go, since files are written to tempStorage via keys, we will delete keys when expired.
-	// But let's set job to failed in DB
+	// Clean up any partial ZIP files from temp storage
+	var jobRecord db.DownloadJob
+	if dbErr := zw.database.Where("id = ?", jobID).First(&jobRecord).Error; dbErr == nil {
+		if jobRecord.ZipParts != "" {
+			var parts []ZipPartData
+			if jsonErr := json.Unmarshal([]byte(jobRecord.ZipParts), &parts); jsonErr == nil {
+				for _, p := range parts {
+					_ = zw.tempStorage.Delete(p.Key)
+				}
+			}
+		}
+	}
+
 	_ = zw.database.Model(&db.DownloadJob{}).Where("id = ?", jobID).Updates(map[string]interface{}{
 		"status":       "failed",
 		"errorMessage": err.Error(),

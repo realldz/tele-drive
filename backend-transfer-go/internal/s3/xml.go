@@ -144,9 +144,10 @@ type ListPartsResult struct {
 }
 
 type ListPartXML struct {
-	PartNumber int    `xml:"PartNumber"`
-	Size       int64  `xml:"Size"`
-	ETag       string `xml:"ETag"`
+	PartNumber   int    `xml:"PartNumber"`
+	Size         int64  `xml:"Size"`
+	ETag         string `xml:"ETag"`
+	LastModified string `xml:"LastModified"`
 }
 
 // 8. S3 Error XML

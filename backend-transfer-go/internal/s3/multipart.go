@@ -19,9 +19,10 @@ import (
 )
 
 type PartInfo struct {
-	PartNumber int
-	Size       int64
-	ETag       string
+	PartNumber   int
+	Size         int64
+	ETag         string
+	LastModified time.Time
 }
 
 type S3MultipartService struct {
@@ -432,9 +433,10 @@ func (s *S3MultipartService) ListParts(ctx context.Context, uploadID string, use
 		}
 
 		parts = append(parts, PartInfo{
-			PartNumber: c.ChunkIndex + 1,
-			Size:       int64(c.Size),
-			ETag:       etagStr,
+			PartNumber:   c.ChunkIndex + 1,
+			Size:         int64(c.Size),
+			ETag:         etagStr,
+			LastModified: c.CreatedAt,
 		})
 	}
 

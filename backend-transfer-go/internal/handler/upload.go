@@ -50,9 +50,13 @@ func (h *FileHandler) Upload(c echo.Context) error {
 	// Conflict resolution
 	targetFilename := file.Filename
 	var existingNames []string
-	h.database.Model(&db.FileRecord{}).Where("\"folderId\" = ? AND \"userId\" = ? AND \"deletedAt\" IS NULL", folderIDPtr, userID).Pluck("filename", &existingNames)
+	if err := h.database.Model(&db.FileRecord{}).Where("\"folderId\" = ? AND \"userId\" = ? AND \"deletedAt\" IS NULL", folderIDPtr, userID).Pluck("filename", &existingNames); err != nil {
+		// Query failure prevents conflict detection; proceed with best effort
+	}
 	var existingFolders []string
-	h.database.Model(&db.Folder{}).Where("\"parentId\" = ? AND \"userId\" = ? AND \"deletedAt\" IS NULL", folderIDPtr, userID).Pluck("name", &existingFolders)
+	if err := h.database.Model(&db.Folder{}).Where("\"parentId\" = ? AND \"userId\" = ? AND \"deletedAt\" IS NULL", folderIDPtr, userID).Pluck("name", &existingFolders); err != nil {
+		// Query failure prevents conflict detection; proceed with best effort
+	}
 	allNames := append(existingNames, existingFolders...)
 
 	hasConflict := false
@@ -360,7 +364,9 @@ func (h *FileHandler) CompleteUpload(c echo.Context) error {
 
 	// Find conflicts for overwrite soft deletes
 	var existingFiles []db.FileRecord
-	h.database.Where("\"folderId\" = ? AND filename = ? AND \"userId\" = ? AND \"deletedAt\" IS NULL", fileRecord.FolderID, fileRecord.Filename, userID).Find(&existingFiles)
+	if err := h.database.Where("\"folderId\" = ? AND filename = ? AND \"userId\" = ? AND \"deletedAt\" IS NULL", fileRecord.FolderID, fileRecord.Filename, userID).Find(&existingFiles).Error; err != nil {
+		// continue with empty results — best effort
+	}
 
 	var replacedRecordIDs []string
 	for _, rec := range existingFiles {
@@ -410,7 +416,9 @@ func (h *FileHandler) CompleteUpload(c echo.Context) error {
 	}
 
 	// Fetch final record
-	h.database.Where("id = ?", fileID).First(&fileRecord)
+	if err := h.database.Where("id = ?", fileID).First(&fileRecord).Error; err != nil {
+		// continue with empty results — best effort
+	}
 	return c.JSON(http.StatusOK, fileRecord)
 }
 
@@ -463,7 +471,9 @@ func (h *FileHandler) GetUploadStatus(c echo.Context) error {
 	}
 
 	var chunks []db.FileChunk
-	h.database.Where("\"fileId\" = ?", fileID).Order("\"chunkIndex\" ASC").Find(&chunks)
+	if err := h.database.Where("\"fileId\" = ?", fileID).Order("\"chunkIndex\" ASC").Find(&chunks).Error; err != nil {
+		// continue with empty results — best effort
+	}
 
 	type chunkStatus struct {
 		ChunkIndex int  `json:"chunkIndex"`

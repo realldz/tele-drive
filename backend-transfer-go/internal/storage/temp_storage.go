@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -31,6 +32,33 @@ func (s *TempStorage) Write(key string, data io.Reader) (int64, error) {
 	defer file.Close()
 
 	return io.Copy(file, data)
+}
+
+func (s *TempStorage) WriteWithTimeout(ctx context.Context, key string, data io.Reader) (int64, error) {
+	filePath := filepath.Join(s.baseDir, key)
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return 0, err
+	}
+	file, err := os.Create(filePath)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+
+	ctxReader := &contextReader{ctx: ctx, r: data}
+	return io.Copy(file, ctxReader)
+}
+
+type contextReader struct {
+	ctx context.Context
+	r   io.Reader
+}
+
+func (cr *contextReader) Read(p []byte) (int, error) {
+	if err := cr.ctx.Err(); err != nil {
+		return 0, err
+	}
+	return cr.r.Read(p)
 }
 
 func (s *TempStorage) WriteBytes(key string, data []byte) error {

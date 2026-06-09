@@ -96,9 +96,10 @@ func (s *S3Controller) HandleGet(c echo.Context) error {
 		partsXML := make([]ListPartXML, len(parts))
 		for i, p := range parts {
 			partsXML[i] = ListPartXML{
-				PartNumber: p.PartNumber,
-				Size:       p.Size,
-				ETag:       p.ETag,
+				PartNumber:   p.PartNumber,
+				Size:         p.Size,
+				ETag:         p.ETag,
+				LastModified: formatISO8601(p.LastModified),
 			}
 		}
 
