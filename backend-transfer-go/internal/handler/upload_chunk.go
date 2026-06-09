@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"crypto/md5"
 	"encoding/hex"
 	"fmt"
@@ -24,7 +25,7 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Invalid chunk index"})
 	}
 
-	// 1. Concurrency limit check
+	// Concurrency limit (unchanged)
 	h.mu.Lock()
 	active := h.activeUploads[userID]
 	maxConcurrent := h.settingsCache.GetCachedSettingInt("MAX_CONCURRENT_CHUNKS", 3)
@@ -48,30 +49,22 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 		h.mu.Unlock()
 	}()
 
-	file, err := c.FormFile("chunk")
-	if err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "No file field in request"})
-	}
-	src, err := file.Open()
-	if err != nil {
-		return err
-	}
-	defer src.Close()
-
-	size := file.Size
-
+	// Verify file record exists and belongs to user
 	var fileRecord db.FileRecord
-	if err := h.database.Where("id = ? AND \"userId\" = ? AND \"deletedAt\" IS NULL", fileID, userID).First(&fileRecord).Error; err != nil {
+	if err := h.database.Where("id = ? AND \"userId\" = ?", fileID, userID).First(&fileRecord).Error; err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "File record not found"})
 	}
-
-	if fileRecord.Status != "uploading" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "File upload already completed or aborted"})
-	}
-
 	if chunkIndex < 0 || chunkIndex >= fileRecord.TotalChunks {
 		return c.JSON(http.StatusBadRequest, map[string]string{"message": fmt.Sprintf("Invalid chunk index: %d", chunkIndex)})
 	}
+
+	// Read raw binary body (no multipart)
+	body, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Failed to read request body"})
+	}
+	defer c.Request().Body.Close()
+	size := int64(len(body))
 
 	// Idempotency check
 	var existing db.FileChunk
@@ -83,28 +76,17 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 		h.database.Delete(&existing)
 	}
 
-	capacityOk := false
+	// Buffer decision
 	maxSize := h.settingsCache.GetCachedSettingInt64("MAX_BUFFER_FILE_SIZE", 52428800)
-	if size <= maxSize {
-		usedBytes, err := h.tempStorage.GetUsedBytes()
-		if err == nil {
-			maxDiskMb := h.settingsCache.GetCachedSettingInt64("MAX_BUFFER_DISK_MB", 2048)
-			maxBytes := maxDiskMb * 1024 * 1024
-			threshold := int64(float64(maxBytes) * 0.8)
-			if usedBytes < threshold {
-				capacityOk = true
-			}
-		}
-	}
+	capacityOk := size <= maxSize && h.tempStorage.HasCapacity(h.settingsCache)
 
 	if capacityOk {
 		storageKey := fmt.Sprintf("chunk/%s/%d.tmp", fileID, chunkIndex)
 		hash := md5.New()
 		counter := &countingWriter{w: hash}
-		tee := io.TeeReader(src, counter)
+		tee := io.TeeReader(bytes.NewReader(body), counter)
 
-		_, err = h.tempStorage.Write(storageKey, tee)
-		if err == nil {
+		if _, err := h.tempStorage.Write(storageKey, tee); err == nil {
 			md5Hex := hex.EncodeToString(hash.Sum(nil))
 			etag := fmt.Sprintf("\"%s\"", md5Hex)
 
@@ -120,7 +102,6 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 				FileID:         fileID,
 				ChunkIndex:     chunkIndex,
 				Size:           int(counter.count),
-				TelegramFileID: nil,
 				TempStorageKey: &storageKey,
 				Status:         "buffered",
 				EncryptionIv:   encryptionIv,
@@ -141,19 +122,17 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 				if err := h.bullClient.AddJob(c.Request().Context(), "upload-dispatch", "dispatch-chunk", fmt.Sprintf("chunk-%s", chunk.ID), jobData, maxRetries); err != nil {
 					slog.Warn("AddJob failed for buffered chunk upload", "chunkId", chunk.ID, "fileId", fileID, "error", err)
 				}
-
 				return c.JSON(http.StatusOK, chunk)
 			}
 			_ = h.tempStorage.Delete(storageKey)
 		}
 	}
 
-	// Direct upload path
+	// Direct upload path: encrypt → Telegram
 	dek, err := h.cryptoEngine.DecryptKey(*fileRecord.EncryptedKey)
 	if err != nil {
 		return err
 	}
-
 	ivBytes, err := h.cryptoEngine.GenerateIv()
 	if err != nil {
 		return err
@@ -161,7 +140,7 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 
 	hash := md5.New()
 	counter := &countingWriter{w: hash}
-	tee := io.TeeReader(src, counter)
+	tee := io.TeeReader(bytes.NewReader(body), counter)
 	encryptedStream, err := h.cryptoEngine.EncryptStream(tee, dek, ivBytes)
 	if err != nil {
 		return err
@@ -189,15 +168,6 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 		Etag:              &etag,
 		Status:            "complete",
 		CreatedAt:         time.Now(),
-	}
-
-	// Double check aborted
-	var currentFile db.FileRecord
-	if err := h.database.Where("id = ?", fileID).Select("status").First(&currentFile).Error; err == nil {
-		if currentFile.Status == "aborted" {
-			h.telegramClient.DeleteMessage(c.Request().Context(), telegramMessageID, botID)
-			return c.JSON(http.StatusBadRequest, map[string]string{"message": "Upload aborted"})
-		}
 	}
 
 	if err := h.database.Create(&chunk).Error; err != nil {
