@@ -12,7 +12,6 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/db"
-	"gorm.io/gorm"
 )
 
 func (h *FileHandler) Upload(c echo.Context) error {
@@ -124,31 +123,21 @@ func (h *FileHandler) AbortUpload(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "File record not found"})
 	}
 
-	if fileRecord.Status == "complete" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Cannot abort a completed upload. Use DELETE instead."})
-	}
-
-	h.database.Model(&fileRecord).Update("status", "aborted")
-
+	// Delete any Telegram messages that were already uploaded
 	var chunks []db.FileChunk
-	if err := h.database.Where("\"fileId\" = ?", fileID).Find(&chunks).Error; err == nil {
-		for _, chunk := range chunks {
-			if chunk.TelegramMessageID != nil {
-				_ = h.telegramClient.DeleteMessage(c.Request().Context(), *chunk.TelegramMessageID, chunk.BotID)
-			}
+	h.database.Where("\"fileId\" = ?", fileID).Find(&chunks)
+	for _, chunk := range chunks {
+		if chunk.TelegramMessageID != nil {
+			_ = h.telegramClient.DeleteMessage(c.Request().Context(), *chunk.TelegramMessageID, chunk.BotID)
 		}
 	}
-
-	err = h.database.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("\"fileId\" = ?", fileID).Delete(&db.FileChunk{}).Error; err != nil {
-			return err
-		}
-		return tx.Where("id = ?", fileID).Delete(&db.FileRecord{}).Error
-	})
-
-	if err != nil {
-		return err
+	if fileRecord.TelegramMessageID != nil {
+		_ = h.telegramClient.DeleteMessage(c.Request().Context(), *fileRecord.TelegramMessageID, fileRecord.BotID)
 	}
+
+	// Delete record and chunks
+	h.database.Where("\"fileId\" = ?", fileID).Delete(&db.FileChunk{})
+	h.database.Delete(&fileRecord)
 
 	return c.JSON(http.StatusOK, map[string]bool{"success": true})
 }
