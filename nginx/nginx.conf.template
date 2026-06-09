@@ -45,7 +45,7 @@ server {
 
     # S3-compatible API via /api/s3 — preserve path for SigV4 verification
     location = /api/s3 {
-        proxy_pass http://backend-transfer:3001;
+        proxy_pass http://backend-core:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -58,7 +58,7 @@ server {
     }
 
     location /api/s3/ {
-        proxy_pass http://backend-transfer:3001;
+        proxy_pass http://backend-core:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -163,7 +163,7 @@ server {
     # S3-compatible API — direct proxy (for aws-cli, s3cmd, etc.)
     # Regex to match /s3 or /s3/* but NOT /s3-keys or other frontend routes
     location ~ ^/s3(/|$) {
-        proxy_pass http://backend-transfer:3001;
+        proxy_pass http://backend-core:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -194,7 +194,7 @@ server {
 
     # Public S3 object access (no auth required)
     location /public/ {
-        proxy_pass http://backend-transfer:3001;
+        proxy_pass http://backend-core:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -210,7 +210,7 @@ server {
     # Public S3 object access via /api (no auth required)
     location /api/public/ {
         rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://backend-transfer:3001;
+        proxy_pass http://backend-core:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
