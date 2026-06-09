@@ -330,7 +330,7 @@ func (h *FileHandler) CompleteUpload(c echo.Context) error {
 	fileID := c.Param("fileId")
 
 	var fileRecord db.FileRecord
-	err := h.database.Where("id = ? AND \"userId\" = ?", fileID, userID).Preload("Chunks").First(&fileRecord).Error
+	err := h.database.Where("id = ? AND \"userId\" = ?", fileID, userID).First(&fileRecord).Error
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "File record not found"})
 	}
