@@ -383,18 +383,36 @@ func (h *FileHandler) CompleteUpload(c echo.Context) error {
 		}
 	}
 
-	// CompleteUpload only updates metadata (size, etag).
-	// The upload worker is responsible for setting status='complete'
-	// and incrementing quota when all chunks are dispatched to Telegram.
-	// This prevents races between CompleteUpload and async buffer dispatch.
+	// Determine if any chunks are still buffered (waiting for async dispatch).
+	// - If all chunks are already in Telegram → set status="complete", increment quota.
+	// - If any chunks are buffered → set status="buffered", worker handles quota per chunk.
+	// This matches NestJS completeChunkedUpload logic and prevents races.
+	var bufferedCount int64
+	if err := h.database.Model(&db.FileChunk{}).Where("\"fileId\" = ? AND status = ?", fileID, "buffered").Count(&bufferedCount).Error; err != nil {
+		bufferedCount = 0
+	}
+	hasBuffered := bufferedCount > 0
+	targetStatus := "complete"
+	if hasBuffered {
+		targetStatus = "buffered"
+	}
+
 	err = h.database.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&db.FileRecord{}).Where("id = ?", fileID).Updates(map[string]interface{}{
 			"totalChunks": len(chunks),
 			"size":        totalSize,
 			"etag":        finalEtag,
+			"status":      targetStatus,
 			"updatedAt":   time.Now(),
 		}).Error; err != nil {
 			return err
+		}
+
+		// Increment quota only when all chunks are already in Telegram
+		if !hasBuffered {
+			if err := tx.Model(&db.User{}).Where("id = ?", userID).Update(db.ColUsedSpace, gorm.Expr(db.ColUsedSpace+" + ?", totalSize)).Error; err != nil {
+				return err
+			}
 		}
 
 		// Soft-delete overwritten records

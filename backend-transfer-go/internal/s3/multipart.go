@@ -273,7 +273,7 @@ func (s *S3MultipartService) UploadPart(ctx context.Context, uploadID string, pa
 
 func (s *S3MultipartService) CompleteMultipartUpload(ctx context.Context, uploadID string, userID string, bucket string, key string, declaredPartCount int) (string, string, error) {
 	var fileRecord db.FileRecord
-	err := s.database.Where("id = ? AND \"userId\" = ?", uploadID, userID).Preload("Chunks").First(&fileRecord).Error
+	err := s.database.Where("id = ? AND \"userId\" = ?", uploadID, userID).First(&fileRecord).Error
 	if err != nil {
 		return "", "", fmt.Errorf("Upload not found: uploadId=%s", uploadID)
 	}
@@ -344,8 +344,8 @@ func (s *S3MultipartService) CompleteMultipartUpload(ctx context.Context, upload
 		}
 	}
 
-	// CompleteMultipartUpload only sets metadata. The worker handles
-	// status='complete' and quota when the last buffered part is dispatched.
+	// If any parts are buffered, set status to "buffered" — the worker
+	// handles status='complete' and quota when the last part is dispatched.
 	// If all parts are already on Telegram, finalize immediately.
 	err = s.database.Transaction(func(tx *gorm.DB) error {
 		updates := map[string]interface{}{
@@ -354,7 +354,9 @@ func (s *S3MultipartService) CompleteMultipartUpload(ctx context.Context, upload
 			"etag":        finalEtag,
 			"updatedAt":   time.Now(),
 		}
-		if !hasBufferedChunks {
+		if hasBufferedChunks {
+			updates["status"] = "buffered"
+		} else {
 			updates["status"] = "complete"
 		}
 		if err := tx.Model(&db.FileRecord{}).Where("id = ?", uploadID).Updates(updates).Error; err != nil {
