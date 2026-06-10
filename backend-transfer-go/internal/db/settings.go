@@ -46,7 +46,7 @@ func (s *SettingsCache) GetCachedSetting(key string, defaultValue interface{}, p
 	}
 
 	var setting SystemSetting
-	err := s.db.Where("key = ?", key).First(&setting).Error
+	err := s.db.Where(`"key" = ?`, key).First(&setting).Error
 	var finalVal interface{} = defaultValue
 	if err == nil {
 		if parser != nil {
