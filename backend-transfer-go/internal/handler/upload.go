@@ -12,6 +12,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/db"
+	"gorm.io/gorm"
 )
 
 func (h *FileHandler) Upload(c echo.Context) error {
@@ -92,14 +93,21 @@ func (h *FileHandler) Upload(c echo.Context) error {
 	etag := fmt.Sprintf("\"%s\"", md5Hex)
 	ivStr := hex.EncodeToString(iv)
 
-	// Update FileRecord with Telegram IDs (no status change, no quota)
-	if err := h.database.Model(&db.FileRecord{}).Where("id = ?", fileID).Updates(map[string]interface{}{
-		"telegramFileId":    telegramFileID,
-		"telegramMessageId": telegramMessageID,
-		"botId":             botID,
-		"encryptionIv":      ivStr,
-		"etag":              etag,
-	}).Error; err != nil {
+	// Update FileRecord with Telegram IDs, set status="complete", increment quota
+	err = h.database.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&db.FileRecord{}).Where("id = ?", fileID).Updates(map[string]interface{}{
+			"telegramFileId":    telegramFileID,
+			"telegramMessageId": telegramMessageID,
+			"botId":             botID,
+			"encryptionIv":      ivStr,
+			"etag":              etag,
+			"status":            "complete",
+		}).Error; err != nil {
+			return err
+		}
+		return tx.Model(&db.User{}).Where("id = ?", userID).Update(db.ColUsedSpace, gorm.Expr("\"usedSpace\" + ?", size)).Error
+	})
+	if err != nil {
 		_ = h.telegramClient.DeleteMessage(c.Request().Context(), telegramMessageID, botID)
 		return err
 	}
