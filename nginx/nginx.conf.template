@@ -103,7 +103,7 @@ server {
     }
 
     # Legacy file API routes (non-upload) -> Go Transfer
-    location ~ ^/api/v1/files/(config|buffer-status|stream-cookie|d/|stream/|share/stream/|share/[^/]+/download-token|[^/]+/download-token)($|/|\?) {
+    location ~ ^/api/v1/files/(config|buffer-status|stream-cookie|d/[^/]+|stream/[^/]+|share/stream/[^/]+|share/[^/]+/download-token|[^/]+/download-token)($|/|\?) {
         rewrite ^/api/v1/files/(.*) /v1/transfer/$1 break;
         proxy_pass http://backend-transfer:3001;
         proxy_set_header Host $host;
@@ -118,8 +118,8 @@ server {
         proxy_buffering off;
     }
 
-    # Transfer API routes (unversioned backward compatibility) -> Go Transfer
-    location ~ ^/api/files/(config|buffer-status|stream-cookie|d/|stream/|share/stream/|share/[^/]+/download-token|[^/]+/download-token)($|/|\?) {
+    # Legacy file API routes (unversioned backward compatibility) -> Go Transfer
+    location ~ ^/api/files/(config|buffer-status|stream-cookie|d/[^/]+|stream/[^/]+|share/stream/[^/]+|share/[^/]+/download-token|[^/]+/download-token)($|/|\?) {
         rewrite ^/api/files/(.*) /v1/transfer/$1 break;
         proxy_pass http://backend-transfer:3001;
         proxy_set_header Host $host;
