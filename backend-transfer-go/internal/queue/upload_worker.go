@@ -122,7 +122,7 @@ func (uw *UploadWorker) processFile(ctx context.Context, recordID, tempStorageKe
 		return err
 	}
 
-	telegramFileID, telegramMessageID, botID, err := uw.telegramClient.UploadFile(ctx, encryptedStream, record.Filename, record.Size)
+	telegramFileID, telegramMessageID, botID, err := uw.telegramClient.UploadFile(ctx, encryptedStream, record.ID, record.Size)
 	if err != nil {
 		return err
 	}

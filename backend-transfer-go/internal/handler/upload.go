@@ -83,7 +83,7 @@ func (h *FileHandler) Upload(c echo.Context) error {
 		return err
 	}
 
-	telegramFileID, telegramMessageID, botID, err := h.telegramClient.UploadFile(c.Request().Context(), encryptedStream, fileRecord.Filename, size)
+	telegramFileID, telegramMessageID, botID, err := h.telegramClient.UploadFile(c.Request().Context(), encryptedStream, fileRecord.ID, size)
 	if err != nil {
 		return err
 	}
