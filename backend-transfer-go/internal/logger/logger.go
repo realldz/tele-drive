@@ -3,18 +3,21 @@ package logger
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
+	"runtime"
 	"strings"
 )
 
 type WinstonLogEntry struct {
-	Timestamp string `json:"timestamp"`
-	Level     string `json:"level"`
-	Context   string `json:"context,omitempty"`
-	Message   string `json:"message"`
-	Stack     string `json:"stack,omitempty"`
+	Timestamp string                 `json:"timestamp"`
+	Level     string                 `json:"level"`
+	Context   string                 `json:"context,omitempty"`
+	Message   string                 `json:"message"`
+	Stack     string                 `json:"stack,omitempty"`
+	Attrs     map[string]interface{} `json:"attrs,omitempty"`
 }
 
 type WinstonHandler struct {
@@ -42,6 +45,18 @@ func (h *WinstonHandler) Handle(_ context.Context, r slog.Record) error {
 		Timestamp: r.Time.Format("2006-01-02 15:04:05.000"),
 		Level:     mapLevel(r.Level),
 		Message:   r.Message,
+	}
+
+	// Add source location if available
+	if r.PC != 0 {
+		fn := runtime.FuncForPC(r.PC)
+		if fn != nil {
+			file, line := fn.FileLine(r.PC)
+			if entry.Attrs == nil {
+				entry.Attrs = make(map[string]interface{})
+			}
+			entry.Attrs["source"] = fmt.Sprintf("%s:%d", file, line)
+		}
 	}
 
 	// Apply contextual attributes from WithAttrs
@@ -76,6 +91,11 @@ func (h *WinstonHandler) applyAttr(entry *WinstonLogEntry, a slog.Attr) {
 		} else {
 			entry.Message = entry.Message + ": " + a.Value.String()
 		}
+	default:
+		if entry.Attrs == nil {
+			entry.Attrs = make(map[string]interface{})
+		}
+		entry.Attrs[a.Key] = a.Value.Any()
 	}
 }
 
@@ -183,9 +203,12 @@ func InitLogger(logDir, logLevelStr string) (*slog.Logger, io.Closer, error) {
 	}
 
 	// Set up handlers
-	consoleHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
-		Level: level,
-	})
+	handlerOpts := &slog.HandlerOptions{
+		Level:     level,
+		AddSource: true,
+	}
+
+	consoleHandler := slog.NewTextHandler(os.Stdout, handlerOpts)
 
 	combinedFileHandler := NewWinstonHandler(combinedWriter, level)
 	errorFileHandler := NewWinstonHandler(errorWriter, slog.LevelError)
