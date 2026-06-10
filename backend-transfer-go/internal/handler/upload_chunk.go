@@ -66,6 +66,13 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 	defer c.Request().Body.Close()
 	size := int64(len(body))
 
+	// Reject chunks exceeding max size (configurable via MAX_CHUNK_SIZE env)
+	if size > h.maxChunkSize {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"message": fmt.Sprintf("Chunk size exceeds maximum allowed size (%d bytes)", h.maxChunkSize),
+		})
+	}
+
 	// Idempotency check
 	var existing db.FileChunk
 	err = h.database.Where("\"fileId\" = ? AND \"chunkIndex\" = ?", fileID, chunkIndex).First(&existing).Error

@@ -29,6 +29,7 @@ type FileHandler struct {
 	settingsCache  *db.SettingsCache
 	downloader     *telegram.Downloader
 	jwtSecret      string
+	maxChunkSize   int64
 
 	mu             sync.Mutex
 	activeUploads  map[string]int
@@ -43,6 +44,7 @@ func NewFileHandler(
 	settingsCache *db.SettingsCache,
 	downloader *telegram.Downloader,
 	jwtSecret string,
+	maxChunkSize int64,
 ) *FileHandler {
 	return &FileHandler{
 		database:       database,
@@ -53,6 +55,7 @@ func NewFileHandler(
 		settingsCache:  settingsCache,
 		downloader:     downloader,
 		jwtSecret:      jwtSecret,
+		maxChunkSize:   maxChunkSize,
 		activeUploads:  make(map[string]int),
 	}
 }
@@ -70,8 +73,6 @@ func (h *FileHandler) RegisterRoutes(e *echo.Echo) {
 	files.GET("/config", h.GetConfig)
 	// Healthcheck compat for Docker
 	e.GET("/files/config", h.GetConfig)
-	// Backward compat: local dev calls /v1/files/config
-	e.GET("/v1/files/config", h.GetConfig)
 
 	// Authenticated endpoints
 	files.GET("/buffer-status", h.GetBufferStatus, authMiddleware)
@@ -104,10 +105,9 @@ func (h *FileHandler) RegisterRoutes(e *echo.Echo) {
 
 func (h *FileHandler) GetConfig(c echo.Context) error {
 	maxConcurrent := h.settingsCache.GetCachedSettingInt("MAX_CONCURRENT_CHUNKS", 3)
-	maxChunkSize := int64(94371840) // 90 MB
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
-		"maxChunkSize":        maxChunkSize,
+		"maxChunkSize":        h.maxChunkSize,
 		"maxConcurrentChunks": maxConcurrent,
 	})
 }

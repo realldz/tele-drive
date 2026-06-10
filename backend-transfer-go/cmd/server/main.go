@@ -214,6 +214,7 @@ func main() {
 		settingsCache,
 		downloader,
 		cfg.JWTSecret,
+		cfg.MaxChunkSize,
 	)
 	fileHandler.RegisterRoutes(e)
 
