@@ -70,6 +70,8 @@ func (h *FileHandler) RegisterRoutes(e *echo.Echo) {
 	files.GET("/config", h.GetConfig)
 	// Healthcheck compat for Docker
 	e.GET("/files/config", h.GetConfig)
+	// Backward compat: local dev calls /v1/files/config
+	e.GET("/v1/files/config", h.GetConfig)
 
 	// Authenticated endpoints
 	files.GET("/buffer-status", h.GetBufferStatus, authMiddleware)
