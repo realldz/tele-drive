@@ -166,15 +166,13 @@ func (d *Downloader) GetDownloadInfo(fileRecord db.FileRecord) (*DownloadInfo, e
 }
 
 func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHeader string, disposition string) error {
-	multiThread := d.settingsCache.GetCachedSettingBool("ENABLE_MULTI_THREAD_DOWNLOAD", true)
-
 	fileSize := info.Size
 	start := int64(0)
 	end := fileSize - 1
 
 	hasRangeHeader := rangeHeader != ""
 	isRange := false
-	if rangeHeader != "" && multiThread {
+	if rangeHeader != "" {
 		parts := strings.Split(rangeHeader, "=")
 		if len(parts) == 2 && parts[0] == "bytes" {
 			rangeParts := strings.Split(parts[1], "-")
@@ -225,13 +223,8 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 	}()
 
 	res := c.Response()
-	if isRange {
-		res.WriteHeader(http.StatusPartialContent)
-		res.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
-	} else {
-		res.WriteHeader(http.StatusOK)
-	}
 
+	// Set ALL headers BEFORE WriteHeader — Go discards headers set after it
 	res.Header().Set("Accept-Ranges", "bytes")
 	res.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
 	res.Header().Set("Content-Type", info.MimeType)
@@ -240,6 +233,13 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 		res.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, url.QueryEscape(info.Filename)))
 	} else {
 		res.Header().Set("Content-Disposition", "inline")
+	}
+
+	if isRange {
+		res.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, fileSize))
+		res.WriteHeader(http.StatusPartialContent)
+	} else {
+		res.WriteHeader(http.StatusOK)
 	}
 
 	res.Flush()
