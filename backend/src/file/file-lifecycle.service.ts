@@ -5,8 +5,10 @@ import {
   ConflictException,
   Inject,
 } from '@nestjs/common';
+import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { REDIS_CLIENT } from '../redis';
 import { TEMP_STORAGE } from '../common/temp-storage';
 import type { TempStorage } from '../common/temp-storage';
 
@@ -19,6 +21,7 @@ export class FileLifecycleService {
     private readonly prisma: PrismaService,
     private readonly telegram: TelegramService,
     @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   private async acquireDeletionLock(userId: string): Promise<() => void> {
@@ -113,6 +116,47 @@ export class FileLifecycleService {
     }
   }
 
+  private async publishDeleteEvent(fileRecord: any) {
+    if (process.env.ENABLE_EVENT_DRIVEN_DELETE !== 'true') {
+      return this.legacyHttpPurge(fileRecord);
+    }
+
+    const telegramFileIds: string[] = [];
+    if (fileRecord.telegramMessageId) {
+      telegramFileIds.push(fileRecord.telegramMessageId.toString());
+    }
+
+    if (fileRecord.isChunked && fileRecord.chunks) {
+      fileRecord.chunks.forEach(
+        (chunk: { telegramMessageId: number | null }) => {
+          if (chunk.telegramMessageId) {
+            telegramFileIds.push(chunk.telegramMessageId.toString());
+          }
+        },
+      );
+    }
+
+    const eventPayload = {
+      fileId: fileRecord.id,
+      telegramMessageIds: telegramFileIds,
+      botId: Number(fileRecord.botId),
+    };
+
+    await this.redis.publish(
+      'file:events',
+      JSON.stringify({
+        type: 'DELETE_FILE',
+        payload: eventPayload,
+      }),
+    );
+
+    this.logger.debug(`Published DELETE_FILE event for file ${fileRecord.id}`);
+  }
+
+  private async legacyHttpPurge(fileRecord: any) {
+    await this.purgeFilesFromTelegram([fileRecord]);
+  }
+
   async delete(id: string, userId?: string) {
     const where: Record<string, unknown> = { id };
     if (userId) {
@@ -162,7 +206,7 @@ export class FileLifecycleService {
       });
       if (!fileRecord) throw new NotFoundException('File not found in trash');
 
-      await this.purgeFilesFromTelegram([fileRecord]);
+      await this.publishDeleteEvent(fileRecord);
       await this.purgeTempFiles([fileRecord]);
 
       await this.prisma.$transaction(async (tx) => {
@@ -203,7 +247,9 @@ export class FileLifecycleService {
         }
       }
 
-      await this.purgeFilesFromTelegram(files);
+      for (const file of files) {
+        await this.publishDeleteEvent(file);
+      }
       await this.purgeTempFiles(files);
 
       await this.prisma.$transaction(async (tx) => {
@@ -263,7 +309,9 @@ export class FileLifecycleService {
         }
       }
 
-      await this.purgeFilesFromTelegram(files);
+      for (const file of files) {
+        await this.publishDeleteEvent(file);
+      }
       await this.purgeTempFiles(files);
 
       await this.prisma.$transaction(async (tx) => {

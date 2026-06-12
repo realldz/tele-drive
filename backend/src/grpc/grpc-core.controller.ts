@@ -179,12 +179,45 @@ export class GrpcCoreController {
   }
 
   @GrpcMethod('CoreService', 'ReportDeleteSuccess')
-  reportDeleteSuccess() {
+  async reportDeleteSuccess(data: { fileId: string }) {
+    try {
+      await this.prisma.fileRecord.update({
+        where: { id: data.fileId },
+        data: {
+          telegram_deleted: true,
+          telegram_delete_failed: false,
+        },
+      });
+      this.logger.debug(
+        `Marked file ${data.fileId} as successfully deleted from Telegram`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to update telegram_deleted for file ${data.fileId}`,
+        err,
+      );
+    }
     return {};
   }
 
   @GrpcMethod('CoreService', 'ReportDeleteFailed')
-  reportDeleteFailed() {
+  async reportDeleteFailed(data: { fileId: string; reason: string }) {
+    try {
+      await this.prisma.fileRecord.update({
+        where: { id: data.fileId },
+        data: {
+          telegram_delete_failed: true,
+        },
+      });
+      this.logger.warn(
+        `Failed to delete file ${data.fileId} from Telegram: ${data.reason}`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to update telegram_delete_failed for file ${data.fileId}`,
+        err,
+      );
+    }
     return {};
   }
 

@@ -130,7 +130,13 @@ func main() {
 	}
 	log.Info("Initialized TelegramClient bot pool", "botCount", len(cfg.TelegramUploadBotTokens)+1)
 
-	// 10. Initialize Downloader for I/O streaming
+	// 10b. Start Redis subscriber for async delete events
+	redisSubscriber := queue.NewRedisSubscriber(rdb, tgClient, coreClient, log)
+
+	redisSubscriber.Start()
+	defer redisSubscriber.Stop()
+
+	// 11. Initialize Downloader for I/O streaming
 	downloader := telegram.NewDownloader(
 		tgClient,
 		cryptoEngine,
