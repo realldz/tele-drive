@@ -389,6 +389,19 @@ export class S3Controller {
     const partNumberStr = this.qstr(req.query['partNumber']);
     if (uploadId && partNumberStr) {
       const partNumber = parseInt(partNumberStr, 10);
+      const chunkIndex = partNumber - 1;
+
+      if (process.env.ENABLE_S3_PUT_REDIRECT === 'true') {
+        const token = await this.s3Service.generateUploadToken(
+          uploadId,
+          userId,
+          chunkIndex,
+        );
+        const s3Domain = process.env.S3_DOMAIN || 's3.example.com';
+        const redirectUrl = `https://${s3Domain}/transfer/upload/${uploadId}/chunk/${chunkIndex}?token=${token}`;
+        return res.redirect(HttpStatus.TEMPORARY_REDIRECT, redirectUrl);
+      }
+
       const { stream, contentLength } = wrapRequestStream(req);
       try {
         const { etag } = await this.s3Multipart.uploadPart(
@@ -411,6 +424,10 @@ export class S3Controller {
     }
 
     // --- PutObject (default) ---
+    if (process.env.ENABLE_S3_PUT_REDIRECT === 'true') {
+      return this.redirectPutObject(userId, bucket, key, req, res);
+    }
+
     const { stream, contentLength } = wrapRequestStream(req);
     return this.doPutObject(
       userId,
@@ -924,6 +941,77 @@ export class S3Controller {
     } catch (err: unknown) {
       this.logger.error(
         `S3 PutObject error: ${err instanceof Error ? err.message : err}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      this.sendS3Error(res, err);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // PutObject — Redirect flow (when ENABLE_S3_PUT_REDIRECT = true)
+  // ---------------------------------------------------------------------------
+
+  private async redirectPutObject(
+    userId: string,
+    bucket: string,
+    key: string,
+    req: S3AuthenticatedRequest,
+    res: Response,
+  ) {
+    const contentType =
+      (req.headers['content-type'] as string) || 'application/octet-stream';
+    const contentLengthHeader = req.headers['content-length'];
+    const contentLength = contentLengthHeader
+      ? parseInt(contentLengthHeader, 10)
+      : 0;
+    const filename = key.split('/').pop() || key;
+
+    this.logger.log(
+      `S3 PutObject redirect: s3://${bucket}/${key} (${contentLength} bytes, userId: ${userId})`,
+    );
+
+    try {
+      // Zero-byte → folder marker (handle locally)
+      if (contentLength === 0) {
+        const folderKey = key.endsWith('/') ? key : `${key}/`;
+        await this.s3Service.resolveKeyAsFolder(userId, bucket, folderKey);
+        return res.status(200).end();
+      }
+
+      const { folderId } = await this.s3Service.resolveKey(
+        userId,
+        bucket,
+        key,
+        true,
+      );
+
+      // Create FileRecord in 'uploading' status
+      const fileRecord = await this.prisma.fileRecord.create({
+        data: {
+          filename,
+          size: BigInt(contentLength),
+          mimeType: contentType,
+          status: 'uploading',
+          folderId: folderId || null,
+          userId,
+        },
+      });
+
+      const token = await this.s3Service.generateUploadToken(
+        fileRecord.id,
+        userId,
+      );
+      const s3Domain = process.env.S3_DOMAIN || 's3.example.com';
+      const redirectUrl = `https://${s3Domain}/transfer/upload/${fileRecord.id}?token=${token}`;
+
+      this.logger.debug(
+        `S3 PutObject redirect: ${redirectUrl} (fileId: ${fileRecord.id})`,
+      );
+
+      return res.redirect(HttpStatus.TEMPORARY_REDIRECT, redirectUrl);
+    } catch (err: unknown) {
+      this.logger.error(
+        `S3 PutObject redirect error: ${err instanceof Error ? err.message : err}`,
         err instanceof Error ? err.stack : undefined,
       );
       this.sendS3Error(res, err);

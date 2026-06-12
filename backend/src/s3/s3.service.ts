@@ -37,6 +37,20 @@ export class S3Service {
     return token;
   }
 
+  async generateUploadToken(
+    fileId: string,
+    userId: string,
+    chunkIndex?: number,
+  ): Promise<string> {
+    const token = crypto.randomBytes(32).toString('hex');
+    await this.cacheService.setOneTimeToken(
+      token,
+      { fileId, userId, type: 'upload', chunkIndex },
+      300,
+    );
+    return token;
+  }
+
   // ---------------------------------------------------------------------------
   // Bucket operations (map → root folders)
   // ---------------------------------------------------------------------------

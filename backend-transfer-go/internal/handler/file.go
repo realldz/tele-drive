@@ -2,6 +2,7 @@ package handler
 
 import (
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -80,6 +81,10 @@ func (h *FileHandler) RegisterRoutes(e *echo.Echo) {
 	files.GET("/upload/:fileId/status", h.GetUploadStatus, authMiddleware)
 	files.POST("/:id/download-token", h.GenerateDownloadToken, authMiddleware)
 
+	// Token-based upload endpoints (bypass JWT, rely on one-time S3 redirect token)
+	files.PUT("/upload/:fileId", h.UploadWithToken)
+	files.PUT("/upload/:fileId/chunk/:index", h.UploadChunkWithToken)
+
 	// Stream Cookie endpoints
 	files.POST("/stream-cookie", h.IssueStreamCookie, authMiddleware)
 	files.POST("/stream-cookie/guest", h.IssueGuestStreamCookie, optAuthMiddleware)
@@ -99,6 +104,38 @@ func (h *FileHandler) RegisterRoutes(e *echo.Echo) {
 
 	// Internal endpoints
 	e.POST("/internal/files/purge", h.PurgeFiles)
+}
+
+func (h *FileHandler) verifyUploadToken(c echo.Context, token string, fileID string, expectedChunkIndex *int) (string, error) {
+	tokenKey := "token:" + token
+	tokenDataStr, err := h.redisClient.Get(c.Request().Context(), tokenKey).Result()
+	if err != nil {
+		return "", fmt.Errorf("invalid token")
+	}
+
+	var tokenData struct {
+		FileID     string `json:"fileId"`
+		UserID     string `json:"userId"`
+		Type       string `json:"type"`
+		ChunkIndex *int   `json:"chunkIndex"`
+	}
+	if err := json.Unmarshal([]byte(tokenDataStr), &tokenData); err != nil || tokenData.Type != "upload" {
+		return "", fmt.Errorf("invalid token type")
+	}
+
+	if tokenData.FileID != fileID {
+		return "", fmt.Errorf("token file ID mismatch")
+	}
+
+	if expectedChunkIndex != nil {
+		if tokenData.ChunkIndex == nil || *tokenData.ChunkIndex != *expectedChunkIndex {
+			return "", fmt.Errorf("token chunk index mismatch")
+		}
+	}
+
+	// Consume token (one-time use)
+	h.redisClient.Del(c.Request().Context(), tokenKey)
+	return tokenData.UserID, nil
 }
 
 func (h *FileHandler) GetConfig(c echo.Context) error {

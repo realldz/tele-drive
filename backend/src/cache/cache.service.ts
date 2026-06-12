@@ -74,7 +74,12 @@ export class CacheService {
 
   async setOneTimeToken(
     token: string,
-    data: { fileId: string; userId: string; type: 'download' | 'upload' },
+    data: {
+      fileId: string;
+      userId: string;
+      type: 'download' | 'upload';
+      chunkIndex?: number;
+    },
     ttlSeconds = 300,
   ): Promise<void> {
     await this.redis.set(

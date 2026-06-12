@@ -62,6 +62,67 @@ func (h *FileHandler) Upload(c echo.Context) error {
 	})
 }
 
+func (h *FileHandler) UploadWithToken(c echo.Context) error {
+	token := c.QueryParam("token")
+	if token == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"message": "Missing token"})
+	}
+
+	fileID := c.Param("fileId")
+
+	userID, err := h.verifyUploadToken(c, token, fileID, nil)
+	if err != nil {
+		return c.JSON(http.StatusForbidden, map[string]string{"message": err.Error()})
+	}
+
+	// Fetch metadata via gRPC to validate the file record exists
+	meta, err := h.grpcClient.GetFileMetadata(c.Request().Context(), fileID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "File metadata not found"})
+	}
+
+	if meta.UserId != userID {
+		return c.JSON(http.StatusForbidden, map[string]string{"message": "Access denied"})
+	}
+
+	if meta.Status == "complete" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "File upload already completed"})
+	}
+
+	// Read raw binary body (no multipart)
+	body, err := io.ReadAll(c.Request().Body)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Failed to read request body"})
+	}
+	defer c.Request().Body.Close()
+	size := int64(len(body))
+
+	// Capacity check
+	if !h.tempStorage.HasCapacity(2048) {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"message": "Upload buffer disk space limit reached"})
+	}
+
+	storageKey := fmt.Sprintf("buf/%s.tmp", fileID)
+	if _, err := h.tempStorage.Write(storageKey, bytes.NewReader(body)); err != nil {
+		return err
+	}
+
+	// Enqueue to internal worker pool
+	h.workerPool.AddJob(queue.ChunkJob{
+		ID:             generateUUID(),
+		FileID:         fileID,
+		ChunkIndex:     0,
+		Size:           int(size),
+		TempStorageKey: storageKey,
+		UserID:         userID,
+		Attempt:        0,
+	})
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status": "buffered",
+	})
+}
+
 func (h *FileHandler) AbortUpload(c echo.Context) error {
 	userID := c.Get("userId").(string)
 	fileID := c.Param("fileId")
