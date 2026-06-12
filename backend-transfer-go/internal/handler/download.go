@@ -81,13 +81,39 @@ func (h *FileHandler) GenerateShareDownloadToken(c echo.Context) error {
 
 func (h *FileHandler) DownloadBySigned(c echo.Context) error {
 	token := c.Param("token")
+	ctx := c.Request().Context()
 
+	// Try Redis one-time token first (S3 redirect flow)
+	tokenKey := "token:" + token
+	tokenDataStr, err := h.redisClient.Get(ctx, tokenKey).Result()
+	if err == nil {
+		var tokenData struct {
+			FileID string `json:"fileId"`
+			UserID string `json:"userId"`
+			Type   string `json:"type"`
+		}
+		if err := json.Unmarshal([]byte(tokenDataStr), &tokenData); err != nil || tokenData.Type != "download" {
+			return c.JSON(http.StatusForbidden, map[string]string{"message": "Invalid token format"})
+		}
+
+		// Consume token (single-use)
+		h.redisClient.Del(ctx, tokenKey)
+
+		meta, err := h.GetCachedMetadata(ctx, tokenData.FileID)
+		if err != nil || (meta.Status != "complete" && meta.Status != "buffered") {
+			return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
+		}
+
+		return h.downloader.ServeStream(c.Response(), c.Request(), meta)
+	}
+
+	// Fallback: crypto-signed token (existing signed URL flow)
 	payload, err := h.cryptoEngine.VerifySignedToken(token)
 	if err != nil {
 		return c.JSON(http.StatusGone, map[string]string{"message": "Invalid or expired download link"})
 	}
 
-	meta, err := h.GetCachedMetadata(c.Request().Context(), payload.FID)
+	meta, err := h.GetCachedMetadata(ctx, payload.FID)
 	if err != nil || (meta.Status != "complete" && meta.Status != "buffered") {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
 	}

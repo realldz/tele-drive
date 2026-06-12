@@ -6,6 +6,8 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../cache/cache.service';
+import * as crypto from 'crypto';
 import { escapeXml, decodeXmlEntities } from '../common/utils/xml';
 
 /**
@@ -20,7 +22,20 @@ import { escapeXml, decodeXmlEntities } from '../common/utils/xml';
 export class S3Service {
   private readonly logger = new Logger(S3Service.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cacheService: CacheService,
+  ) {}
+
+  async generateDownloadToken(fileId: string, userId: string): Promise<string> {
+    const token = crypto.randomBytes(32).toString('hex');
+    await this.cacheService.setOneTimeToken(
+      token,
+      { fileId, userId, type: 'download' },
+      300,
+    );
+    return token;
+  }
 
   // ---------------------------------------------------------------------------
   // Bucket operations (map → root folders)

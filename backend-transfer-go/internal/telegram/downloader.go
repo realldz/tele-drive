@@ -410,6 +410,71 @@ func (d *Downloader) streamChunked(ctx context.Context, w io.Writer, info *Downl
 	return nil
 }
 
+func (d *Downloader) ServeStream(w http.ResponseWriter, r *http.Request, meta *pb.FileMetadata) error {
+	ctx := r.Context()
+	size := meta.Size
+
+	rangeHeader := r.Header.Get("Range")
+	start, end := int64(0), size-1
+	isPartial := false
+
+	if rangeHeader != "" && strings.HasPrefix(rangeHeader, "bytes=") {
+		parts := strings.Split(strings.TrimPrefix(rangeHeader, "bytes="), "-")
+		if len(parts) == 2 {
+			isPartial = true
+			if parts[0] != "" {
+				start, _ = strconv.ParseInt(parts[0], 10, 64)
+			}
+			if parts[1] != "" {
+				end, _ = strconv.ParseInt(parts[1], 10, 64)
+			}
+		}
+	}
+
+	if start > end || start >= size {
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes */%d", size))
+		w.WriteHeader(http.StatusRequestedRangeNotSatisfiable)
+		return nil
+	}
+
+	if end >= size {
+		end = size - 1
+	}
+
+	contentLength := end - start + 1
+
+	w.Header().Set("Content-Type", meta.MimeType)
+	w.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
+	w.Header().Set("Accept-Ranges", "bytes")
+
+	if isPartial {
+		w.Header().Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", start, end, size))
+		w.WriteHeader(http.StatusPartialContent)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
+
+	info, err := d.GetDownloadInfo(meta)
+	if err != nil {
+		return err
+	}
+
+	if info.IsBuffered {
+		reader, err := d.tempStorage.ReadRange(info.TempStorageKey, start, contentLength)
+		if err != nil {
+			return err
+		}
+		defer reader.Close()
+		_, err = io.Copy(w, reader)
+		return err
+	}
+
+	if !info.IsChunked {
+		return d.streamSingle(ctx, w, info, start, end)
+	}
+	return d.streamChunked(ctx, w, info, start, end)
+}
+
 func maxInt64(a, b int64) int64 {
 	if a > b {
 		return a

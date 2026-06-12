@@ -10,6 +10,7 @@ import {
   Req,
   Res,
   UseGuards,
+  HttpStatus,
 } from '@nestjs/common';
 import { S3AuthGuard } from './s3-auth.guard';
 import { S3Service } from './s3.service';
@@ -567,33 +568,22 @@ export class S3Controller {
       return;
     }
 
-    // --- GetObject ---
+    // --- GetObject (HTTP 307 Redirect) ---
     this.logger.log(`S3 GetObject: s3://${bucket}/${key} (userId: ${userId})`);
     try {
       this.logger.debug(`S3 GetObject: ${userId}, ${bucket}, ${key}`);
       const file = await this.s3Service.findObject(userId, bucket, key);
-      const downloadInfo = this.transferReadService.getDownloadMetadata(file);
-      const lastModified = file.createdAt.toUTCString();
 
-      const etag = file.etag || `"${file.id}"`;
-      res.setHeader(
-        'Content-Type',
-        file.mimeType || 'application/octet-stream',
+      const token = await this.s3Service.generateDownloadToken(file.id, userId);
+
+      const s3Domain = process.env.S3_DOMAIN || 's3.example.com';
+      const redirectUrl = `https://${s3Domain}/transfer/d/${token}`;
+
+      this.logger.debug(
+        `S3 GetObject redirect: ${redirectUrl} (fileId: ${file.id})`,
       );
-      res.setHeader('Content-Length', file.size.toString());
-      res.setHeader('ETag', etag);
-      res.setHeader('Last-Modified', lastModified);
-      res.setHeader('Accept-Ranges', 'bytes');
 
-      const rangeHeader = req.headers['range'];
-      if (rangeHeader) {
-        return this.transferReadService.processStream(
-          downloadInfo,
-          rangeHeader,
-          res,
-        );
-      }
-      return this.transferReadService.processDownload(downloadInfo, res);
+      return res.redirect(HttpStatus.TEMPORARY_REDIRECT, redirectUrl);
     } catch (err: unknown) {
       this.logger.error(
         `S3 GetObject error: ${err instanceof Error ? err.message : err}`,

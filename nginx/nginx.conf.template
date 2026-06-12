@@ -35,6 +35,7 @@ server {
 server {
     listen 443 ssl;
     server_name ${APP_DOMAIN};
+    client_max_body_size 0;
 
     ssl_certificate     /etc/nginx/ssl/${SSL_CERT_FILE};
     ssl_certificate_key /etc/nginx/ssl/${SSL_KEY_FILE};
@@ -248,6 +249,61 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
+    }
+}
+
+# ─── S3 Domain (for s3.example.com) ─────────────────────────────────
+server {
+    listen 80;
+    listen 443 ssl;
+    server_name ${S3_DOMAIN};
+    client_max_body_size 0;
+
+    ssl_certificate     /etc/nginx/ssl/${SSL_CERT_FILE};
+    ssl_certificate_key /etc/nginx/ssl/${SSL_KEY_FILE};
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # NestJS S3 Protocol — all S3 operations go to NestJS core
+    location / {
+        proxy_pass http://backend-core:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    # Redirect target for data I/O — goes to Go transfer service
+    location /transfer {
+        rewrite ^/transfer/(.*) /v1/transfer/$1 break;
+        proxy_pass http://backend-transfer:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Public URLs — goes to Go transfer service
+    location /public {
+        rewrite ^/public/(.*) /v1/transfer/public/$1 break;
+        proxy_pass http://backend-transfer:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
     }
 }
 
