@@ -87,6 +87,8 @@ services:
       REDIS_URL: redis://redis:6379
       UPLOAD_BUFFER_DIR: /data/upload-buffer
       IS_TRANSFER_SERVICE: "false"
+      GO_TRANSFER_GRPC_URL: backend-transfer:50051
+      GRPC_PORT: "50051"
     volumes:
       - ./backend/.logs:/app/.logs
       - upload-buffer:/data/upload-buffer
@@ -116,6 +118,8 @@ services:
       TELEGRAM_API_ROOT: http://nginx:8088
       REDIS_URL: redis://redis:6379
       UPLOAD_BUFFER_DIR: /data/upload-buffer
+      NESTJS_GRPC_URL: backend-core:50051
+      GRPC_PORT: "50051"
     volumes:
       - ./backend/.logs:/app/.logs
       - upload-buffer:/data/upload-buffer

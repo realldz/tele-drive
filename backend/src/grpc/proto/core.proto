@@ -1,0 +1,191 @@
+syntax = "proto3";
+
+package core;
+
+option go_package = "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto";
+
+service CoreService {
+  rpc ReportChunkResults(ReportChunkResultsRequest) returns (ReportChunkResultsResponse);
+  rpc GetFileMetadata(GetFileMetadataRequest) returns (FileMetadata);
+  rpc BatchCheckChunkStatus(BatchCheckRequest) returns (BatchCheckResponse);
+  rpc ReportUploadFailed(ReportUploadFailedRequest) returns (Empty);
+  rpc ReportDeleteSuccess(ReportDeleteSuccessRequest) returns (Empty);
+  rpc ReportDeleteFailed(ReportDeleteFailedRequest) returns (Empty);
+  rpc ReportFileCorrupted(ReportFileCorruptedRequest) returns (Empty);
+  rpc ReportZipReady(ReportZipReadyRequest) returns (Empty);
+  rpc ReportZipFailed(ReportZipFailedRequest) returns (Empty);
+  rpc ReportBotUnauthorized(ReportBotUnauthorizedRequest) returns (Empty);
+  rpc ReportEmergencyCleanup(ReportEmergencyCleanupRequest) returns (Empty);
+  rpc CheckDiskSpace(Empty) returns (DiskSpaceResponse);
+  rpc ReportCronStats(ReportCronStatsRequest) returns (Empty);
+  rpc Ping(Empty) returns (Pong);
+}
+
+message Empty {}
+
+message Pong {
+  int64 timestamp = 1;
+}
+
+// --- Upload Flow ---
+
+message ChunkResult {
+  string file_id = 1;
+  int32 chunk_index = 2;
+  string telegram_file_id = 3;
+  int32 telegram_message_id = 4;
+  int64 bot_id = 5;
+  string encryption_iv = 6;
+  int32 size = 7;
+  string etag = 8;
+  string chunk_id = 9;
+}
+
+message ReportChunkResultsRequest {
+  repeated ChunkResult results = 1;
+}
+
+message ReportChunkResultsResponse {
+  int32 accepted = 1;
+}
+
+// --- File Metadata ---
+
+message GetFileMetadataRequest {
+  string file_id = 1;
+}
+
+message ChunkMetadata {
+  int32 chunk_index = 1;
+  int32 size = 2;
+  string telegram_file_id = 3;
+  int32 telegram_message_id = 4;
+  int64 bot_id = 5;
+  string encryption_iv = 6;
+  string etag = 7;
+}
+
+message FileMetadata {
+  string id = 1;
+  string user_id = 2;
+  int64 size = 3;
+  string mime_type = 4;
+  string filename = 5;
+
+  bool is_encrypted = 10;
+  string encryption_algo = 11;
+  string encryption_iv = 12;
+  string encrypted_key = 13;
+
+  int64 bot_id = 20;
+  bool is_chunked = 21;
+  string telegram_file_id = 22;
+  int32 telegram_message_id = 23;
+  int32 total_chunks = 24;
+  repeated ChunkMetadata chunks = 25;
+
+  string status = 30;
+  string visibility = 31;
+
+  int32 download_limit_24h = 40;
+  int32 downloads_24h = 41;
+  int64 bandwidth_limit_24h = 42;
+  int64 bandwidth_used_24h = 43;
+}
+
+// --- Batch Check ---
+
+message BatchCheckRequest {
+  repeated string file_ids = 1;
+}
+
+enum ChunkStatus {
+  CHUNK_STATUS_UNKNOWN = 0;
+  CHUNK_STATUS_PENDING = 1;
+  CHUNK_STATUS_COMPLETE = 2;
+  CHUNK_STATUS_FAILED = 3;
+  CHUNK_STATUS_NOT_FOUND = 4;
+}
+
+message ChunkStatusEntry {
+  string file_id = 1;
+  ChunkStatus status = 2;
+}
+
+message BatchCheckResponse {
+  repeated ChunkStatusEntry entries = 1;
+}
+
+// --- Upload Failure ---
+
+message ReportUploadFailedRequest {
+  string file_id = 1;
+  int32 chunk_index = 2;
+  string reason = 3;
+  bool is_chunk = 4;
+  string chunk_id = 5;
+}
+
+// --- Delete ---
+
+message ReportDeleteSuccessRequest {
+  string file_id = 1;
+}
+
+message ReportDeleteFailedRequest {
+  string file_id = 1;
+  string reason = 2;
+}
+
+message ReportFileCorruptedRequest {
+  string file_id = 1;
+  string telegram_file_id = 2;
+}
+
+// --- ZIP ---
+
+message ZipPart {
+  string key = 1;
+  int64 size = 2;
+  int32 index = 3;
+}
+
+message ReportZipReadyRequest {
+  string job_id = 1;
+  repeated ZipPart parts = 2;
+  int64 total_size = 3;
+  bool streaming = 4;
+}
+
+message ReportZipFailedRequest {
+  string job_id = 1;
+  string reason = 2;
+}
+
+// --- Bot ---
+
+message ReportBotUnauthorizedRequest {
+  int64 bot_id = 1;
+}
+
+// --- Emergency ---
+
+message ReportEmergencyCleanupRequest {
+  repeated string file_ids = 1;
+}
+
+// --- Disk ---
+
+message DiskSpaceResponse {
+  int64 free_bytes = 1;
+  int64 total_bytes = 2;
+  double usage_percent = 3;
+}
+
+// --- Cron ---
+
+message ReportCronStatsRequest {
+  string cron_name = 1;
+  int32 processed_count = 2;
+  int64 freed_bytes = 3;
+}

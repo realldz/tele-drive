@@ -20,6 +20,7 @@ import (
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/queue"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/storage"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/telegram"
+	appGrpc "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc"
 )
 
 func main() {
@@ -81,6 +82,34 @@ func main() {
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	// Initialize gRPC client (calls NestJS)
+	coreClient, err := appGrpc.NewCoreClient(cfg.NestJSGrpcURL, log)
+	if err != nil {
+		log.Error("Failed to create gRPC client", "error", err)
+		panic(err)
+	}
+	defer coreClient.Close()
+
+	// Verify NestJS gRPC connection (non-blocking, log warning if unavailable)
+	go func() {
+		pingCtx, pingCancel := context.WithTimeout(ctx, 10*time.Second)
+		defer pingCancel()
+		if pong, err := coreClient.Ping(pingCtx); err != nil {
+			log.Warn("NestJS gRPC not reachable at startup (will retry later)", "error", err)
+		} else {
+			log.Info("NestJS gRPC connection verified", "timestamp", pong.Timestamp)
+		}
+	}()
+
+	// Start gRPC server (TransferService)
+	transferServer := appGrpc.NewTransferServer(log)
+	go func() {
+		if err := appGrpc.StartGRPCServer(ctx, cfg.GrpcPort, transferServer, log); err != nil {
+			log.Error("gRPC server failed", "error", err)
+		}
+	}()
+	log.Info("gRPC server started", "port", cfg.GrpcPort)
 
 	// Retry Telegram init with backoff (handles nginx DNS race in Docker)
 	{

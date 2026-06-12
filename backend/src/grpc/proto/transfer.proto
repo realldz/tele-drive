@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package transfer;
+
+option go_package = "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto";
+
+service TransferService {
+  rpc FlushAndConfirm(FlushAndConfirmRequest) returns (FlushAndConfirmResponse);
+  rpc Ping(TransferPingRequest) returns (TransferPingResponse);
+}
+
+message TransferPingRequest {}
+
+message TransferPingResponse {
+  int64 timestamp = 1;
+}
+
+message FlushAndConfirmRequest {
+  string file_id = 1;
+}
+
+message ChunkConfirmation {
+  int32 chunk_index = 1;
+  string telegram_file_id = 2;
+  int32 telegram_message_id = 3;
+  int64 bot_id = 4;
+  string encryption_iv = 5;
+  int32 size = 6;
+  string etag = 7;
+}
+
+message FlushAndConfirmResponse {
+  bool all_complete = 1;
+  int32 total_chunks = 2;
+  int32 completed_chunks = 3;
+  repeated ChunkConfirmation chunks = 4;
+}

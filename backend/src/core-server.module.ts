@@ -18,10 +18,14 @@ import { RedisModule } from './redis';
 import { QueueModule } from './queue';
 import { DownloadZipModule } from './download-zip/download-zip.module';
 import { S3Module } from './s3/s3.module';
+import { GrpcCoreModule } from './grpc/grpc-core.module';
+import { CacheModule } from './cache/cache.module';
 
 @Module({
   imports: [
     AppLoggerModule,
+    GrpcCoreModule,
+    CacheModule,
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),

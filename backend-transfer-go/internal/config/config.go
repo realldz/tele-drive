@@ -25,6 +25,8 @@ type Config struct {
 	CorsOrigin               string
 	RedisURL                 string
 	UploadBufferDir          string
+	NestJSGrpcURL            string
+	GrpcPort                 int
 }
 
 func Load() *Config {
@@ -35,6 +37,12 @@ func Load() *Config {
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
 		port = 3001
+	}
+
+	grpcPortStr := getEnv("GRPC_PORT", "50051")
+	grpcPort, err := strconv.Atoi(grpcPortStr)
+	if err != nil {
+		grpcPort = 50051
 	}
 
 	rateLimitStr := getEnv("TELEGRAM_SEND_RATE_LIMIT", "18")
@@ -82,6 +90,8 @@ func Load() *Config {
 		CorsOrigin:              getEnv("CORS_ORIGIN", "*"),
 		RedisURL:                getEnv("REDIS_URL", "redis://localhost:6379"),
 		UploadBufferDir:         getEnv("UPLOAD_BUFFER_DIR", ".upload-buffer"),
+		NestJSGrpcURL:           getEnv("NESTJS_GRPC_URL", "localhost:50051"),
+		GrpcPort:                grpcPort,
 	}
 }
 
