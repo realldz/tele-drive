@@ -11,7 +11,7 @@ import (
 
 type Config struct {
 	Port                     int
-	DatabaseURL              string
+	WorkerPoolSize           int
 	TelegramBotToken         string
 	TelegramChatID           string
 	TelegramAPIRoot          string
@@ -57,6 +57,12 @@ func Load() *Config {
 		maxChunk = 94371840
 	}
 
+	workerPoolSizeStr := getEnv("WORKER_POOL_SIZE", "5")
+	workerPoolSize, err := strconv.Atoi(workerPoolSizeStr)
+	if err != nil {
+		workerPoolSize = 5
+	}
+
 	uploadBotsStr := getEnv("TELEGRAM_UPLOAD_BOT_TOKENS", "")
 	var uploadBots []string
 	if uploadBotsStr != "" {
@@ -76,7 +82,7 @@ func Load() *Config {
 
 	return &Config{
 		Port:                    port,
-		DatabaseURL:             getEnv("DATABASE_URL", ""),
+		WorkerPoolSize:          workerPoolSize,
 		TelegramBotToken:        getEnv("TELEGRAM_BOT_TOKEN", ""),
 		TelegramChatID:          getEnv("TELEGRAM_CHAT_ID", ""),
 		TelegramAPIRoot:         getEnv("TELEGRAM_API_ROOT", ""),

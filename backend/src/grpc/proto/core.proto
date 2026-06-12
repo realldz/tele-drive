@@ -18,6 +18,7 @@ service CoreService {
   rpc ReportEmergencyCleanup(ReportEmergencyCleanupRequest) returns (Empty);
   rpc CheckDiskSpace(Empty) returns (DiskSpaceResponse);
   rpc ReportCronStats(ReportCronStatsRequest) returns (Empty);
+  rpc VerifyFolderShare(VerifyFolderShareRequest) returns (VerifyFolderShareResponse);
   rpc Ping(Empty) returns (Pong);
 }
 
@@ -189,3 +190,15 @@ message ReportCronStatsRequest {
   int32 processed_count = 2;
   int64 freed_bytes = 3;
 }
+
+// --- Folder Sharing ---
+
+message VerifyFolderShareRequest {
+  string share_token = 1;
+  string file_id = 2;
+}
+
+message VerifyFolderShareResponse {
+  bool is_valid = 1;
+}
+

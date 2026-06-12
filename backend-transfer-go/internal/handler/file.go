@@ -2,31 +2,29 @@ package handler
 
 import (
 	"crypto/rand"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/redis/go-redis/v9"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/crypto"
-	"github.com/realldz/tele-drive/backend-transfer-go/internal/db"
+	"github.com/realldz/tele-drive/backend-transfer-go/internal/grpc"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/middleware"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/queue"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/storage"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/telegram"
-	"gorm.io/gorm"
 )
 
 type FileHandler struct {
-	database       *db.DB
+	grpcClient     *grpc.CoreClient
+	redisClient    *redis.Client
+	workerPool     *queue.WorkerPool
 	telegramClient *telegram.TelegramClient
 	cryptoEngine   *crypto.CryptoEngine
 	tempStorage    *storage.TempStorage
-	bullClient     *queue.BullMQClient
-	settingsCache  *db.SettingsCache
 	downloader     *telegram.Downloader
 	jwtSecret      string
 	maxChunkSize   int64
@@ -36,23 +34,23 @@ type FileHandler struct {
 }
 
 func NewFileHandler(
-	database *db.DB,
+	grpcClient *grpc.CoreClient,
+	redisClient *redis.Client,
+	workerPool *queue.WorkerPool,
 	telegramClient *telegram.TelegramClient,
 	cryptoEngine *crypto.CryptoEngine,
 	tempStorage *storage.TempStorage,
-	bullClient *queue.BullMQClient,
-	settingsCache *db.SettingsCache,
 	downloader *telegram.Downloader,
 	jwtSecret string,
 	maxChunkSize int64,
 ) *FileHandler {
 	return &FileHandler{
-		database:       database,
+		grpcClient:     grpcClient,
+		redisClient:    redisClient,
+		workerPool:     workerPool,
 		telegramClient: telegramClient,
 		cryptoEngine:   cryptoEngine,
 		tempStorage:    tempStorage,
-		bullClient:     bullClient,
-		settingsCache:  settingsCache,
 		downloader:     downloader,
 		jwtSecret:      jwtSecret,
 		maxChunkSize:   maxChunkSize,
@@ -104,7 +102,7 @@ func (h *FileHandler) RegisterRoutes(e *echo.Echo) {
 }
 
 func (h *FileHandler) GetConfig(c echo.Context) error {
-	maxConcurrent := h.settingsCache.GetCachedSettingInt("MAX_CONCURRENT_CHUNKS", 3)
+	maxConcurrent := 3
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"maxChunkSize":        h.maxChunkSize,
@@ -137,7 +135,15 @@ func (h *FileHandler) GetBufferStatus(c echo.Context) error {
 		Status string `json:"status"`
 	}
 	var results []fileStatus
-	h.database.Model(&db.FileRecord{}).Where("id IN ? AND \"userId\" = ?", ids, userID).Select("id, status").Find(&results)
+	for _, id := range ids {
+		meta, err := h.GetCachedMetadata(c.Request().Context(), id)
+		if err == nil && meta.UserId == userID {
+			results = append(results, fileStatus{
+				ID:     meta.Id,
+				Status: meta.Status,
+			})
+		}
+	}
 
 	return c.JSON(http.StatusOK, results)
 }
@@ -145,39 +151,6 @@ func (h *FileHandler) GetBufferStatus(c echo.Context) error {
 // ---------------------------------------------------------------------------
 // Helpers & Internal checks
 // ---------------------------------------------------------------------------
-
-type countingWriter struct {
-	w     io.Writer
-	count int64
-}
-
-func (cw *countingWriter) Write(p []byte) (n int, err error) {
-	n, err = cw.w.Write(p)
-	cw.count += int64(n)
-	return n, err
-}
-
-func (h *FileHandler) isDescendantOf(folderID string, ancestorID string) (bool, error) {
-	currentID := &folderID
-	for currentID != nil {
-		if *currentID == ancestorID {
-			return true, nil
-		}
-		var folder db.Folder
-		err := h.database.Where("id = ?", *currentID).First(&folder).Error
-		if err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return false, nil
-			}
-			return false, err
-		}
-		if folder.DeletedAt != nil {
-			return false, nil
-		}
-		currentID = folder.ParentID
-	}
-	return false, nil
-}
 
 func GenerateUniqueName(name string, existingNames []string) string {
 	nameSet := make(map[string]bool)

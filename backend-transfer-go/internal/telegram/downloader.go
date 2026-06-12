@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -12,8 +13,9 @@ import (
 	"time"
 
 	"github.com/labstack/echo/v4"
+	"github.com/redis/go-redis/v9"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/crypto"
-	"github.com/realldz/tele-drive/backend-transfer-go/internal/db"
+	pb "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/storage"
 )
 
@@ -49,118 +51,120 @@ type Downloader struct {
 	telegramClient *TelegramClient
 	cryptoEngine   *crypto.CryptoEngine
 	tempStorage    *storage.TempStorage
-	database       *db.DB
-	settingsCache  *db.SettingsCache
+	RedisClient    *redis.Client
 	httpClient     *http.Client
+	logger         *slog.Logger
 }
 
 func NewDownloader(
 	telegramClient *TelegramClient,
 	cryptoEngine *crypto.CryptoEngine,
 	tempStorage *storage.TempStorage,
-	database *db.DB,
-	settingsCache *db.SettingsCache,
+	redisClient *redis.Client,
+	logger *slog.Logger,
 ) *Downloader {
 	return &Downloader{
 		telegramClient: telegramClient,
 		cryptoEngine:   cryptoEngine,
 		tempStorage:    tempStorage,
-		database:       database,
-		settingsCache:  settingsCache,
+		RedisClient:    redisClient,
+		logger:         logger,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Minute,
 		},
 	}
 }
 
-func (d *Downloader) GetDownloadInfo(fileRecord db.FileRecord) (*DownloadInfo, error) {
+func (d *Downloader) GetDownloadInfo(meta *pb.FileMetadata) (*DownloadInfo, error) {
 	var dek []byte
 	var err error
-	if fileRecord.IsEncrypted && fileRecord.EncryptedKey != nil {
-		dek, err = d.cryptoEngine.DecryptKey(*fileRecord.EncryptedKey)
+	if meta.IsEncrypted && meta.EncryptedKey != "" {
+		dek, err = d.cryptoEngine.DecryptKey(meta.EncryptedKey)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	var iv []byte
-	if fileRecord.EncryptionIv != nil {
-		iv, _ = hex.DecodeString(*fileRecord.EncryptionIv)
+	if meta.EncryptionIv != "" {
+		iv, _ = hex.DecodeString(meta.EncryptionIv)
 	}
 
-	if fileRecord.Status == "buffered" && fileRecord.TempStorageKey != nil {
+	if meta.Status == "buffered" {
 		return &DownloadInfo{
-			ID:             fileRecord.ID,
-			Filename:       fileRecord.Filename,
-			Size:           fileRecord.Size,
-			MimeType:       fileRecord.MimeType,
+			ID:             meta.Id,
+			Filename:       meta.Filename,
+			Size:           meta.Size,
+			MimeType:       meta.MimeType,
 			IsBuffered:     true,
-			TempStorageKey: *fileRecord.TempStorageKey,
+			TempStorageKey: fmt.Sprintf("buf/%s.tmp", meta.Id),
 			IsChunked:      false,
 		}, nil
 	}
 
-	if !fileRecord.IsChunked && fileRecord.TelegramFileID != nil {
+	if !meta.IsChunked && meta.TelegramFileId != "" {
+		var msgID *int
+		if meta.TelegramMessageId != 0 {
+			val := int(meta.TelegramMessageId)
+			msgID = &val
+		}
+
 		return &DownloadInfo{
-			ID:                fileRecord.ID,
-			Filename:          fileRecord.Filename,
-			Size:              fileRecord.Size,
-			MimeType:          fileRecord.MimeType,
+			ID:                meta.Id,
+			Filename:          meta.Filename,
+			Size:              meta.Size,
+			MimeType:          meta.MimeType,
 			IsBuffered:        false,
 			IsChunked:         false,
-			TelegramFileID:    *fileRecord.TelegramFileID,
-			BotID:             fileRecord.BotID,
-			TelegramMessageID: fileRecord.TelegramMessageID,
-			IsEncrypted:       fileRecord.IsEncrypted,
+			TelegramFileID:    meta.TelegramFileId,
+			BotID:             meta.BotId,
+			TelegramMessageID: msgID,
+			IsEncrypted:       meta.IsEncrypted,
 			DEK:               dek,
 			IV:                iv,
 		}, nil
 	}
 
-	// Load chunks
-	var dbChunks []db.FileChunk
-	if err := d.database.Where("\"fileId\" = ?", fileRecord.ID).Order("\"chunkIndex\" ASC").Find(&dbChunks).Error; err != nil {
-		return nil, err
-	}
-
-	chunks := make([]ChunkInfo, len(dbChunks))
-	for i, c := range dbChunks {
+	chunks := make([]ChunkInfo, len(meta.Chunks))
+	for i, c := range meta.Chunks {
 		var chunkIv []byte
-		if c.EncryptionIv != nil {
-			chunkIv, _ = hex.DecodeString(*c.EncryptionIv)
+		if c.EncryptionIv != "" {
+			chunkIv, _ = hex.DecodeString(c.EncryptionIv)
 		}
 
-		var chunkFileID string
-		if c.TelegramFileID != nil {
-			chunkFileID = *c.TelegramFileID
-		}
-
+		isBuffered := c.TelegramFileId == ""
 		var tempKey string
-		if c.TempStorageKey != nil {
-			tempKey = *c.TempStorageKey
+		if isBuffered {
+			tempKey = fmt.Sprintf("chunk/%s/%d.tmp", meta.Id, c.ChunkIndex)
+		}
+
+		var msgID *int
+		if c.TelegramMessageId != 0 {
+			val := int(c.TelegramMessageId)
+			msgID = &val
 		}
 
 		chunks[i] = ChunkInfo{
-			ID:                c.ID,
-			TelegramFileID:    chunkFileID,
-			BotID:             c.BotID,
-			TelegramMessageID: c.TelegramMessageID,
+			ID:                fmt.Sprintf("%s-chunk-%d", meta.Id, c.ChunkIndex),
+			TelegramFileID:    c.TelegramFileId,
+			BotID:             c.BotId,
+			TelegramMessageID: msgID,
 			IV:                chunkIv,
 			Size:              int64(c.Size),
-			IsBuffered:        c.Status == "buffered",
+			IsBuffered:        isBuffered,
 			TempStorageKey:    tempKey,
 		}
 	}
 
 	return &DownloadInfo{
-		ID:          fileRecord.ID,
-		Filename:    fileRecord.Filename,
-		Size:        fileRecord.Size,
-		MimeType:    fileRecord.MimeType,
+		ID:          meta.Id,
+		Filename:    meta.Filename,
+		Size:        meta.Size,
+		MimeType:    meta.MimeType,
 		IsBuffered:  false,
 		IsChunked:   true,
 		Chunks:      chunks,
-		IsEncrypted: fileRecord.IsEncrypted,
+		IsEncrypted: meta.IsEncrypted,
 		DEK:         dek,
 	}, nil
 }
@@ -178,7 +182,6 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 			rangeParts := strings.Split(parts[1], "-")
 			if len(rangeParts) == 2 {
 				if rangeParts[0] == "" {
-					// Suffix range: bytes=-500
 					if suffix, err := strconv.ParseInt(rangeParts[1], 10, 64); err == nil && suffix > 0 {
 						start = fileSize - suffix
 						if start < 0 {
@@ -210,7 +213,7 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 
 	contentLength := end - start + 1
 
-	// Lock & Check Bandwidth
+	// Lock & Check Bandwidth (stubbed out DB updates)
 	lock, err := d.CheckAndLockBandwidth(c, info.ID, fileSize, contentLength, hasRangeHeader)
 	if err != nil {
 		return err
@@ -224,7 +227,6 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 
 	res := c.Response()
 
-	// Set ALL headers BEFORE WriteHeader — Go discards headers set after it
 	res.Header().Set("Accept-Ranges", "bytes")
 	res.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
 	res.Header().Set("Content-Type", info.MimeType)
@@ -277,21 +279,7 @@ func (d *Downloader) resolveFileLink(ctx context.Context, fileID string, botID i
 		return "", fmt.Errorf("failed to recover fileID: %w", err)
 	}
 
-	if chunkDbID != nil {
-		go func() {
-			_ = d.database.Model(&db.FileChunk{}).Where("id = ?", *chunkDbID).Updates(map[string]interface{}{
-				"telegramFileId": newFileID,
-				"botId":          newBotID,
-			}).Error
-		}()
-	} else {
-		go func() {
-			_ = d.database.Model(&db.FileRecord{}).Where("\"telegramFileId\" = ?", fileID).Updates(map[string]interface{}{
-				"telegramFileId": newFileID,
-				"botId":          newBotID,
-			}).Error
-		}()
-	}
+	d.logger.Warn("FileID recovery occurred, database update skipped", "newFileID", newFileID, "newBotID", newBotID)
 
 	return d.telegramClient.GetFileLink(ctx, newFileID, newBotID)
 }
@@ -370,7 +358,6 @@ func (d *Downloader) streamChunked(ctx context.Context, w io.Writer, info *Downl
 		currentOffset += chunk.Size
 	}
 
-	// Prefetch links ahead asynchronously
 	prefetchAhead := 2
 	for i, chunkReq := range chunksToFetch {
 		for p := i + 1; p < i+1+prefetchAhead && p < len(chunksToFetch); p++ {

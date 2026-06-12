@@ -2,17 +2,13 @@ package handler
 
 import (
 	"bytes"
-	"crypto/md5"
-	"encoding/hex"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/labstack/echo/v4"
-	"github.com/realldz/tele-drive/backend-transfer-go/internal/db"
+	"github.com/realldz/tele-drive/backend-transfer-go/internal/queue"
 )
 
 func (h *FileHandler) UploadChunk(c echo.Context) error {
@@ -25,10 +21,11 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Invalid chunk index"})
 	}
 
-	// Concurrency limit (unchanged)
+	// Concurrency limit
 	h.mu.Lock()
 	active := h.activeUploads[userID]
-	maxConcurrent := h.settingsCache.GetCachedSettingInt("MAX_CONCURRENT_CHUNKS", 3)
+	// settingsCache will be refactored to check statically or via NestJS, for now default to 3
+	maxConcurrent := 3
 	if active >= maxConcurrent {
 		h.mu.Unlock()
 		c.Response().Header().Set("Retry-After", "5")
@@ -49,13 +46,40 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 		h.mu.Unlock()
 	}()
 
-	// Verify file record exists and belongs to user
-	var fileRecord db.FileRecord
-	if err := h.database.Where("id = ? AND \"userId\" = ?", fileID, userID).First(&fileRecord).Error; err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"message": "File record not found"})
+	// Fetch metadata via gRPC to validate the file record exists and is not complete
+	meta, err := h.grpcClient.GetFileMetadata(c.Request().Context(), fileID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "File metadata not found"})
 	}
-	if chunkIndex < 0 || chunkIndex >= fileRecord.TotalChunks {
+
+	if meta.UserId != userID {
+		return c.JSON(http.StatusForbidden, map[string]string{"message": "Access denied"})
+	}
+
+	if meta.Status == "complete" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "File upload already completed"})
+	}
+
+	if chunkIndex < 0 || chunkIndex >= int(meta.TotalChunks) {
 		return c.JSON(http.StatusBadRequest, map[string]string{"message": fmt.Sprintf("Invalid chunk index: %d", chunkIndex)})
+	}
+
+	// Idempotency check: check if this chunk has already been uploaded successfully
+	for _, chunk := range meta.Chunks {
+		if int(chunk.ChunkIndex) == chunkIndex && chunk.TelegramFileId != "" {
+			return c.JSON(http.StatusOK, map[string]interface{}{
+				"id":                fmt.Sprintf("%s-chunk-%d", fileID, chunkIndex),
+				"fileId":            fileID,
+				"chunkIndex":        chunkIndex,
+				"size":              chunk.Size,
+				"telegramFileId":    chunk.TelegramFileId,
+				"telegramMessageId": chunk.TelegramMessageId,
+				"botId":             chunk.BotId,
+				"encryptionIv":      chunk.EncryptionIv,
+				"etag":              chunk.Etag,
+				"status":            "complete",
+			})
+		}
 	}
 
 	// Read raw binary body (no multipart)
@@ -66,121 +90,36 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 	defer c.Request().Body.Close()
 	size := int64(len(body))
 
-	// Reject chunks exceeding max size (configurable via MAX_CHUNK_SIZE env)
+	// Reject chunks exceeding max size
 	if size > h.maxChunkSize {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"message": fmt.Sprintf("Chunk size exceeds maximum allowed size (%d bytes)", h.maxChunkSize),
 		})
 	}
 
-	// Idempotency check
-	var existing db.FileChunk
-	err = h.database.Where("\"fileId\" = ? AND \"chunkIndex\" = ?", fileID, chunkIndex).First(&existing).Error
-	if err == nil {
-		if existing.TelegramFileID != nil && *existing.TelegramFileID != "" {
-			return c.JSON(http.StatusOK, existing)
-		}
-		h.database.Delete(&existing)
+	// Capacity check (tempStorage has 80% disk check threshold based on 2048MB max size)
+	if !h.tempStorage.HasCapacity(2048) {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"message": "Upload buffer disk space limit reached"})
 	}
 
-	// Buffer decision
-	maxSize := h.settingsCache.GetCachedSettingInt64("MAX_BUFFER_FILE_SIZE", 52428800)
-	capacityOk := size <= maxSize && h.tempStorage.HasCapacity(h.settingsCache)
-
-	if capacityOk {
-		storageKey := fmt.Sprintf("chunk/%s/%d.tmp", fileID, chunkIndex)
-		hash := md5.New()
-		counter := &countingWriter{w: hash}
-		tee := io.TeeReader(bytes.NewReader(body), counter)
-
-		if _, err := h.tempStorage.Write(storageKey, tee); err == nil {
-			md5Hex := hex.EncodeToString(hash.Sum(nil))
-			etag := fmt.Sprintf("\"%s\"", md5Hex)
-
-			var encryptionIv *string
-			if fileRecord.IsEncrypted && fileRecord.EncryptedKey != nil {
-				ivBytes, _ := h.cryptoEngine.GenerateIv()
-				ivStr := hex.EncodeToString(ivBytes)
-				encryptionIv = &ivStr
-			}
-
-			chunk := db.FileChunk{
-				ID:             generateUUID(),
-				FileID:         fileID,
-				ChunkIndex:     chunkIndex,
-				Size:           int(counter.count),
-				TempStorageKey: &storageKey,
-				Status:         "buffered",
-				EncryptionIv:   encryptionIv,
-				Etag:           &etag,
-				CreatedAt:      time.Now(),
-			}
-
-			if err := h.database.Create(&chunk).Error; err == nil {
-				jobData := map[string]interface{}{
-					"type":           "chunk",
-					"chunkId":        chunk.ID,
-					"fileRecordId":   fileID,
-					"chunkIndex":     chunkIndex,
-					"tempStorageKey": storageKey,
-					"userId":         userID,
-				}
-				maxRetries := h.settingsCache.GetCachedSettingInt("BUFFER_MAX_RETRIES", 3)
-				if err := h.bullClient.AddJob(c.Request().Context(), "upload-dispatch", "dispatch-chunk", fmt.Sprintf("chunk-%s", chunk.ID), jobData, maxRetries); err != nil {
-					slog.Warn("AddJob failed for buffered chunk upload", "chunkId", chunk.ID, "fileId", fileID, "error", err)
-				}
-				return c.JSON(http.StatusOK, chunk)
-			}
-			_ = h.tempStorage.Delete(storageKey)
-		}
-	}
-
-	// Direct upload path: encrypt → Telegram
-	dek, err := h.cryptoEngine.DecryptKey(*fileRecord.EncryptedKey)
-	if err != nil {
-		return err
-	}
-	ivBytes, err := h.cryptoEngine.GenerateIv()
-	if err != nil {
+	storageKey := fmt.Sprintf("chunk/%s/%d.tmp", fileID, chunkIndex)
+	if _, err := h.tempStorage.Write(storageKey, bytes.NewReader(body)); err != nil {
 		return err
 	}
 
-	hash := md5.New()
-	counter := &countingWriter{w: hash}
-	tee := io.TeeReader(bytes.NewReader(body), counter)
-	encryptedStream, err := h.cryptoEngine.EncryptStream(tee, dek, ivBytes)
-	if err != nil {
-		return err
-	}
+	// Enqueue to internal worker pool instead of DB + BullMQ
+	h.workerPool.AddJob(queue.ChunkJob{
+		ID:             generateUUID(),
+		FileID:         fileID,
+		ChunkIndex:     chunkIndex,
+		Size:           int(size),
+		TempStorageKey: storageKey,
+		UserID:         userID,
+		Attempt:        0,
+	})
 
-	chunkFilename := fmt.Sprintf("%s.part%03d", fileRecord.ID, chunkIndex)
-	telegramFileID, telegramMessageID, botID, err := h.telegramClient.UploadFile(c.Request().Context(), encryptedStream, chunkFilename, size)
-	if err != nil {
-		return err
-	}
-
-	md5Hex := hex.EncodeToString(hash.Sum(nil))
-	etag := fmt.Sprintf("\"%s\"", md5Hex)
-	ivStr := hex.EncodeToString(ivBytes)
-
-	chunk := db.FileChunk{
-		ID:                generateUUID(),
-		FileID:            fileID,
-		ChunkIndex:        chunkIndex,
-		Size:              int(counter.count),
-		TelegramFileID:    &telegramFileID,
-		TelegramMessageID: intAddr(telegramMessageID),
-		BotID:             botID,
-		EncryptionIv:      &ivStr,
-		Etag:              &etag,
-		Status:            "complete",
-		CreatedAt:         time.Now(),
-	}
-
-	if err := h.database.Create(&chunk).Error; err != nil {
-		_ = h.telegramClient.DeleteMessage(c.Request().Context(), telegramMessageID, botID)
-		return err
-	}
-
-	return c.JSON(http.StatusOK, chunk)
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"status":     "buffered",
+		"chunkIndex": chunkIndex,
+	})
 }

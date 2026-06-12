@@ -23,6 +23,7 @@ import {
 } from '../common/name-conflict.service';
 
 import { UploadBufferService } from './upload-buffer.service';
+import { GrpcTransferClient } from '../grpc/grpc-transfer.client';
 
 @Injectable()
 export class UploadSessionService {
@@ -37,6 +38,7 @@ export class UploadSessionService {
     private readonly nameConflictService: NameConflictService,
     private readonly uploadBufferService: UploadBufferService,
     @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
+    private readonly transferClient: GrpcTransferClient,
   ) {}
 
   async getMaxConcurrentChunks(): Promise<number> {
@@ -637,14 +639,47 @@ export class UploadSessionService {
     if (!fileRecord) throw new NotFoundException('File record not found');
     if (fileRecord.status === 'complete') return fileRecord;
 
-    const uploadedChunks = fileRecord.chunks.length;
-    if (uploadedChunks < fileRecord.totalChunks) {
-      throw new BadRequestException(
-        `Missing chunks: uploaded ${uploadedChunks}/${fileRecord.totalChunks}`,
+    // Call Go to flush and confirm all chunks
+    try {
+      const confirmRes = await this.transferClient.flushAndConfirm(fileId);
+
+      // If not all chunks are uploaded on Go's side
+      if (!confirmRes.allComplete) {
+        throw new HttpException(
+          `Upload incomplete. Expected ${confirmRes.totalChunks} chunks, got ${confirmRes.completedChunks}.`,
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+    } catch (err) {
+      if (err instanceof HttpException) {
+        throw err;
+      }
+      this.logger.error(
+        `Failed to confirm chunks with Go for file ${fileId}`,
+        err,
+      );
+      throw new HttpException(
+        'Failed to synchronize with transfer service. Please try again.',
+        HttpStatus.SERVICE_UNAVAILABLE,
       );
     }
 
-    const hasBuffered = fileRecord.chunks.some((c) => c.status === 'buffered');
+    // Go has flushed. Now query DB to verify
+    const record = await this.prisma.fileRecord.findFirst({
+      where: { id: fileId, userId, deletedAt: null },
+      include: { chunks: true },
+    });
+
+    if (!record) {
+      throw new NotFoundException('File record not found');
+    }
+
+    const completeChunks = record.chunks.filter((c) => c.telegramFileId);
+    if (completeChunks.length < record.totalChunks) {
+      throw new BadRequestException('Chunks missing in database');
+    }
+
+    const hasBuffered = record.chunks.some((c) => c.status === 'buffered');
 
     const result = await this.prisma.$transaction(async (tx) => {
       const targetStatus = hasBuffered ? 'buffered' : 'complete';
@@ -656,7 +691,7 @@ export class UploadSessionService {
       if (targetStatus === 'complete') {
         await tx.user.update({
           where: { id: userId },
-          data: { usedSpace: { increment: fileRecord.size } },
+          data: { usedSpace: { increment: record.size } },
         });
       }
 
@@ -664,7 +699,7 @@ export class UploadSessionService {
     });
 
     this.logger.log(
-      `Chunked upload completed: "${fileRecord.filename}" (fileId: ${fileId}, ${fileRecord.totalChunks} chunks, ${fileRecord.size} bytes)`,
+      `Chunked upload completed: "${record.filename}" (fileId: ${fileId}, ${record.totalChunks} chunks, ${record.size} bytes)`,
     );
     return result;
   }

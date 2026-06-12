@@ -129,3 +129,12 @@ func (c *CoreClient) CheckDiskSpace(ctx context.Context) (*pb.DiskSpaceResponse,
 	defer cancel()
 	return c.client.CheckDiskSpace(ctx, &pb.Empty{})
 }
+
+func (c *CoreClient) VerifyFolderShare(ctx context.Context, shareToken string, fileID string) (*pb.VerifyFolderShareResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return c.client.VerifyFolderShare(ctx, &pb.VerifyFolderShareRequest{
+		ShareToken: shareToken,
+		FileId:     fileID,
+	})
+}

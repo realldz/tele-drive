@@ -2,25 +2,50 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/labstack/echo/v4"
-	"github.com/realldz/tele-drive/backend-transfer-go/internal/db"
+	pb "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto"
 )
+
+func (h *FileHandler) GetCachedMetadata(ctx context.Context, fileID string) (*pb.FileMetadata, error) {
+	// Try Redis first
+	cacheKey := "file:" + fileID
+	if data, err := h.redisClient.Get(ctx, cacheKey).Result(); err == nil {
+		var meta pb.FileMetadata
+		if err := json.Unmarshal([]byte(data), &meta); err == nil {
+			return &meta, nil
+		}
+	}
+
+	// Cache miss -> gRPC
+	meta, err := h.grpcClient.GetFileMetadata(ctx, fileID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Repopulate cache
+	metaJSON, _ := json.Marshal(meta)
+	h.redisClient.Set(ctx, cacheKey, metaJSON, time.Hour)
+
+	return meta, nil
+}
 
 func (h *FileHandler) GenerateDownloadToken(c echo.Context) error {
 	userID := c.Get("userId").(string)
 	id := c.Param("id")
 
-	var file db.FileRecord
-	if err := h.database.Where("id = ? AND \"userId\" = ? AND status IN ('complete', 'buffered') AND \"deletedAt\" IS NULL", id, userID).First(&file).Error; err != nil {
+	meta, err := h.GetCachedMetadata(c.Request().Context(), id)
+	if err != nil || meta.UserId != userID || (meta.Status != "complete" && meta.Status != "buffered") {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
 	}
 
-	ttl := h.settingsCache.GetCachedSettingInt64("DOWNLOAD_URL_TTL_SECONDS", 300)
+	// settingsCache can be stubbed or configured via environment, default to 300s
+	ttl := int64(300)
 	token, err := h.cryptoEngine.CreateSignedToken(id, "u", ttl, userID)
 	if err != nil {
 		return err
@@ -36,13 +61,13 @@ func (h *FileHandler) GenerateDownloadToken(c echo.Context) error {
 func (h *FileHandler) GenerateShareDownloadToken(c echo.Context) error {
 	token := c.Param("token")
 
-	var file db.FileRecord
-	if err := h.database.Where("\"shareToken\" = ? AND status IN ('complete', 'buffered') AND \"deletedAt\" IS NULL", token).First(&file).Error; err != nil {
+	meta, err := h.GetCachedMetadata(c.Request().Context(), token)
+	if err != nil || (meta.Status != "complete" && meta.Status != "buffered") {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "Shared file not found"})
 	}
 
-	ttl := h.settingsCache.GetCachedSettingInt64("DOWNLOAD_URL_TTL_SECONDS", 300)
-	signedToken, err := h.cryptoEngine.CreateSignedToken(file.ID, "s", ttl, "")
+	ttl := int64(300)
+	signedToken, err := h.cryptoEngine.CreateSignedToken(meta.Id, "s", ttl, "")
 	if err != nil {
 		return err
 	}
@@ -59,15 +84,15 @@ func (h *FileHandler) DownloadBySigned(c echo.Context) error {
 
 	payload, err := h.cryptoEngine.VerifySignedToken(token)
 	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"message": "Invalid or expired download link"})
+		return c.JSON(http.StatusGone, map[string]string{"message": "Invalid or expired download link"})
 	}
 
-	var fileRecord db.FileRecord
-	if err := h.database.Where("id = ? AND status IN ('complete', 'buffered') AND \"deletedAt\" IS NULL", payload.FID).First(&fileRecord).Error; err != nil {
+	meta, err := h.GetCachedMetadata(c.Request().Context(), payload.FID)
+	if err != nil || (meta.Status != "complete" && meta.Status != "buffered") {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
 	}
 
-	info, err := h.downloader.GetDownloadInfo(fileRecord)
+	info, err := h.downloader.GetDownloadInfo(meta)
 	if err != nil {
 		return err
 	}
@@ -87,7 +112,7 @@ func (h *FileHandler) CheckSignedToken(c echo.Context) error {
 
 func (h *FileHandler) IssueStreamCookie(c echo.Context) error {
 	userID := c.Get("userId").(string)
-	ttl := h.settingsCache.GetCachedSettingInt64("STREAM_COOKIE_TTL_SECONDS", 3600)
+	ttl := int64(3600)
 	token, err := h.cryptoEngine.CreateStreamCookieToken(userID, ttl)
 	if err != nil {
 		return err
@@ -117,7 +142,7 @@ func (h *FileHandler) IssueGuestStreamCookie(c echo.Context) error {
 		subject = uID.(string)
 	}
 
-	ttl := h.settingsCache.GetCachedSettingInt64("STREAM_COOKIE_TTL_SECONDS", 3600)
+	ttl := int64(3600)
 	token, err := h.cryptoEngine.CreateStreamCookieToken(subject, ttl)
 	if err != nil {
 		return err
@@ -158,21 +183,24 @@ func (h *FileHandler) StreamByCookie(c echo.Context) error {
 	sub := c.Get("streamUserSubject").(string)
 	id := c.Param("id")
 
-	var fileRecord db.FileRecord
-	var err error
-	if strings.HasPrefix(sub, "guest:") {
-		// Public link check
-		err = h.database.Where("id = ? AND status IN ('complete', 'buffered') AND \"deletedAt\" IS NULL AND \"visibility\" = 'PUBLIC_LINK'", id).First(&fileRecord).Error
-	} else {
-		// Owner check
-		err = h.database.Where("id = ? AND \"userId\" = ? AND status IN ('complete', 'buffered') AND \"deletedAt\" IS NULL", id, sub).First(&fileRecord).Error
-	}
-
-	if err != nil {
+	meta, err := h.GetCachedMetadata(c.Request().Context(), id)
+	if err != nil || (meta.Status != "complete" && meta.Status != "buffered") {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
 	}
 
-	info, err := h.downloader.GetDownloadInfo(fileRecord)
+	if strings.HasPrefix(sub, "guest:") {
+		// Public link check
+		if meta.Visibility != "PUBLIC_LINK" {
+			return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
+		}
+	} else {
+		// Owner check
+		if meta.UserId != sub {
+			return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
+		}
+	}
+
+	info, err := h.downloader.GetDownloadInfo(meta)
 	if err != nil {
 		return err
 	}
@@ -184,12 +212,12 @@ func (h *FileHandler) StreamByCookie(c echo.Context) error {
 func (h *FileHandler) StreamSharedByCookie(c echo.Context) error {
 	shareToken := c.Param("shareToken")
 
-	var fileRecord db.FileRecord
-	if err := h.database.Where("\"shareToken\" = ? AND status IN ('complete', 'buffered') AND \"deletedAt\" IS NULL", shareToken).First(&fileRecord).Error; err != nil {
+	meta, err := h.GetCachedMetadata(c.Request().Context(), shareToken)
+	if err != nil || (meta.Status != "complete" && meta.Status != "buffered") {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "Shared file not found"})
 	}
 
-	info, err := h.downloader.GetDownloadInfo(fileRecord)
+	info, err := h.downloader.GetDownloadInfo(meta)
 	if err != nil {
 		return err
 	}
@@ -202,30 +230,18 @@ func (h *FileHandler) DownloadSharedFile(c echo.Context) error {
 	token := c.Param("token")
 	fileID := c.Param("fileId")
 
-	var rootSharedFolder db.Folder
-	if err := h.database.Where("\"shareToken\" = ? AND \"deletedAt\" IS NULL", token).First(&rootSharedFolder).Error; err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"message": "Shared folder not found"})
+	// Call NestJS Core to verify folder share and inheritance
+	verifyRes, err := h.grpcClient.VerifyFolderShare(c.Request().Context(), token, fileID)
+	if err != nil || !verifyRes.IsValid {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "File is not part of this shared link"})
 	}
 
-	var fileRecord db.FileRecord
-	if err := h.database.Where("id = ? AND \"deletedAt\" IS NULL", fileID).First(&fileRecord).Error; err != nil {
+	meta, err := h.GetCachedMetadata(c.Request().Context(), fileID)
+	if err != nil || (meta.Status != "complete" && meta.Status != "buffered") {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
 	}
 
-	if fileRecord.Status != "complete" && fileRecord.Status != "buffered" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "File upload not completed yet"})
-	}
-
-	if fileRecord.FolderID == nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "File is not part of this shared link"})
-	}
-
-	isDescendant, err := h.isDescendantOf(*fileRecord.FolderID, rootSharedFolder.ID)
-	if err != nil || !isDescendant {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "File is not part of this shared link"})
-	}
-
-	info, err := h.downloader.GetDownloadInfo(fileRecord)
+	info, err := h.downloader.GetDownloadInfo(meta)
 	if err != nil {
 		return err
 	}
@@ -238,30 +254,18 @@ func (h *FileHandler) StreamSharedFolderFile(c echo.Context) error {
 	token := c.Param("token")
 	fileID := c.Param("fileId")
 
-	var rootSharedFolder db.Folder
-	if err := h.database.Where("\"shareToken\" = ? AND \"deletedAt\" IS NULL", token).First(&rootSharedFolder).Error; err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"message": "Shared folder not found"})
+	// Call NestJS Core to verify folder share and inheritance
+	verifyRes, err := h.grpcClient.VerifyFolderShare(c.Request().Context(), token, fileID)
+	if err != nil || !verifyRes.IsValid {
+		return c.JSON(http.StatusBadRequest, map[string]string{"message": "File is not part of this shared link"})
 	}
 
-	var fileRecord db.FileRecord
-	if err := h.database.Where("id = ? AND \"deletedAt\" IS NULL", fileID).First(&fileRecord).Error; err != nil {
+	meta, err := h.GetCachedMetadata(c.Request().Context(), fileID)
+	if err != nil || (meta.Status != "complete" && meta.Status != "buffered") {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
 	}
 
-	if fileRecord.Status != "complete" && fileRecord.Status != "buffered" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "File upload not completed yet"})
-	}
-
-	if fileRecord.FolderID == nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "File is not part of this shared link"})
-	}
-
-	isDescendant, err := h.isDescendantOf(*fileRecord.FolderID, rootSharedFolder.ID)
-	if err != nil || !isDescendant {
-		return c.JSON(http.StatusBadRequest, map[string]string{"message": "File is not part of this shared link"})
-	}
-
-	info, err := h.downloader.GetDownloadInfo(fileRecord)
+	info, err := h.downloader.GetDownloadInfo(meta)
 	if err != nil {
 		return err
 	}
