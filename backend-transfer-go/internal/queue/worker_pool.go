@@ -168,14 +168,24 @@ func (p *WorkerPool) Stop() {
 
 func (p *WorkerPool) WaitForCompletion(timeout time.Duration) {
 	done := make(chan struct{})
+
 	go func() {
-		p.wg.Wait()
-		close(done)
+		ticker := time.NewTicker(100 * time.Millisecond)
+		defer ticker.Stop()
+
+		for {
+			if p.activeJobs.Load() == 0 {
+				close(done)
+				return
+			}
+			<-ticker.C
+		}
 	}()
 
 	select {
 	case <-done:
+		p.logger.Info("All workers finished cleanly")
 	case <-time.After(timeout):
-		p.logger.Warn("Graceful shutdown timeout reached")
+		p.logger.Warn("Graceful shutdown timeout, forcing exit", "incompleteJobs", p.activeJobs.Load())
 	}
 }

@@ -175,28 +175,42 @@ func main() {
 	// Graceful shutdown listener
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
-	go func() {
-		<-quit
-		log.Info("Received shutdown signal. Stopping services...")
-		cancel() // cancel workers context
-
-		// shutdown Echo http server with timeout
-		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer shutdownCancel()
-		if err := e.Shutdown(shutdownCtx); err != nil {
-			log.Error("Echo server shutdown failed", "error", err)
-		}
-
-		// wait for workers to finish current jobs
-		workerPool.WaitForCompletion(5 * time.Second)
-		log.Info("Services stopped gracefully")
-	}()
 
 	// Start Echo Server
 	addr := fmt.Sprintf(":%d", cfg.Port)
 	log.Info("HTTP server starting", "addr", addr)
-	if err := e.Start(addr); err != nil && err != http.ErrServerClosed {
-		log.Error("HTTP server stopped unexpectedly", "error", err)
-		panic(err)
+	go func() {
+		if err := e.Start(addr); err != nil && err != http.ErrServerClosed {
+			log.Error("HTTP server stopped unexpectedly", "error", err)
+			panic(err)
+		}
+	}()
+
+	<-quit
+	log.Info("Shutdown signal received. Starting graceful shutdown sequence...")
+
+	// Stop accepting new requests
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer shutdownCancel()
+	if err := e.Shutdown(shutdownCtx); err != nil {
+		log.Error("Echo server shutdown error", "error", err)
 	}
+	log.Info("1. HTTP server stopped (rejecting new requests)")
+
+	// Tell workers to stop accepting new internal jobs
+	cancel()
+
+	// Wait for active workers to finish their current chunk
+	log.Info("2. Waiting for active workers to finish (max 30s)...")
+	workerPool.WaitForCompletion(30 * time.Second)
+
+	// Flush any pending results to NestJS
+	log.Info("3. Flushing pending gRPC results...")
+	batchReporter.Stop()
+
+	// Close connections
+	log.Info("4. Closing connections...")
+	coreClient.Close()
+
+	log.Info("Graceful shutdown complete")
 }

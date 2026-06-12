@@ -1,95 +1,67 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
-import { TelegramService } from '../telegram/telegram.service';
-import { TEMP_STORAGE } from './temp-storage';
-import type { TempStorage } from './temp-storage';
+import { CacheService } from '../cache/cache.service';
+import { FileLifecycleService } from '../file/file-lifecycle.service';
 
 @Injectable()
 export class StaleUploadCleanupService {
   private readonly logger = new Logger(StaleUploadCleanupService.name);
 
-  /** Uploads older than this (ms) are considered stale */
-  private readonly STALE_THRESHOLD_MS = 60 * 60 * 1000; // 1 hour
-
   constructor(
     private readonly prisma: PrismaService,
-    private readonly telegram: TelegramService,
-    @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
+    private readonly cacheService: CacheService,
+    private readonly lifecycleService: FileLifecycleService,
   ) {}
 
-  @Cron('0 */6 * * *') // Every 6 hours
-  async handleStaleUploadCleanup() {
-    this.logger.log('Starting stale upload cleanup...');
+  @Cron(CronExpression.EVERY_6_HOURS)
+  async handleCleanup() {
+    const lockKey = 'cron:stale-upload';
+    const acquired = await this.cacheService.acquireLock(lockKey, 1800);
 
-    const cutoff = new Date(Date.now() - this.STALE_THRESHOLD_MS);
-
-    const staleUploads = await this.prisma.fileRecord.findMany({
-      where: {
-        status: { in: ['uploading', 'aborted', 'buffer_failed'] },
-        updatedAt: { lt: cutoff },
-      },
-      include: { chunks: true },
-    });
-
-    if (staleUploads.length === 0) {
-      this.logger.log('No stale uploads found.');
+    if (!acquired) {
+      this.logger.debug(
+        `Cron ${lockKey} running on another instance, skipping`,
+      );
       return;
     }
 
-    let cleaned = 0;
-    for (const file of staleUploads) {
-      try {
-        // Delete buffered files from temp storage
-        if (file.tempStorageKey) {
-          await this.tempStorage.delete(file.tempStorageKey).catch(() => {});
-        }
+    try {
+      this.logger.log('Starting stale upload cleanup...');
 
-        // Delete chunks from Telegram and temp storage
-        for (const chunk of file.chunks) {
-          if (chunk.tempStorageKey) {
-            await this.tempStorage.delete(chunk.tempStorageKey).catch(() => {});
-          }
-          if (chunk.telegramMessageId) {
-            try {
-              await this.telegram.deleteMessage(
-                chunk.telegramMessageId,
-                chunk.botId,
-              );
-            } catch {
-              // Chunk may already be deleted, continue
-            }
-          }
-        }
+      const staleFiles = await this.prisma.fileRecord.findMany({
+        where: {
+          status: { in: ['uploading', 'buffered', 'buffer_failed'] },
+          updatedAt: { lt: new Date(Date.now() - 24 * 60 * 60 * 1000) }, // > 24h
+        },
+        take: 100,
+      });
 
-        // Delete non-chunked file from Telegram
-        if (file.telegramMessageId) {
-          try {
-            await this.telegram.deleteMessage(
-              file.telegramMessageId,
-              file.botId,
-            );
-          } catch {
-            // Message may already be deleted
-          }
-        }
-
-        // Delete DB record (cascade deletes FileChunks)
-        await this.prisma.fileRecord.delete({ where: { id: file.id } });
-
-        cleaned++;
-        this.logger.log(
-          `Cleaned stale upload: "${file.filename}" (id: ${file.id}, chunks: ${file.chunks.length})`,
-        );
-      } catch (err: unknown) {
-        this.logger.error(
-          `Failed to clean stale upload ${file.id}: ${err instanceof Error ? err.message : String(err)}`,
-        );
+      if (staleFiles.length === 0) {
+        return;
       }
-    }
 
-    this.logger.log(
-      `Stale upload cleanup completed: ${cleaned}/${staleUploads.length} cleaned.`,
-    );
+      for (const file of staleFiles) {
+        // Rollback reserved quota
+        await this.prisma.user.update({
+          where: { id: file.userId },
+          data: { usedSpace: { decrement: file.size } },
+        });
+
+        // Mark as failed
+        await this.prisma.fileRecord.update({
+          where: { id: file.id },
+          data: { status: 'upload_timeout' },
+        });
+
+        // Publish event to clean up chunks on Telegram
+        await this.lifecycleService.publishDeleteEvent(file);
+
+        await this.cacheService.invalidateFile(file.id);
+        this.logger.log(`Cleaned up stale upload for file ${file.id}`);
+      }
+    } finally {
+      await this.cacheService.releaseLock(lockKey);
+    }
   }
 }

@@ -8,7 +8,6 @@ import {
   OnApplicationBootstrap,
 } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
-import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { CryptoService } from '../crypto/crypto.service';
@@ -427,32 +426,5 @@ export class UploadQueueProcessor
       encryptedBuffer,
       iv: ivBuffer.toString('hex'),
     };
-  }
-
-  @Cron('0 */15 * * * *')
-  async expireStaleBufferedFiles(): Promise<void> {
-    if (process.env.IS_TRANSFER_SERVICE === 'false') return;
-
-    try {
-      const bufferTtlHours = await this.settingsService.getCachedSetting(
-        'BUFFER_TTL_HOURS',
-        24,
-        (v) => parseInt(v, 10),
-      );
-      const cutoff = new Date(Date.now() - bufferTtlHours * 60 * 60 * 1000);
-      const expired = await this.prisma.fileRecord.updateMany({
-        where: { status: 'buffered', createdAt: { lt: cutoff } },
-        data: { status: 'buffer_failed' },
-      });
-      if (expired.count > 0) {
-        this.logger.warn(
-          `Expired ${expired.count} stale buffered files (>${bufferTtlHours}h)`,
-        );
-      }
-    } catch (err) {
-      this.logger.error(
-        `Failed to expire stale buffered files: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
   }
 }

@@ -20,6 +20,7 @@ import { DownloadZipModule } from './download-zip/download-zip.module';
 import { S3Module } from './s3/s3.module';
 import { GrpcCoreModule } from './grpc/grpc-core.module';
 import { CacheModule } from './cache/cache.module';
+import { QuotaSyncService } from './common/quota-sync.service';
 
 @Module({
   imports: [
@@ -69,6 +70,7 @@ import { CacheModule } from './cache/cache.module';
       provide: APP_INTERCEPTOR,
       useClass: RequestLoggingInterceptor,
     },
+    QuotaSyncService,
   ],
 })
 export class CoreServerModule {}

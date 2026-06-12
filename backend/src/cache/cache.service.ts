@@ -9,45 +9,56 @@ export class CacheService {
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
 
   async invalidateFile(fileId: string): Promise<void> {
-    try {
-      await this.redis.del(`file:${fileId}`);
-    } catch (err) {
-      this.logger.warn(`Failed to invalidate cache for file:${fileId}`, err);
+    const key = `file:${fileId}`;
+    let success = false;
+
+    for (let attempt = 1; attempt <= 3; attempt++) {
       try {
-        await this.redis.del(`file:${fileId}`);
-      } catch (retryErr) {
-        this.logger.error(
-          `Failed to invalidate cache on retry for file:${fileId}`,
-          retryErr,
+        await this.redis.del(key);
+        success = true;
+        break;
+      } catch (err) {
+        this.logger.warn(
+          `Failed to invalidate cache for ${key} (attempt ${attempt})`,
+          err,
         );
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+        }
       }
+    }
+
+    if (!success) {
+      this.logger.error(
+        `CRITICAL: Failed to invalidate cache for ${key} after 3 attempts`,
+      );
     }
   }
 
   async invalidateUserQuota(userId: string): Promise<void> {
-    try {
-      await this.redis.del(`user:${userId}:quota`);
-    } catch (err) {
-      this.logger.warn(
-        `Failed to invalidate quota cache for user:${userId}`,
-        err,
-      );
-    }
-  }
+    const key = `user:${userId}:quota`;
+    let success = false;
 
-  async setFileMetadata(
-    fileId: string,
-    metadata: Record<string, any>,
-  ): Promise<void> {
-    try {
-      await this.redis.set(
-        `file:${fileId}`,
-        JSON.stringify(metadata),
-        'EX',
-        3600,
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await this.redis.del(key);
+        success = true;
+        break;
+      } catch (err) {
+        this.logger.warn(
+          `Failed to invalidate quota cache for ${key} (attempt ${attempt})`,
+          err,
+        );
+        if (attempt < 3) {
+          await new Promise((resolve) => setTimeout(resolve, 100 * attempt));
+        }
+      }
+    }
+
+    if (!success) {
+      this.logger.error(
+        `CRITICAL: Failed to invalidate quota cache for ${key} after 3 attempts`,
       );
-    } catch (err) {
-      this.logger.warn(`Failed to set cache for file:${fileId}`, err);
     }
   }
 

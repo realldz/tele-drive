@@ -116,7 +116,7 @@ export class FileLifecycleService {
     }
   }
 
-  private async publishDeleteEvent(fileRecord: any) {
+  async publishDeleteEvent(fileRecord: any) {
     if (process.env.ENABLE_EVENT_DRIVEN_DELETE !== 'true') {
       return this.legacyHttpPurge(fileRecord);
     }
