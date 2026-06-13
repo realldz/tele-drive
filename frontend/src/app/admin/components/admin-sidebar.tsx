@@ -1,7 +1,7 @@
 'use client';
 
 import { ShieldAlert, X, LogOut, User, Users, Settings, ArrowLeft, Logs } from 'lucide-react';
-import { useI18n } from '@/components/i18n-context';
+import { useI18n } from '@/providers/i18n-context';
 import type { UserRole } from '@/lib/types';
 import { usePathname } from 'next/navigation';
 import { useAppNavigate } from '@/hooks/use-app-navigate';

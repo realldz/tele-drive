@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
-import CreateFolderDialog from '@/components/create-folder-dialog';
-import RenameDialog from '@/components/rename-dialog';
-import MoveDialog from '@/components/move-dialog';
-import ShareDialog from '@/components/share-dialog';
-import FileDetailsDialog from '@/components/file-details-dialog';
+import CreateFolderDialog from '@/components/organisms/dialogs/create-folder-dialog';
+import RenameDialog from '@/components/organisms/dialogs/rename-dialog';
+import MoveDialog from '@/components/organisms/dialogs/move-dialog';
+import ShareDialog from '@/components/organisms/dialogs/share-dialog';
+import FileDetailsDialog from '@/components/organisms/dialogs/file-details-dialog';
 import FilePreviewModal from '@/components/file-preview-modal';
-import { useI18n } from '@/components/i18n-context';
+import { useI18n } from '@/providers/i18n-context';
 import { renameItem, moveItem, isConflictError } from '@/lib/api';
 import type { FileRecord, FolderRecord } from '@/lib/types';
 import toast from 'react-hot-toast';

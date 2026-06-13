@@ -12,7 +12,7 @@ import {
   type SystemStats 
 } from '@/lib/api';
 import type { AdminDashboardSummary } from '@/lib/types';
-import { useI18n } from '@/components/i18n-context';
+import { useI18n } from '@/providers/i18n-context';
 import AdminDashboardOverview from './components/admin-dashboard-overview';
 
 export default function AdminDashboardPage() {

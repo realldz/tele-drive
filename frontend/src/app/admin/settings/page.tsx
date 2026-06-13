@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import toast from 'react-hot-toast';
 import { fetchSettings as fetchSettingsApi, formatBytes, getApiErrorMessage, updateSetting } from '@/lib/api';
 import type { AdminSetting } from '@/lib/types';
-import { useI18n } from '@/components/i18n-context';
-import SystemSettings from '../components/system-settings';
+import { useI18n } from '@/providers/i18n-context';
+import SystemSettings from '@/app/admin/components/system-settings';
 
 export default function AdminSettingsPage() {
   const { t } = useI18n();

@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { Home, Trash2, KeyRound, ShieldAlert, LogOut, User, HardDrive, Menu, X, KeySquare } from 'lucide-react';
-import { useAuth } from '@/components/auth-context';
-import { useI18n } from '@/components/i18n-context';
+import { useAuth } from '@/providers/auth-context';
+import { useI18n } from '@/providers/i18n-context';
 import LanguageSwitcher from '@/components/language-switcher';
 import { formatBytes, changePassword, getApiErrorMessage } from '@/lib/api';
 import toast from 'react-hot-toast';

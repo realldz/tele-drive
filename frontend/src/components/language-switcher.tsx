@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react';
 import { Globe } from 'lucide-react';
-import { useI18n, LOCALE_LABELS, type Locale } from '@/components/i18n-context';
+import { useI18n, LOCALE_LABELS, type Locale } from '@/providers/i18n-context';
 
 const locales: Locale[] = ['vi', 'en', 'zh', 'ja'];
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { useI18n } from '@/components/i18n-context';
+import { useI18n } from '@/providers/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import { FileIcon, Download, ArrowLeft, Loader2 } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';

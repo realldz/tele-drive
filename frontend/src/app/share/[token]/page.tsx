@@ -3,8 +3,8 @@
 import { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
 import { Download, FileText, AlertCircle, Loader2, UserCircle2 } from 'lucide-react';
-import { useI18n } from '@/components/i18n-context';
-import { useAuth } from '@/components/auth-context';
+import { useI18n } from '@/providers/i18n-context';
+import { useAuth } from '@/providers/auth-context';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';

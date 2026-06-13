@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useNavigation } from '@/components/navigation-loader';
+import { useNavigation } from '@/components/molecules/navigation-loader';
 
 export function useAppNavigate() {
   const router = useRouter();

@@ -1,25 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useI18n } from '@/components/i18n-context';
+import { useI18n } from '@/providers/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import Sidebar from '@/components/sidebar';
-import {
-  Key,
-  Plus,
-  Trash2,
-  Copy,
-  Check,
-  Eye,
-  EyeOff,
-  Terminal,
-  Loader2,
-  KeyRound,
-  AlertTriangle,
-} from 'lucide-react';
+import { Key, Plus, Trash2, Terminal, Loader2, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { getAbsoluteApiUrl, fetchS3Credentials, createS3Credential, deleteS3Credential, getApiErrorMessage } from '@/lib/api';
 import { useAppSelector } from '@/lib/store';
+import S3NewCredentialPanel from './s3-new-credential-panel';
+import S3UsageGuide from './s3-usage-guide';
 
 interface S3Credential {
   id: string;
@@ -44,12 +34,7 @@ export default function S3KeysPage() {
   const [creating, setCreating] = useState(false);
   const [labelInput, setLabelInput] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
-
-  // Newly created credential (shown once)
   const [newCred, setNewCred] = useState<NewCredential | null>(null);
-  const [secretVisible, setSecretVisible] = useState(false);
-  const [copied, setCopied] = useState<'key' | 'secret' | 'config' | null>(null);
-
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -60,8 +45,7 @@ export default function S3KeysPage() {
   async function loadCredentials() {
     try {
       setLoading(true);
-      const data = await fetchS3Credentials();
-      setCredentials(data);
+      setCredentials(await fetchS3Credentials());
     } catch {
       toast.error(t('s3.loadError'));
     } finally {
@@ -75,7 +59,6 @@ export default function S3KeysPage() {
     try {
       const created: NewCredential = await createS3Credential(labelInput.trim() || 'Default');
       setNewCred(created);
-      setSecretVisible(false);
       setLabelInput('');
       setShowCreateForm(false);
       await loadCredentials();
@@ -99,53 +82,18 @@ export default function S3KeysPage() {
     }
   }
 
-  async function copyText(text: string, type: 'key' | 'secret' | 'config') {
-    await navigator.clipboard.writeText(text);
-    setCopied(type);
-    setTimeout(() => setCopied(null), 2000);
-  }
-
   const endpointUrl = `${getAbsoluteApiUrl()}/s3`;
   const maxConcurrent = uploadConfig.maxConcurrentChunks;
   const recommendedChunk = uploadConfig.maxChunkSize;
   const recommendedChunkMB = Math.floor(recommendedChunk / (1024 * 1024));
-  // multipart_chunksize nên nhỏ hơn maxChunkSize một chút để an toàn
-
-  function awsConfigSnippet(accessKeyId: string, secretKey: string) {
-    return `aws configure --profile tele-drive
-# Access Key ID: ${accessKeyId}
-# Secret Access Key: ${secretKey}
-# Default region name: us-east-1
-# Default output format: json
-
-# ~/.aws/config
-[profile tele-drive]
-region = us-east-1
-s3 =
-  addressing_style = path
-  max_concurrent_requests = ${maxConcurrent}
-  multipart_threshold = ${recommendedChunkMB}MB
-  multipart_chunksize = ${recommendedChunkMB}MB
-cli_read_timeout = 300
-cli_connect_timeout = 300
-
-# Then use with:
-aws --profile tele-drive --endpoint-url ${endpointUrl} s3 ls
-aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp ./file.txt s3://my-bucket/
-aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file.txt ./`;
-  }
 
   if (!isReady) return null;
 
   return (
     <div className="h-screen bg-white flex overflow-hidden">
-
       <Sidebar />
 
-      {/* Main Area */}
       <main className="flex-1 flex flex-col min-w-0 bg-white relative">
-
-        {/* Topbar */}
         <header className="h-16 border-b border-gray-100 flex items-center justify-between pl-14 pr-4 md:px-4 lg:px-6 bg-white w-full flex-shrink-0 z-10">
           <div className="flex items-center gap-2">
             <KeyRound size={22} className="text-blue-600" />
@@ -162,11 +110,9 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
           )}
         </header>
 
-        {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto">
           <div className="max-w-4xl mx-auto px-6 py-6 space-y-6">
 
-            {/* Info banner */}
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 flex gap-3">
               <Terminal size={20} className="text-blue-600 shrink-0 mt-0.5" />
               <div className="text-sm text-blue-800">
@@ -178,92 +124,17 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
               </div>
             </div>
 
-            {/* Newly created credential — shown once */}
             {newCred && (
-              <div className="bg-amber-50 border-2 border-amber-400 rounded-xl p-5 space-y-4">
-                <div className="flex items-center gap-2 text-amber-800">
-                  <AlertTriangle size={18} className="shrink-0" />
-                  <p className="font-semibold text-sm">
-                    {newCred.note} {t('s3.newCredWarning')}
-                  </p>
-                </div>
-
-                {/* Access Key ID */}
-                <div>
-                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1 block">
-                    {t('s3.accessKeyId')}
-                  </label>
-                  <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-2">
-                    <code className="flex-1 text-sm font-mono text-gray-900 break-all">
-                      {newCred.accessKeyId}
-                    </code>
-                    <button
-                      onClick={() => copyText(newCred.accessKeyId, 'key')}
-                      className="shrink-0 text-gray-400 hover:text-gray-700 transition-colors"
-                      title={t('s3.copy')}
-                    >
-                      {copied === 'key' ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* Secret Access Key */}
-                <div>
-                  <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1 block">
-                    {t('s3.secretAccessKey')}
-                  </label>
-                  <div className="flex items-center gap-2 bg-white border border-gray-300 rounded-lg px-3 py-2">
-                    <code className="flex-1 text-sm font-mono text-gray-900 break-all">
-                      {secretVisible ? newCred.secretAccessKey : '•'.repeat(40)}
-                    </code>
-                    <button
-                      onClick={() => setSecretVisible((v) => !v)}
-                      className="shrink-0 text-gray-400 hover:text-gray-700 transition-colors"
-                      title={secretVisible ? 'Hide' : 'Show'}
-                    >
-                      {secretVisible ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                    <button
-                      onClick={() => copyText(newCred.secretAccessKey, 'secret')}
-                      className="shrink-0 text-gray-400 hover:text-gray-700 transition-colors"
-                      title={t('s3.copy')}
-                    >
-                      {copied === 'secret' ? <Check size={16} className="text-green-500" /> : <Copy size={16} />}
-                    </button>
-                  </div>
-                </div>
-
-                {/* aws-cli config snippet */}
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-medium text-gray-500 uppercase tracking-wide">
-                      {t('s3.awsConfig')}
-                    </label>
-                    <button
-                      onClick={() =>
-                        copyText(awsConfigSnippet(newCred.accessKeyId, newCred.secretAccessKey), 'config')
-                      }
-                      className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 transition-colors"
-                    >
-                      {copied === 'config' ? <Check size={13} className="text-green-500" /> : <Copy size={13} />}
-                      {copied === 'config' ? t('s3.copied') : t('s3.copy')}
-                    </button>
-                  </div>
-                  <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap">
-                    {awsConfigSnippet(newCred.accessKeyId, newCred.secretAccessKey)}
-                  </pre>
-                </div>
-
-                <button
-                  onClick={() => setNewCred(null)}
-                  className="w-full text-sm text-amber-700 hover:text-amber-900 font-medium py-1 transition-colors"
-                >
-                  {t('s3.dismissCred')}
-                </button>
-              </div>
+              <S3NewCredentialPanel
+                t={t}
+                cred={newCred}
+                endpointUrl={endpointUrl}
+                maxConcurrent={maxConcurrent}
+                recommendedChunkMB={recommendedChunkMB}
+                onDismiss={() => setNewCred(null)}
+              />
             )}
 
-            {/* Create new key form (inline) */}
             {showCreateForm && (
               <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
                 <h3 className="font-medium text-gray-900 text-sm">{t('s3.newAccessKey')}</h3>
@@ -299,7 +170,6 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
               </div>
             )}
 
-            {/* Credentials list */}
             <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100">
                 <h2 className="font-medium text-gray-900 text-sm">
@@ -323,16 +193,12 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                     <li key={cred.id} className="flex items-center gap-3 px-4 py-3">
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm text-gray-900 truncate">
-                            {cred.label}
-                          </span>
+                          <span className="font-medium text-sm text-gray-900 truncate">{cred.label}</span>
                           <span className="shrink-0 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full font-medium">
                             {t('s3.active')}
                           </span>
                         </div>
-                        <div className="text-xs text-gray-500 font-mono mt-0.5">
-                          {cred.accessKeyId}
-                        </div>
+                        <div className="text-xs text-gray-500 font-mono mt-0.5">{cred.accessKeyId}</div>
                         <div className="text-xs text-gray-400 mt-0.5">
                           {t('s3.created')} {new Date(cred.createdAt).toLocaleDateString()}
                         </div>
@@ -341,25 +207,15 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
                       {deletingId === cred.id ? (
                         <div className="flex items-center gap-2">
                           <span className="text-xs text-gray-500">{t('s3.revoke')}</span>
-                          <button
-                            onClick={() => handleDelete(cred.id)}
-                            className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
-                          >
+                          <button onClick={() => handleDelete(cred.id)} className="px-2 py-1 text-xs bg-red-600 text-white rounded hover:bg-red-700 transition-colors">
                             {t('s3.revokeYes')}
                           </button>
-                          <button
-                            onClick={() => setDeletingId(null)}
-                            className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded transition-colors"
-                          >
+                          <button onClick={() => setDeletingId(null)} className="px-2 py-1 text-xs text-gray-500 hover:bg-gray-100 rounded transition-colors">
                             {t('s3.revokeNo')}
                           </button>
                         </div>
                       ) : (
-                        <button
-                          onClick={() => setDeletingId(cred.id)}
-                          className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors"
-                          title={t('s3.revokeKey')}
-                        >
+                        <button onClick={() => setDeletingId(cred.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-colors" title={t('s3.revokeKey')}>
                           <Trash2 size={16} />
                         </button>
                       )}
@@ -369,86 +225,13 @@ aws --profile tele-drive --endpoint-url ${endpointUrl} s3 cp s3://my-bucket/file
               )}
             </div>
 
-            {/* Usage guide */}
-            <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
-              <h2 className="font-medium text-gray-900 flex items-center gap-2">
-                <Terminal size={16} className="text-gray-500" />
-                {t('s3.usageGuide')}
-              </h2>
-
-              <div className="space-y-3 text-sm text-gray-700">
-                <div>
-                  <p className="font-medium text-gray-800 mb-1">{t('s3.step1')}</p>
-                  <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
-                    {`aws configure --profile tele-drive
-# Enter your Access Key ID and Secret Access Key
-# Region: us-east-1 (any value works)
-# Output: json`}
-                  </pre>
-                </div>
-
-                <div>
-                  <p className="font-medium text-gray-800 mb-1">{t('s3.step2')}</p>
-                  <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
-                    {`aws --profile tele-drive \\
-    --endpoint-url ${endpointUrl} \\
-    s3 ls`}
-                  </pre>
-                </div>
-
-                <div>
-                  <p className="font-medium text-gray-800 mb-1">{t('s3.step3')}</p>
-                  <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
-                    {`aws --profile tele-drive \\
-    --endpoint-url ${endpointUrl} \\
-    s3 cp ./myfile.txt s3://my-bucket/myfile.txt`}
-                  </pre>
-                </div>
-
-                <div>
-                  <p className="font-medium text-gray-800 mb-1">{t('s3.step4')}</p>
-                  <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
-                    {`aws --profile tele-drive \\
-    --endpoint-url ${endpointUrl} \\
-    s3 cp s3://my-bucket/myfile.txt ./downloaded.txt`}
-                  </pre>
-                </div>
-
-                <div>
-                  <p className="font-medium text-gray-800 mb-1">{t('s3.step5')}</p>
-                  <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto">
-                    {`# aws-cli handles multipart automatically for files > 8MB
-aws --profile tele-drive \\
-    --endpoint-url ${endpointUrl} \\
-    s3 cp ./largefile.iso s3://my-bucket/ \\
-    --expected-size ${recommendedChunk}`}
-                  </pre>
-                </div>
-
-                <div>
-                  <p className="font-medium text-gray-800 mb-1">{t('s3.step6')}</p>
-                  <p className="text-xs text-gray-600 mb-2">{t('s3.step6Desc')}</p>
-                  <pre className="bg-gray-900 text-green-400 rounded-lg p-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap">
-                    {`[profile tele-drive]
-region = us-east-1
-s3 =
-  addressing_style = path
-  max_concurrent_requests = ${maxConcurrent}
-  multipart_threshold = ${recommendedChunkMB}MB
-  multipart_chunksize = ${recommendedChunkMB}MB
-cli_read_timeout = 300
-cli_connect_timeout = 300`}
-                  </pre>
-                  <p className="text-xs text-gray-500 mt-2">{t('s3.step6Note', { maxChunkMB: recommendedChunkMB })}</p>
-                </div>
-
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-800">
-                  <strong>{t('s3.note')}</strong> {t('s3.noteContent')}{' '}
-                  <code className="bg-yellow-100 px-1 rounded font-mono">{endpointUrl}</code>.
-                  {t('s3.notePresigned')}
-                </div>
-              </div>
-            </div>
+            <S3UsageGuide
+              t={t}
+              endpointUrl={endpointUrl}
+              maxConcurrent={maxConcurrent}
+              recommendedChunk={recommendedChunk}
+              recommendedChunkMB={recommendedChunkMB}
+            />
 
           </div>
         </div>

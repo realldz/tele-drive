@@ -1,7 +1,7 @@
 'use client';
 
 import { AlertCircle, FileSearch, Loader2, RefreshCw, Search } from 'lucide-react';
-import { LOCALE_DATE_MAP } from '@/components/i18n-context';
+import { LOCALE_DATE_MAP } from '@/providers/i18n-context';
 import { formatBytes } from '@/lib/api';
 import type { AdminUser } from '@/lib/types';
 

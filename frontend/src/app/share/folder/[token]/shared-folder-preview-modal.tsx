@@ -3,7 +3,7 @@
 import { useEffect, useCallback } from 'react';
 import { X, Download, Loader2 } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
-import { useI18n } from '@/components/i18n-context';
+import { useI18n } from '@/providers/i18n-context';
 import { API_URL, requestShareFolderDownloadToken, parseBandwidthError, getShareFolderStreamUrl } from '@/lib/api';
 import { useGuestStream } from '@/hooks/use-stream';
 import dynamic from 'next/dynamic';

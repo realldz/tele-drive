@@ -2,8 +2,8 @@
 
 import { useRef } from 'react';
 import { UploadCloud } from 'lucide-react';
-import { useI18n } from '@/components/i18n-context';
-import { useUpload } from '@/components/upload-context';
+import { useI18n } from '@/providers/i18n-context';
+import { useUpload } from '@/providers/upload/upload-provider';
 
 export default function UploadTrigger({ folderId }: { folderId?: string }) {
   const { t } = useI18n();
