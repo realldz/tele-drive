@@ -12,6 +12,17 @@ interface RefundData {
   ip: string;
 }
 
+/**
+ * Normalize a raw bandwidth limit to enforcement semantics: `0` (and negative)
+ * means UNLIMITED, returned as `null`. The admin dashboard surfaces `0 =
+ * unlimited`, so a stored `0` must never block a download. `null` (no setting)
+ * also means unlimited.
+ */
+function normalizeBandwidthLimit(limit: bigint | null): bigint | null {
+  if (limit === null || limit <= 0n) return null;
+  return limit;
+}
+
 @Injectable()
 export class BandwidthLockService {
   private readonly logger = new Logger(BandwidthLockService.name);
@@ -89,7 +100,9 @@ export class BandwidthLockService {
     const setting = await this.prisma.systemSetting.findUnique({
       where: { key: 'DEFAULT_GUEST_BANDWIDTH' },
     });
-    const limit = setting ? BigInt(setting.value) : null;
+    const limit = normalizeBandwidthLimit(
+      setting ? BigInt(setting.value) : null,
+    );
     const tracker = await this.prisma.guestTracker.findUnique({
       where: { ipAddress: ip },
     });
@@ -141,15 +154,20 @@ export class BandwidthLockService {
     const requiresReset = hoursSince >= 24;
     let limit = user.dailyBandwidthLimit;
     if (limit === null) {
+      // Global default. Key MUST match the admin-dashboard seed
+      // (DEFAULT_DAILY_BANDWIDTH_LIMIT) — the old DEFAULT_USER_BANDWIDTH key is
+      // never written by the dashboard, so reading it left the user tier
+      // perpetually unlimited.
       const setting = await this.prisma.systemSetting.findUnique({
-        where: { key: 'DEFAULT_USER_BANDWIDTH' },
+        where: { key: 'DEFAULT_DAILY_BANDWIDTH_LIMIT' },
       });
       limit = setting ? BigInt(setting.value) : null;
     }
     return {
       requiresReset,
       currentUsed: requiresReset ? 0n : user.dailyBandwidthUsed,
-      limit,
+      // 0 → unlimited (matches the dashboard hint "0 = unlimited").
+      limit: normalizeBandwidthLimit(limit),
     };
   }
 
@@ -210,7 +228,9 @@ export class BandwidthLockService {
       const setting = await this.prisma.systemSetting.findUnique({
         where: { key: 'DEFAULT_GUEST_BANDWIDTH' },
       });
-      dailyLimit = setting ? BigInt(setting.value) : null;
+      dailyLimit = normalizeBandwidthLimit(
+        setting ? BigInt(setting.value) : null,
+      );
       const tracker = await this.prisma.guestTracker.findUnique({
         where: { ipAddress: ip },
       });
@@ -318,11 +338,26 @@ export class BandwidthLockService {
     let accepted = 0;
     for (const entry of entries) {
       try {
-        if (entry.actualBytes > 0n) {
-          await this.prisma.user.updateMany({
+        if (entry.actualBytes > 0n && entry.userId) {
+          const res = await this.prisma.user.updateMany({
             where: { id: entry.userId },
             data: { dailyBandwidthUsed: { increment: entry.actualBytes } },
           });
+          // 0 rows means the reported userId doesn't exist — a wiring bug (e.g.
+          // the Go data plane sending an empty/mismatched subject). Surface it so
+          // it doesn't silently swallow usage (the symptom: counters never move).
+          if (res.count === 0) {
+            this.logger.warn(
+              `Bandwidth report matched no user: userId="${entry.userId}", fileId=${entry.fileId}, bytes=${entry.actualBytes}`,
+            );
+          }
+        } else if (entry.actualBytes > 0n && !entry.userId) {
+          // Guest traffic (no userId in the report — proto carries no IP). The
+          // per-file counters below still update; the guest daily tier lives only
+          // in the Go Redis hash, which Go already incremented at lock time.
+          this.logger.debug(
+            `Bandwidth report without userId (guest), fileId=${entry.fileId}, bytes=${entry.actualBytes}`,
+          );
         }
         await this.prisma.fileRecord.updateMany({
           where: { id: entry.fileId },

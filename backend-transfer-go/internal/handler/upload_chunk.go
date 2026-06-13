@@ -158,11 +158,10 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"message": "Invalid chunk index"})
 	}
 
-	// Concurrency limit
+	// Concurrency limit (admin-dashboard MAX_CONCURRENT_CHUNKS, default 3)
+	maxConcurrent := h.maxConcurrentChunks(c.Request().Context())
 	h.mu.Lock()
 	active := h.activeUploads[userID]
-	// settingsCache will be refactored to check statically or via NestJS, for now default to 3
-	maxConcurrent := 3
 	if active >= maxConcurrent {
 		h.mu.Unlock()
 		c.Response().Header().Set("Retry-After", "5")

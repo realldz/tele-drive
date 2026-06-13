@@ -145,6 +145,19 @@ func (c *CoreClient) GetBandwidthQuota(ctx context.Context, userID, ip, fileID s
 	})
 }
 
+// GetSystemSettings fetches the admin-dashboard SystemSetting table so the Go
+// data plane can honor runtime config changes (TTLs, concurrency, multi-thread,
+// buffer size) without a redeploy. Empty keys → all settings. Read-only.
+func (c *CoreClient) GetSystemSettings(ctx context.Context, keys []string) (map[string]string, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	resp, err := c.client.GetSystemSettings(ctx, &pb.GetSystemSettingsRequest{Keys: keys})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Settings, nil
+}
+
 func (c *CoreClient) ReportDeleteSuccess(ctx context.Context, fileID string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

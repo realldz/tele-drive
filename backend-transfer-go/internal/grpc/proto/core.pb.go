@@ -2631,6 +2631,97 @@ func (x *GetBandwidthQuotaResponse) GetFileLastDownloadReset() string {
 	return ""
 }
 
+type GetSystemSettingsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Specific keys to fetch. Empty → return all settings (Go filters what it needs).
+	Keys          []string `protobuf:"bytes,1,rep,name=keys,proto3" json:"keys,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSystemSettingsRequest) Reset() {
+	*x = GetSystemSettingsRequest{}
+	mi := &file_core_proto_msgTypes[40]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSystemSettingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSystemSettingsRequest) ProtoMessage() {}
+
+func (x *GetSystemSettingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[40]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSystemSettingsRequest.ProtoReflect.Descriptor instead.
+func (*GetSystemSettingsRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{40}
+}
+
+func (x *GetSystemSettingsRequest) GetKeys() []string {
+	if x != nil {
+		return x.Keys
+	}
+	return nil
+}
+
+type GetSystemSettingsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Raw key→value string map mirroring the SystemSetting table. Go parses each
+	// value per key (int/bool/int64) the same way NestJS getCachedSetting does.
+	Settings      map[string]string `protobuf:"bytes,1,rep,name=settings,proto3" json:"settings,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetSystemSettingsResponse) Reset() {
+	*x = GetSystemSettingsResponse{}
+	mi := &file_core_proto_msgTypes[41]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetSystemSettingsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetSystemSettingsResponse) ProtoMessage() {}
+
+func (x *GetSystemSettingsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[41]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetSystemSettingsResponse.ProtoReflect.Descriptor instead.
+func (*GetSystemSettingsResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{41}
+}
+
+func (x *GetSystemSettingsResponse) GetSettings() map[string]string {
+	if x != nil {
+		return x.Settings
+	}
+	return nil
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
@@ -2832,13 +2923,20 @@ const file_core_proto_rawDesc = "" +
 	"\x17file_download_limit_24h\x18\v \x01(\x05R\x14fileDownloadLimit24h\x125\n" +
 	"\x17file_bandwidth_used_24h\x18\f \x01(\x03R\x14fileBandwidthUsed24h\x127\n" +
 	"\x18file_bandwidth_limit_24h\x18\r \x01(\x03R\x15fileBandwidthLimit24h\x127\n" +
-	"\x18file_last_download_reset\x18\x0e \x01(\tR\x15fileLastDownloadReset*\x91\x01\n" +
+	"\x18file_last_download_reset\x18\x0e \x01(\tR\x15fileLastDownloadReset\".\n" +
+	"\x18GetSystemSettingsRequest\x12\x12\n" +
+	"\x04keys\x18\x01 \x03(\tR\x04keys\"\xa3\x01\n" +
+	"\x19GetSystemSettingsResponse\x12I\n" +
+	"\bsettings\x18\x01 \x03(\v2-.core.GetSystemSettingsResponse.SettingsEntryR\bsettings\x1a;\n" +
+	"\rSettingsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*\x91\x01\n" +
 	"\vChunkStatus\x12\x18\n" +
 	"\x14CHUNK_STATUS_UNKNOWN\x10\x00\x12\x18\n" +
 	"\x14CHUNK_STATUS_PENDING\x10\x01\x12\x19\n" +
 	"\x15CHUNK_STATUS_COMPLETE\x10\x02\x12\x17\n" +
 	"\x13CHUNK_STATUS_FAILED\x10\x03\x12\x1a\n" +
-	"\x16CHUNK_STATUS_NOT_FOUND\x10\x042\xaf\r\n" +
+	"\x16CHUNK_STATUS_NOT_FOUND\x10\x042\x85\x0e\n" +
 	"\vCoreService\x12W\n" +
 	"\x12ReportChunkResults\x12\x1f.core.ReportChunkResultsRequest\x1a .core.ReportChunkResultsResponse\x12B\n" +
 	"\x12ReportFileComplete\x12\x1f.core.ReportFileCompleteRequest\x1a\v.core.Empty\x12C\n" +
@@ -2864,7 +2962,8 @@ const file_core_proto_rawDesc = "" +
 	"\x0fResolveS3Object\x12\x1c.core.ResolveS3ObjectRequest\x1a\x1d.core.ResolveS3ObjectResponse\x12E\n" +
 	"\fPrepareS3Put\x12\x19.core.PrepareS3PutRequest\x1a\x1a.core.PrepareS3PutResponse\x12D\n" +
 	"\x13ReportS3PutComplete\x12 .core.ReportS3PutCompleteRequest\x1a\v.core.Empty\x12T\n" +
-	"\x11GetBandwidthQuota\x12\x1e.core.GetBandwidthQuotaRequest\x1a\x1f.core.GetBandwidthQuotaResponseBGZEgithub.com/realldz/tele-drive/backend-transfer-go/internal/grpc/protob\x06proto3"
+	"\x11GetBandwidthQuota\x12\x1e.core.GetBandwidthQuotaRequest\x1a\x1f.core.GetBandwidthQuotaResponse\x12T\n" +
+	"\x11GetSystemSettings\x12\x1e.core.GetSystemSettingsRequest\x1a\x1f.core.GetSystemSettingsResponseBGZEgithub.com/realldz/tele-drive/backend-transfer-go/internal/grpc/protob\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -2879,7 +2978,7 @@ func file_core_proto_rawDescGZIP() []byte {
 }
 
 var file_core_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 43)
 var file_core_proto_goTypes = []any{
 	(ChunkStatus)(0),                      // 0: core.ChunkStatus
 	(*Empty)(nil),                         // 1: core.Empty
@@ -2922,6 +3021,9 @@ var file_core_proto_goTypes = []any{
 	(*ReportS3PutCompleteRequest)(nil),    // 38: core.ReportS3PutCompleteRequest
 	(*GetBandwidthQuotaRequest)(nil),      // 39: core.GetBandwidthQuotaRequest
 	(*GetBandwidthQuotaResponse)(nil),     // 40: core.GetBandwidthQuotaResponse
+	(*GetSystemSettingsRequest)(nil),      // 41: core.GetSystemSettingsRequest
+	(*GetSystemSettingsResponse)(nil),     // 42: core.GetSystemSettingsResponse
+	nil,                                   // 43: core.GetSystemSettingsResponse.SettingsEntry
 }
 var file_core_proto_depIdxs = []int32{
 	3,  // 0: core.ReportChunkResultsRequest.results:type_name -> core.ChunkResult
@@ -2931,59 +3033,62 @@ var file_core_proto_depIdxs = []int32{
 	13, // 4: core.ReportBandwidthUsageRequest.entries:type_name -> core.BandwidthUsageEntry
 	19, // 5: core.ReportZipReadyRequest.parts:type_name -> core.ZipPart
 	23, // 6: core.CollectZipEntriesResponse.entries:type_name -> core.ZipEntry
-	4,  // 7: core.CoreService.ReportChunkResults:input_type -> core.ReportChunkResultsRequest
-	6,  // 8: core.CoreService.ReportFileComplete:input_type -> core.ReportFileCompleteRequest
-	7,  // 9: core.CoreService.GetFileMetadata:input_type -> core.GetFileMetadataRequest
-	22, // 10: core.CoreService.CollectZipEntries:input_type -> core.CollectZipEntriesRequest
-	25, // 11: core.CoreService.ReportZipProgress:input_type -> core.ReportZipProgressRequest
-	10, // 12: core.CoreService.BatchCheckChunkStatus:input_type -> core.BatchCheckRequest
-	14, // 13: core.CoreService.ReportBandwidthUsage:input_type -> core.ReportBandwidthUsageRequest
-	15, // 14: core.CoreService.ReportUploadFailed:input_type -> core.ReportUploadFailedRequest
-	16, // 15: core.CoreService.ReportDeleteSuccess:input_type -> core.ReportDeleteSuccessRequest
-	17, // 16: core.CoreService.ReportDeleteFailed:input_type -> core.ReportDeleteFailedRequest
-	18, // 17: core.CoreService.ReportFileCorrupted:input_type -> core.ReportFileCorruptedRequest
-	20, // 18: core.CoreService.ReportZipReady:input_type -> core.ReportZipReadyRequest
-	21, // 19: core.CoreService.ReportZipFailed:input_type -> core.ReportZipFailedRequest
-	26, // 20: core.CoreService.ReportBotUnauthorized:input_type -> core.ReportBotUnauthorizedRequest
-	27, // 21: core.CoreService.ReportEmergencyCleanup:input_type -> core.ReportEmergencyCleanupRequest
-	1,  // 22: core.CoreService.CheckDiskSpace:input_type -> core.Empty
-	29, // 23: core.CoreService.ReportCronStats:input_type -> core.ReportCronStatsRequest
-	30, // 24: core.CoreService.VerifyFolderShare:input_type -> core.VerifyFolderShareRequest
-	1,  // 25: core.CoreService.Ping:input_type -> core.Empty
-	32, // 26: core.CoreService.GetS3Credential:input_type -> core.GetS3CredentialRequest
-	34, // 27: core.CoreService.ResolveS3Object:input_type -> core.ResolveS3ObjectRequest
-	36, // 28: core.CoreService.PrepareS3Put:input_type -> core.PrepareS3PutRequest
-	38, // 29: core.CoreService.ReportS3PutComplete:input_type -> core.ReportS3PutCompleteRequest
-	39, // 30: core.CoreService.GetBandwidthQuota:input_type -> core.GetBandwidthQuotaRequest
-	5,  // 31: core.CoreService.ReportChunkResults:output_type -> core.ReportChunkResultsResponse
-	1,  // 32: core.CoreService.ReportFileComplete:output_type -> core.Empty
-	9,  // 33: core.CoreService.GetFileMetadata:output_type -> core.FileMetadata
-	24, // 34: core.CoreService.CollectZipEntries:output_type -> core.CollectZipEntriesResponse
-	1,  // 35: core.CoreService.ReportZipProgress:output_type -> core.Empty
-	12, // 36: core.CoreService.BatchCheckChunkStatus:output_type -> core.BatchCheckResponse
-	1,  // 37: core.CoreService.ReportBandwidthUsage:output_type -> core.Empty
-	1,  // 38: core.CoreService.ReportUploadFailed:output_type -> core.Empty
-	1,  // 39: core.CoreService.ReportDeleteSuccess:output_type -> core.Empty
-	1,  // 40: core.CoreService.ReportDeleteFailed:output_type -> core.Empty
-	1,  // 41: core.CoreService.ReportFileCorrupted:output_type -> core.Empty
-	1,  // 42: core.CoreService.ReportZipReady:output_type -> core.Empty
-	1,  // 43: core.CoreService.ReportZipFailed:output_type -> core.Empty
-	1,  // 44: core.CoreService.ReportBotUnauthorized:output_type -> core.Empty
-	1,  // 45: core.CoreService.ReportEmergencyCleanup:output_type -> core.Empty
-	28, // 46: core.CoreService.CheckDiskSpace:output_type -> core.DiskSpaceResponse
-	1,  // 47: core.CoreService.ReportCronStats:output_type -> core.Empty
-	31, // 48: core.CoreService.VerifyFolderShare:output_type -> core.VerifyFolderShareResponse
-	2,  // 49: core.CoreService.Ping:output_type -> core.Pong
-	33, // 50: core.CoreService.GetS3Credential:output_type -> core.GetS3CredentialResponse
-	35, // 51: core.CoreService.ResolveS3Object:output_type -> core.ResolveS3ObjectResponse
-	37, // 52: core.CoreService.PrepareS3Put:output_type -> core.PrepareS3PutResponse
-	1,  // 53: core.CoreService.ReportS3PutComplete:output_type -> core.Empty
-	40, // 54: core.CoreService.GetBandwidthQuota:output_type -> core.GetBandwidthQuotaResponse
-	31, // [31:55] is the sub-list for method output_type
-	7,  // [7:31] is the sub-list for method input_type
-	7,  // [7:7] is the sub-list for extension type_name
-	7,  // [7:7] is the sub-list for extension extendee
-	0,  // [0:7] is the sub-list for field type_name
+	43, // 7: core.GetSystemSettingsResponse.settings:type_name -> core.GetSystemSettingsResponse.SettingsEntry
+	4,  // 8: core.CoreService.ReportChunkResults:input_type -> core.ReportChunkResultsRequest
+	6,  // 9: core.CoreService.ReportFileComplete:input_type -> core.ReportFileCompleteRequest
+	7,  // 10: core.CoreService.GetFileMetadata:input_type -> core.GetFileMetadataRequest
+	22, // 11: core.CoreService.CollectZipEntries:input_type -> core.CollectZipEntriesRequest
+	25, // 12: core.CoreService.ReportZipProgress:input_type -> core.ReportZipProgressRequest
+	10, // 13: core.CoreService.BatchCheckChunkStatus:input_type -> core.BatchCheckRequest
+	14, // 14: core.CoreService.ReportBandwidthUsage:input_type -> core.ReportBandwidthUsageRequest
+	15, // 15: core.CoreService.ReportUploadFailed:input_type -> core.ReportUploadFailedRequest
+	16, // 16: core.CoreService.ReportDeleteSuccess:input_type -> core.ReportDeleteSuccessRequest
+	17, // 17: core.CoreService.ReportDeleteFailed:input_type -> core.ReportDeleteFailedRequest
+	18, // 18: core.CoreService.ReportFileCorrupted:input_type -> core.ReportFileCorruptedRequest
+	20, // 19: core.CoreService.ReportZipReady:input_type -> core.ReportZipReadyRequest
+	21, // 20: core.CoreService.ReportZipFailed:input_type -> core.ReportZipFailedRequest
+	26, // 21: core.CoreService.ReportBotUnauthorized:input_type -> core.ReportBotUnauthorizedRequest
+	27, // 22: core.CoreService.ReportEmergencyCleanup:input_type -> core.ReportEmergencyCleanupRequest
+	1,  // 23: core.CoreService.CheckDiskSpace:input_type -> core.Empty
+	29, // 24: core.CoreService.ReportCronStats:input_type -> core.ReportCronStatsRequest
+	30, // 25: core.CoreService.VerifyFolderShare:input_type -> core.VerifyFolderShareRequest
+	1,  // 26: core.CoreService.Ping:input_type -> core.Empty
+	32, // 27: core.CoreService.GetS3Credential:input_type -> core.GetS3CredentialRequest
+	34, // 28: core.CoreService.ResolveS3Object:input_type -> core.ResolveS3ObjectRequest
+	36, // 29: core.CoreService.PrepareS3Put:input_type -> core.PrepareS3PutRequest
+	38, // 30: core.CoreService.ReportS3PutComplete:input_type -> core.ReportS3PutCompleteRequest
+	39, // 31: core.CoreService.GetBandwidthQuota:input_type -> core.GetBandwidthQuotaRequest
+	41, // 32: core.CoreService.GetSystemSettings:input_type -> core.GetSystemSettingsRequest
+	5,  // 33: core.CoreService.ReportChunkResults:output_type -> core.ReportChunkResultsResponse
+	1,  // 34: core.CoreService.ReportFileComplete:output_type -> core.Empty
+	9,  // 35: core.CoreService.GetFileMetadata:output_type -> core.FileMetadata
+	24, // 36: core.CoreService.CollectZipEntries:output_type -> core.CollectZipEntriesResponse
+	1,  // 37: core.CoreService.ReportZipProgress:output_type -> core.Empty
+	12, // 38: core.CoreService.BatchCheckChunkStatus:output_type -> core.BatchCheckResponse
+	1,  // 39: core.CoreService.ReportBandwidthUsage:output_type -> core.Empty
+	1,  // 40: core.CoreService.ReportUploadFailed:output_type -> core.Empty
+	1,  // 41: core.CoreService.ReportDeleteSuccess:output_type -> core.Empty
+	1,  // 42: core.CoreService.ReportDeleteFailed:output_type -> core.Empty
+	1,  // 43: core.CoreService.ReportFileCorrupted:output_type -> core.Empty
+	1,  // 44: core.CoreService.ReportZipReady:output_type -> core.Empty
+	1,  // 45: core.CoreService.ReportZipFailed:output_type -> core.Empty
+	1,  // 46: core.CoreService.ReportBotUnauthorized:output_type -> core.Empty
+	1,  // 47: core.CoreService.ReportEmergencyCleanup:output_type -> core.Empty
+	28, // 48: core.CoreService.CheckDiskSpace:output_type -> core.DiskSpaceResponse
+	1,  // 49: core.CoreService.ReportCronStats:output_type -> core.Empty
+	31, // 50: core.CoreService.VerifyFolderShare:output_type -> core.VerifyFolderShareResponse
+	2,  // 51: core.CoreService.Ping:output_type -> core.Pong
+	33, // 52: core.CoreService.GetS3Credential:output_type -> core.GetS3CredentialResponse
+	35, // 53: core.CoreService.ResolveS3Object:output_type -> core.ResolveS3ObjectResponse
+	37, // 54: core.CoreService.PrepareS3Put:output_type -> core.PrepareS3PutResponse
+	1,  // 55: core.CoreService.ReportS3PutComplete:output_type -> core.Empty
+	40, // 56: core.CoreService.GetBandwidthQuota:output_type -> core.GetBandwidthQuotaResponse
+	42, // 57: core.CoreService.GetSystemSettings:output_type -> core.GetSystemSettingsResponse
+	33, // [33:58] is the sub-list for method output_type
+	8,  // [8:33] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_core_proto_init() }
@@ -2997,7 +3102,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   40,
+			NumMessages:   43,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

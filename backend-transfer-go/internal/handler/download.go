@@ -45,8 +45,7 @@ func (h *FileHandler) GenerateDownloadToken(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
 	}
 
-	// settingsCache can be stubbed or configured via environment, default to 300s
-	ttl := int64(300)
+	ttl := h.downloadURLTTL(c.Request().Context())
 	token, err := h.cryptoEngine.CreateSignedToken(id, "u", ttl, userID)
 	if err != nil {
 		return err
@@ -67,7 +66,7 @@ func (h *FileHandler) GenerateShareDownloadToken(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "Shared file not found"})
 	}
 
-	ttl := int64(300)
+	ttl := h.downloadURLTTL(c.Request().Context())
 	signedToken, err := h.cryptoEngine.CreateSignedToken(meta.Id, "s", ttl, "")
 	if err != nil {
 		return err
@@ -119,6 +118,15 @@ func (h *FileHandler) DownloadBySigned(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
 	}
 
+	// Inject the token's owner so bandwidth attribution targets the real user.
+	// This route has no JWT middleware; without this, resolveUserId would return
+	// "" and the usage report would carry an empty userId (NestJS then matches 0
+	// rows — usage never increments). Mirrors the legacy interceptor reading
+	// payload.uid from the signed token.
+	if payload.UID != "" {
+		c.Set("userId", payload.UID)
+	}
+
 	info, err := h.downloader.GetDownloadInfo(meta)
 	if err != nil {
 		return err
@@ -139,7 +147,7 @@ func (h *FileHandler) CheckSignedToken(c echo.Context) error {
 
 func (h *FileHandler) IssueStreamCookie(c echo.Context) error {
 	userID := c.Get("userId").(string)
-	ttl := int64(3600)
+	ttl := h.streamCookieTTL(c.Request().Context())
 	token, err := h.cryptoEngine.CreateStreamCookieToken(userID, ttl)
 	if err != nil {
 		return err
@@ -169,7 +177,7 @@ func (h *FileHandler) IssueGuestStreamCookie(c echo.Context) error {
 		subject = uID.(string)
 	}
 
-	ttl := int64(3600)
+	ttl := h.streamCookieTTL(c.Request().Context())
 	token, err := h.cryptoEngine.CreateStreamCookieToken(subject, ttl)
 	if err != nil {
 		return err

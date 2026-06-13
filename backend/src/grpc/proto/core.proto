@@ -36,6 +36,12 @@ service CoreService {
   // NOT mutate DB (lock/increment happens in Redis on the Go side; the daily
   // reset is applied virtually here so a stale row never blocks a fresh window).
   rpc GetBandwidthQuota(GetBandwidthQuotaRequest) returns (GetBandwidthQuotaResponse);
+
+  // System settings lookup (admin-dashboard SystemSetting table). The Go data
+  // plane caches these in-memory with a short TTL so admin changes propagate
+  // without a redeploy. Returns raw string values; Go parses per key (matching
+  // NestJS getCachedSetting). Read-only.
+  rpc GetSystemSettings(GetSystemSettingsRequest) returns (GetSystemSettingsResponse);
 }
 
 message Empty {}
@@ -350,5 +356,18 @@ message GetBandwidthQuotaResponse {
   int64 file_bandwidth_used_24h = 12;
   int64 file_bandwidth_limit_24h = 13;
   string file_last_download_reset = 14; // ISO8601
+}
+
+// --- System settings lookup (admin-dashboard cache-aside for Go data plane) ---
+
+message GetSystemSettingsRequest {
+  // Specific keys to fetch. Empty → return all settings (Go filters what it needs).
+  repeated string keys = 1;
+}
+
+message GetSystemSettingsResponse {
+  // Raw key→value string map mirroring the SystemSetting table. Go parses each
+  // value per key (int/bool/int64) the same way NestJS getCachedSetting does.
+  map<string, string> settings = 1;
 }
 

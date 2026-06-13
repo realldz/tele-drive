@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/middleware"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/queue"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/s3auth"
+	"github.com/realldz/tele-drive/backend-transfer-go/internal/settings"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/storage"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/telegram"
 	"github.com/redis/go-redis/v9"
@@ -33,6 +35,10 @@ type FileHandler struct {
 	jwtSecret         string
 	maxChunkSize      int64
 	maxBufferFileSize int64
+
+	// settingsResolver pulls admin-dashboard SystemSetting values (TTL, concurrency,
+	// multi-thread) over gRPC with a short TTL cache, so changes apply without redeploy.
+	settingsResolver *settings.Resolver
 
 	// s3Domain gates the S3 data-plane routes — requests are only treated as
 	// S3 API calls when Host matches (set via S3_DOMAIN). Empty disables the filter.
@@ -58,6 +64,7 @@ func NewFileHandler(
 	maxChunkSize int64,
 	maxBufferFileSize int64,
 	s3Domain string,
+	settingsResolver *settings.Resolver,
 ) *FileHandler {
 	// Redis-first credential lookup with gRPC fallback (Phase 3), wrapped by the
 	// SigV4 verifier (Phase 2). Built here so the verifier shares the handler's
@@ -77,6 +84,7 @@ func NewFileHandler(
 		jwtSecret:         jwtSecret,
 		maxChunkSize:      maxChunkSize,
 		maxBufferFileSize: maxBufferFileSize,
+		settingsResolver:  settingsResolver,
 		s3Domain:          s3Domain,
 		s3Verifier:        s3Verifier,
 		activeUploads:     make(map[string]int),
@@ -164,12 +172,39 @@ func (h *FileHandler) verifyUploadToken(c echo.Context, token string, fileID str
 }
 
 func (h *FileHandler) GetConfig(c echo.Context) error {
-	maxConcurrent := 3
+	maxConcurrent := h.maxConcurrentChunks(c.Request().Context())
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"maxChunkSize":        h.maxChunkSize,
 		"maxConcurrentChunks": maxConcurrent,
 	})
+}
+
+// maxConcurrentChunks resolves the admin-dashboard MAX_CONCURRENT_CHUNKS setting
+// (default 3), shared by GetConfig and the per-user upload concurrency guard.
+func (h *FileHandler) maxConcurrentChunks(ctx context.Context) int {
+	if h.settingsResolver == nil {
+		return 3
+	}
+	return h.settingsResolver.GetInt(ctx, "MAX_CONCURRENT_CHUNKS", 3)
+}
+
+// downloadURLTTL resolves the admin-dashboard DOWNLOAD_URL_TTL_SECONDS setting
+// (default 300), the lifetime of a signed download token.
+func (h *FileHandler) downloadURLTTL(ctx context.Context) int64 {
+	if h.settingsResolver == nil {
+		return 300
+	}
+	return h.settingsResolver.GetInt64(ctx, "DOWNLOAD_URL_TTL_SECONDS", 300)
+}
+
+// streamCookieTTL resolves the admin-dashboard STREAM_COOKIE_TTL_SECONDS setting
+// (default 3600), the lifetime of a stream-auth cookie.
+func (h *FileHandler) streamCookieTTL(ctx context.Context) int64 {
+	if h.settingsResolver == nil {
+		return 3600
+	}
+	return h.settingsResolver.GetInt64(ctx, "STREAM_COOKIE_TTL_SECONDS", 3600)
 }
 
 func (h *FileHandler) GetBufferStatus(c echo.Context) error {

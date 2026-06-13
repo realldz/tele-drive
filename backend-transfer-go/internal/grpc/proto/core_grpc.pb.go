@@ -43,6 +43,7 @@ const (
 	CoreService_PrepareS3Put_FullMethodName           = "/core.CoreService/PrepareS3Put"
 	CoreService_ReportS3PutComplete_FullMethodName    = "/core.CoreService/ReportS3PutComplete"
 	CoreService_GetBandwidthQuota_FullMethodName      = "/core.CoreService/GetBandwidthQuota"
+	CoreService_GetSystemSettings_FullMethodName      = "/core.CoreService/GetSystemSettings"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -78,6 +79,11 @@ type CoreServiceClient interface {
 	// NOT mutate DB (lock/increment happens in Redis on the Go side; the daily
 	// reset is applied virtually here so a stale row never blocks a fresh window).
 	GetBandwidthQuota(ctx context.Context, in *GetBandwidthQuotaRequest, opts ...grpc.CallOption) (*GetBandwidthQuotaResponse, error)
+	// System settings lookup (admin-dashboard SystemSetting table). The Go data
+	// plane caches these in-memory with a short TTL so admin changes propagate
+	// without a redeploy. Returns raw string values; Go parses per key (matching
+	// NestJS getCachedSetting). Read-only.
+	GetSystemSettings(ctx context.Context, in *GetSystemSettingsRequest, opts ...grpc.CallOption) (*GetSystemSettingsResponse, error)
 }
 
 type coreServiceClient struct {
@@ -328,6 +334,16 @@ func (c *coreServiceClient) GetBandwidthQuota(ctx context.Context, in *GetBandwi
 	return out, nil
 }
 
+func (c *coreServiceClient) GetSystemSettings(ctx context.Context, in *GetSystemSettingsRequest, opts ...grpc.CallOption) (*GetSystemSettingsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetSystemSettingsResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetSystemSettings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -361,6 +377,11 @@ type CoreServiceServer interface {
 	// NOT mutate DB (lock/increment happens in Redis on the Go side; the daily
 	// reset is applied virtually here so a stale row never blocks a fresh window).
 	GetBandwidthQuota(context.Context, *GetBandwidthQuotaRequest) (*GetBandwidthQuotaResponse, error)
+	// System settings lookup (admin-dashboard SystemSetting table). The Go data
+	// plane caches these in-memory with a short TTL so admin changes propagate
+	// without a redeploy. Returns raw string values; Go parses per key (matching
+	// NestJS getCachedSetting). Read-only.
+	GetSystemSettings(context.Context, *GetSystemSettingsRequest) (*GetSystemSettingsResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -442,6 +463,9 @@ func (UnimplementedCoreServiceServer) ReportS3PutComplete(context.Context, *Repo
 }
 func (UnimplementedCoreServiceServer) GetBandwidthQuota(context.Context, *GetBandwidthQuotaRequest) (*GetBandwidthQuotaResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetBandwidthQuota not implemented")
+}
+func (UnimplementedCoreServiceServer) GetSystemSettings(context.Context, *GetSystemSettingsRequest) (*GetSystemSettingsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetSystemSettings not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -896,6 +920,24 @@ func _CoreService_GetBandwidthQuota_Handler(srv interface{}, ctx context.Context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_GetSystemSettings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetSystemSettingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetSystemSettings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetSystemSettings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetSystemSettings(ctx, req.(*GetSystemSettingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -998,6 +1040,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetBandwidthQuota",
 			Handler:    _CoreService_GetBandwidthQuota_Handler,
+		},
+		{
+			MethodName: "GetSystemSettings",
+			Handler:    _CoreService_GetSystemSettings_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

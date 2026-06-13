@@ -521,6 +521,23 @@ export class GrpcCoreController {
     };
   }
 
+  // Cache-aside source for the Go data plane's system settings. Go caches the
+  // returned map in-memory with a short TTL so admin-dashboard changes propagate
+  // without a redeploy. Read-only; returns raw string values (Go parses per key).
+  @GrpcMethod('CoreService', 'GetSystemSettings')
+  async getSystemSettings(data: { keys?: string[] }) {
+    const where =
+      data.keys && data.keys.length > 0
+        ? { key: { in: data.keys } }
+        : undefined;
+    const rows = await this.prisma.systemSetting.findMany({ where });
+    const settings: Record<string, string> = {};
+    for (const row of rows) {
+      settings[row.key] = row.value;
+    }
+    return { settings };
+  }
+
   @GrpcMethod('CoreService', 'ReportDeleteSuccess')
   async reportDeleteSuccess(data: { fileId: string }) {
     try {

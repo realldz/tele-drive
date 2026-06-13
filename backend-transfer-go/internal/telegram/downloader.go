@@ -16,6 +16,7 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/crypto"
 	pb "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto"
+	"github.com/realldz/tele-drive/backend-transfer-go/internal/settings"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/storage"
 )
 
@@ -57,6 +58,7 @@ type Downloader struct {
 	bandwidthEnabled bool
 	batchReporter    BandwidthReporter
 	quotaResolver    *QuotaResolver
+	settingsResolver *settings.Resolver
 }
 
 func NewDownloader(
@@ -68,6 +70,7 @@ func NewDownloader(
 	bandwidthEnabled bool,
 	batchReporter BandwidthReporter,
 	quotaResolver *QuotaResolver,
+	settingsResolver *settings.Resolver,
 ) *Downloader {
 	return &Downloader{
 		telegramClient:   telegramClient,
@@ -78,10 +81,21 @@ func NewDownloader(
 		bandwidthEnabled: bandwidthEnabled,
 		batchReporter:    batchReporter,
 		quotaResolver:    quotaResolver,
+		settingsResolver: settingsResolver,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Minute,
 		},
 	}
+}
+
+// multiThreadEnabled resolves the admin-dashboard ENABLE_MULTI_THREAD_DOWNLOAD
+// setting (default true). When no resolver is wired, multi-thread stays enabled
+// to preserve the prior default behavior.
+func (d *Downloader) multiThreadEnabled(ctx context.Context) bool {
+	if d.settingsResolver == nil {
+		return true
+	}
+	return d.settingsResolver.GetBool(ctx, "ENABLE_MULTI_THREAD_DOWNLOAD", true)
 }
 
 func (d *Downloader) GetDownloadInfo(meta *pb.FileMetadata) (*DownloadInfo, error) {
@@ -189,9 +203,15 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 	start := int64(0)
 	end := fileSize - 1
 
-	hasRangeHeader := rangeHeader != ""
+	// Multi-thread (Range) support is admin-gated (ENABLE_MULTI_THREAD_DOWNLOAD).
+	// When disabled, the Range header is ignored — the full file is served and
+	// Accept-Ranges is not advertised — so download managers fall back to a
+	// single connection. Mirrors NestJS isMultiThreadEnabled().
+	multiThread := d.multiThreadEnabled(c.Request().Context())
+
+	hasRangeHeader := rangeHeader != "" && multiThread
 	isRange := false
-	if rangeHeader != "" {
+	if hasRangeHeader {
 		parts := strings.Split(rangeHeader, "=")
 		if len(parts) == 2 && parts[0] == "bytes" {
 			rangeParts := strings.Split(parts[1], "-")
@@ -242,7 +262,9 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 
 	res := c.Response()
 
-	res.Header().Set("Accept-Ranges", "bytes")
+	if multiThread {
+		res.Header().Set("Accept-Ranges", "bytes")
+	}
 	res.Header().Set("Content-Length", strconv.FormatInt(contentLength, 10))
 	res.Header().Set("Content-Type", info.MimeType)
 

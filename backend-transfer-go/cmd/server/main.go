@@ -18,6 +18,7 @@ import (
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/handler"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/logger"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/queue"
+	"github.com/realldz/tele-drive/backend-transfer-go/internal/settings"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/storage"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/telegram"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/zip"
@@ -149,6 +150,10 @@ func main() {
 	// the three bandwidth tiers (user/guest daily + per-file) cache-aside: Redis
 	// first, gRPC GetBandwidthQuota on miss. coreClient satisfies quotaFetcher.
 	quotaResolver := telegram.NewQuotaResolver(rdb, coreClient, log)
+	// SettingsResolver pulls admin-dashboard SystemSetting values over gRPC with a
+	// short TTL cache, so runtime config (TTLs, concurrency, multi-thread) applies
+	// without a Go redeploy. Shared by the downloader and the file handler.
+	settingsResolver := settings.NewResolver(coreClient, log)
 	downloader := telegram.NewDownloader(
 		tgClient,
 		cryptoEngine,
@@ -158,6 +163,7 @@ func main() {
 		cfg.BandwidthCheckEnabled,
 		batchReporter,
 		quotaResolver,
+		settingsResolver,
 	)
 
 	// 10c. Initialize ZIP worker (Go-owned archive assembly)
@@ -219,6 +225,7 @@ func main() {
 		cfg.MaxChunkSize,
 		cfg.MaxBufferFileSize,
 		cfg.S3Domain,
+		settingsResolver,
 	)
 	fileHandler.RegisterRoutes(e)
 	// S3 data-plane routes (GET object) — mounted at root, gated by S3 host filter.
