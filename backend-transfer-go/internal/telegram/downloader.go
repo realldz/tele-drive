@@ -286,20 +286,25 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 
 	ctx := c.Request().Context()
 
+	// Stream through `res` (*echo.Response), NOT res.Writer (the raw
+	// http.ResponseWriter). Only *echo.Response.Write increments res.Size; writing
+	// to the bare Writer bypasses the counter, so the deferred
+	// actualBytes = Size - initialSize reads 0 — which then refunds the whole
+	// estimatedSize and reports bytes=0, the root cause of "bandwidth never moves".
 	if info.IsBuffered {
 		reader, err := d.tempStorage.ReadRange(info.TempStorageKey, start, contentLength)
 		if err != nil {
 			return err
 		}
 		defer reader.Close()
-		_, err = io.Copy(res.Writer, reader)
+		_, err = io.Copy(res, reader)
 		return err
 	}
 
 	if !info.IsChunked {
-		return d.streamSingle(ctx, res.Writer, info, start, end)
+		return d.streamSingle(ctx, res, info, start, end)
 	}
-	return d.streamChunked(ctx, res.Writer, info, start, end)
+	return d.streamChunked(ctx, res, info, start, end)
 }
 
 func (d *Downloader) resolveFileLink(ctx context.Context, fileID string, botID int64, msgID *int, chunkDbID *string) (string, error) {
