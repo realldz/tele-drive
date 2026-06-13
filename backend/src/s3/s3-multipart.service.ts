@@ -141,6 +141,12 @@ export class S3MultipartService {
       );
     }
 
+    // Touch updatedAt to prevent stale upload cleanup during long uploads
+    await this.prisma.fileRecord.update({
+      where: { id: uploadId },
+      data: { updatedAt: new Date() },
+    });
+
     // Idempotency: if chunk already exists, return its stored ETag
     const existing = await this.prisma.fileChunk.findUnique({
       where: { fileId_chunkIndex: { fileId: uploadId, chunkIndex } },
