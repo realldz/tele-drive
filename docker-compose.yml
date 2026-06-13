@@ -136,6 +136,9 @@ services:
       MAX_BUFFER_FILE_SIZE: ${MAX_BUFFER_FILE_SIZE:-52428800}
       NESTJS_GRPC_URL: backend-core:50051
       GRPC_PORT: "50051"
+      # Host filter for the S3 data-plane routes (GET/PUT/HEAD object). Requests
+      # are only treated as S3 API calls when Host matches this domain.
+      S3_DOMAIN: ${S3_DOMAIN:-s3.example.com}
     volumes:
       - ./backend/.logs:/app/.logs
       - upload-buffer:/data/upload-buffer

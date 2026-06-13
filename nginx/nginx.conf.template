@@ -4,6 +4,43 @@ map $http_upgrade $connection_upgrade {
     ''      close;
 }
 
+# ─── S3 data-plane vs control-plane classification ───────────────────
+# On the S3 domain, object data I/O (GetObject/PutObject/HeadObject) is served
+# directly by the Go transfer service; everything else (bucket ops, multipart
+# orchestration, CopyObject, DeleteObject, ListParts) stays on NestJS core.
+#
+# These maps feed $s3_object_upstream, used by the object location block below.
+
+# uploadId present in the query → a multipart sub-op (UploadPart / ListParts /
+# CompleteMultipart / AbortMultipart). Case-insensitive match on the raw query.
+map $args $s3_has_upload_id {
+    default                    "0";
+    "~(^|&)[Uu]pload[Ii]d="    "1";
+}
+
+# x-amz-copy-source header present → CopyObject (control plane, NestJS).
+map $http_x_amz_copy_source $s3_has_copy_source {
+    default "1";
+    ""      "0";
+}
+
+# Object-path upstream selector. Key = "METHOD:hasUploadId:hasCopySource".
+#   GET/HEAD without uploadId         → Go (GetObject / HeadObject)
+#   PUT without uploadId, no copy-src → Go (PutObject)
+# Everything else (uploadId set, copy-source set, DELETE, POST) → NestJS.
+map "$request_method:$s3_has_upload_id:$s3_has_copy_source" $s3_object_upstream {
+    default        "control";
+    "~^GET:0:"     "data";
+    "~^HEAD:0:"    "data";
+    "PUT:0:0"      "data";
+}
+
+# Access log line that records which upstream served each S3 request — makes the
+# data/control split auditable from logs alone.
+log_format s3_split '$remote_addr - "$request" $status $body_bytes_sent '
+                    'upstream=$upstream_addr classified=$s3_object_upstream '
+                    'rt=$request_time uct=$upstream_connect_time';
+
 # ─── Default HTTP catch-all (returns 404 for direct IP access) ────────
 server {
     listen 80 default_server;
@@ -309,8 +346,12 @@ server {
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
 
-    # NestJS S3 Protocol — all S3 operations go to NestJS core
-    location / {
+    access_log /var/log/nginx/s3_access.log s3_split;
+
+    # Bucket-only paths ("/", "/<bucket>", "/<bucket>/") → NestJS control plane.
+    # Covers ListBuckets, ListObjects, CreateBucket, HeadBucket, DeleteBucket,
+    # DeleteObjects (POST ?delete). No object key, so never data-plane.
+    location ~ ^/[^/]*/?$ {
         proxy_pass http://backend-core:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -320,6 +361,31 @@ server {
         proxy_buffering off;
         proxy_read_timeout 600s;
         proxy_send_timeout 600s;
+    }
+
+    # Object paths ("/<bucket>/<key...>") — split by method/query/header.
+    # Data plane (GetObject/PutObject/HeadObject) → Go; everything else
+    # (multipart sub-ops, CopyObject, DeleteObject) → NestJS. Both backends
+    # receive the bare signed path unchanged: NestJS rewrites it to /s3/* in
+    # bootstrap, Go registers bare /:bucket/* routes — so NO rewrite here, or
+    # the SigV4 canonical path would diverge from the client signature.
+    location / {
+        # Authorization + all x-amz-* must reach the data plane intact for SigV4.
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Authorization $http_authorization;
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+
+        if ($s3_object_upstream = "data") {
+            proxy_pass http://backend-transfer:3001;
+            break;
+        }
+        proxy_pass http://backend-core:3001;
     }
 
     # Redirect target for data I/O — goes to Go transfer service
