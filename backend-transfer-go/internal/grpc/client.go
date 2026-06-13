@@ -72,6 +72,42 @@ func (c *CoreClient) GetFileMetadata(ctx context.Context, fileID string) (*pb.Fi
 	return c.client.GetFileMetadata(ctx, &pb.GetFileMetadataRequest{FileId: fileID})
 }
 
+// GetS3Credential resolves an accessKeyId to its decrypted secret + owning
+// userId. NestJS returns Found=false (not a gRPC NotFound status) when the
+// access key is unknown — callers must inspect resp.Found, not status.Code.
+func (c *CoreClient) GetS3Credential(ctx context.Context, accessKeyID string) (*pb.GetS3CredentialResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return c.client.GetS3Credential(ctx, &pb.GetS3CredentialRequest{AccessKeyId: accessKeyID})
+}
+
+// ResolveS3Object resolves a (bucket, key) pair to a FileRecord for GET/HEAD.
+func (c *CoreClient) ResolveS3Object(ctx context.Context, userID, bucket, key string) (*pb.ResolveS3ObjectResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return c.client.ResolveS3Object(ctx, &pb.ResolveS3ObjectRequest{
+		UserId: userID,
+		Bucket: bucket,
+		Key:    key,
+	})
+}
+
+// PrepareS3Put creates an uploading FileRecord placeholder and provisions
+// encryption upfront so Go can ingest the body stream.
+func (c *CoreClient) PrepareS3Put(ctx context.Context, req *pb.PrepareS3PutRequest) (*pb.PrepareS3PutResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return c.client.PrepareS3Put(ctx, req)
+}
+
+// ReportS3PutComplete finalizes an S3 PUT after Go uploads to Telegram.
+func (c *CoreClient) ReportS3PutComplete(ctx context.Context, req *pb.ReportS3PutCompleteRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, err := c.client.ReportS3PutComplete(ctx, req)
+	return err
+}
+
 func (c *CoreClient) BatchCheckChunkStatus(ctx context.Context, fileIDs []string) ([]*pb.ChunkStatusEntry, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

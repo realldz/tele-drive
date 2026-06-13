@@ -17,6 +17,14 @@ import (
 	"time"
 )
 
+// ctxKey is an unexported context-key type so values set by this package never
+// collide with keys from other packages.
+type ctxKey string
+
+// requestIDKey carries the per-request correlation ID into the CredentialLookup
+// impl so its cache/gRPC logs line up with the HTTP access log.
+const requestIDKey ctxKey = "requestId"
+
 const (
 	algorithmHeader = "AWS4-HMAC-SHA256"
 	// Header-based requests get a ±15 minute tolerance window. Beyond that
@@ -72,6 +80,9 @@ type VerifyResult struct {
 // `x-amz-content-sha256` (already signed by the client) or `UNSIGNED-PAYLOAD`.
 func (v *Verifier) Verify(ctx context.Context, req *http.Request, requestID string) (*VerifyResult, error) {
 	start := v.now()
+	// Thread requestID through ctx so the CredentialLookup impl (Phase 3
+	// CredentialResolver) can correlate its cache/gRPC logs with this request.
+	ctx = context.WithValue(ctx, requestIDKey, requestID)
 	authHeader := req.Header.Get("Authorization")
 	hasAuthHeader := strings.HasPrefix(authHeader, algorithmHeader+" ")
 	hasPresigned := req.URL.Query().Get("X-Amz-Algorithm") == algorithmHeader
