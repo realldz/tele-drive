@@ -132,6 +132,19 @@ func (c *CoreClient) ReportBandwidthUsage(ctx context.Context, entries []*pb.Ban
 	return err
 }
 
+// GetBandwidthQuota fetches the current quota snapshot (user/guest daily +
+// per-file counters) so the Go data plane can seed its Redis quota hash on a
+// cache miss. Read-only on the NestJS side — no DB mutation.
+func (c *CoreClient) GetBandwidthQuota(ctx context.Context, userID, ip, fileID string) (*pb.GetBandwidthQuotaResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return c.client.GetBandwidthQuota(ctx, &pb.GetBandwidthQuotaRequest{
+		UserId: userID,
+		Ip:     ip,
+		FileId: fileID,
+	})
+}
+
 func (c *CoreClient) ReportDeleteSuccess(ctx context.Context, fileID string) error {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

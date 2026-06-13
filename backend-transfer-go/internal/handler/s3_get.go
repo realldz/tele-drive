@@ -10,6 +10,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/s3auth"
+	"github.com/realldz/tele-drive/backend-transfer-go/internal/telegram"
 )
 
 // s3ErrorXML writes an S3-compatible <Error> XML body with the given HTTP
@@ -157,8 +158,19 @@ func (h *FileHandler) S3GetObject(c echo.Context) error {
 	}
 
 	// 4. Stream (ServeDownload handles Range, bandwidth lock, and Content-Type).
+	// The bandwidth lock runs before any byte is written, so a quota rejection
+	// surfaces here as a clean error we can map to a 429 XML body.
 	rangeHeader := c.Request().Header.Get("Range")
 	if streamErr := h.downloader.ServeDownload(c, info, rangeHeader, "inline"); streamErr != nil {
+		if ble, ok := telegram.AsBandwidthLimitError(streamErr); ok {
+			log.Warn("s3 bandwidth limit", "fileId", obj.FileId, "code", ble.Code, "resetAt", ble.ResetAt)
+			if ble.ResetAt != "" {
+				c.Response().Header().Set("X-Bandwidth-Reset", ble.ResetAt)
+				c.Response().Header().Set("Retry-After", "3600")
+			}
+			return s3ErrorXML(c, http.StatusTooManyRequests, "SlowDown",
+				"Bandwidth quota exceeded ("+ble.Code+"). Retry after the quota resets.")
+		}
 		log.Error("s3 stream error", "fileId", obj.FileId, "error", streamErr, "durationMs", time.Since(start).Milliseconds())
 		return streamErr
 	}

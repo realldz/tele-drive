@@ -145,7 +145,10 @@ func main() {
 	}
 	log.Info("Initialized TelegramClient bot pool", "botCount", len(cfg.TelegramUploadBotTokens)+1)
 
-	// 10b. Initialize Downloader for I/O streaming
+	// 10b. Initialize Downloader for I/O streaming. The QuotaResolver enforces
+	// the three bandwidth tiers (user/guest daily + per-file) cache-aside: Redis
+	// first, gRPC GetBandwidthQuota on miss. coreClient satisfies quotaFetcher.
+	quotaResolver := telegram.NewQuotaResolver(rdb, coreClient, log)
 	downloader := telegram.NewDownloader(
 		tgClient,
 		cryptoEngine,
@@ -154,6 +157,7 @@ func main() {
 		log,
 		cfg.BandwidthCheckEnabled,
 		batchReporter,
+		quotaResolver,
 	)
 
 	// 10c. Initialize ZIP worker (Go-owned archive assembly)
@@ -169,6 +173,29 @@ func main() {
 	e := echo.New()
 	e.HideBanner = true
 	e.HidePort = true
+
+	// Map a bandwidth-quota rejection to a JSON 429 for web download/stream
+	// callers (S3 handlers map it to XML themselves before returning). Centralized
+	// here so every download.go caller surfaces the same shape the frontend parses
+	// (api.ts), without each handler repeating the mapping. Other errors fall
+	// through to Echo's default handler.
+	defaultErrorHandler := e.HTTPErrorHandler
+	e.HTTPErrorHandler = func(err error, c echo.Context) {
+		if ble, ok := telegram.AsBandwidthLimitError(err); ok {
+			if c.Response().Committed {
+				return
+			}
+			if ble.ResetAt != "" {
+				c.Response().Header().Set("X-Bandwidth-Reset", ble.ResetAt)
+			}
+			_ = c.JSON(http.StatusTooManyRequests, map[string]string{
+				"code":    ble.Code,
+				"resetAt": ble.ResetAt,
+			})
+			return
+		}
+		defaultErrorHandler(err, c)
+	}
 
 	// Standard middlewares
 	e.Use(echoMiddleware.Recover())

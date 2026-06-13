@@ -161,6 +161,105 @@ export class BandwidthLockService {
     };
   }
 
+  /**
+   * Read-only quota snapshot for the Go data plane (cache-aside seed).
+   * Resolves all three tiers — user/guest daily + per-file — applying the 24h
+   * reset VIRTUALLY (does NOT write DB; the Go side owns the Redis lock and the
+   * cron/lock path owns the real reset write). Returns current usage so Go can
+   * seed `user:{id}:quota` / `guest:{ip}:quota` and enforce locally.
+   */
+  async getQuotaSnapshot(
+    userId: string,
+    ip: string,
+    fileId: string,
+  ): Promise<{
+    dailyUsed: bigint;
+    dailyLimit: bigint | null;
+    lastReset: Date;
+    isGuest: boolean;
+    file: {
+      downloads24h: number;
+      downloadLimit24h: number | null;
+      bandwidthUsed24h: bigint;
+      bandwidthLimit24h: bigint | null;
+      lastDownloadReset: Date;
+    } | null;
+  }> {
+    const now = new Date();
+    let dailyUsed = 0n;
+    let dailyLimit: bigint | null = null;
+    let lastReset = now;
+
+    if (userId) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          dailyBandwidthUsed: true,
+          dailyBandwidthLimit: true,
+          lastBandwidthReset: true,
+        },
+      });
+      if (user) {
+        const { requiresReset, currentUsed, limit } =
+          await this.resolveUserUsage(user, now);
+        dailyUsed = currentUsed;
+        dailyLimit = limit;
+        lastReset = requiresReset ? now : user.lastBandwidthReset;
+      }
+    } else if (ip) {
+      const setting = await this.prisma.systemSetting.findUnique({
+        where: { key: 'DEFAULT_GUEST_BANDWIDTH' },
+      });
+      dailyLimit = setting ? BigInt(setting.value) : null;
+      const tracker = await this.prisma.guestTracker.findUnique({
+        where: { ipAddress: ip },
+      });
+      if (tracker) {
+        const { requiresReset, currentUsed } = this.resolveGuestUsage(
+          tracker.lastBandwidthReset,
+          tracker.dailyBandwidthUsed,
+          now,
+        );
+        dailyUsed = currentUsed;
+        lastReset = requiresReset ? now : tracker.lastBandwidthReset;
+      }
+    }
+
+    let file: {
+      downloads24h: number;
+      downloadLimit24h: number | null;
+      bandwidthUsed24h: bigint;
+      bandwidthLimit24h: bigint | null;
+      lastDownloadReset: Date;
+    } | null = null;
+    if (fileId) {
+      const f = await this.prisma.fileRecord.findUnique({
+        where: { id: fileId },
+        select: {
+          downloads24h: true,
+          downloadLimit24h: true,
+          bandwidthUsed24h: true,
+          bandwidthLimit24h: true,
+          lastDownloadReset: true,
+        },
+      });
+      if (f) {
+        const hoursSince =
+          (now.getTime() - f.lastDownloadReset.getTime()) / 3_600_000;
+        const requiresReset = hoursSince >= 24;
+        file = {
+          downloads24h: requiresReset ? 0 : f.downloads24h,
+          downloadLimit24h: f.downloadLimit24h,
+          bandwidthUsed24h: requiresReset ? 0n : f.bandwidthUsed24h,
+          bandwidthLimit24h: f.bandwidthLimit24h,
+          lastDownloadReset: requiresReset ? now : f.lastDownloadReset,
+        };
+      }
+    }
+
+    return { dailyUsed, dailyLimit, lastReset, isGuest: !userId, file };
+  }
+
   async refundBandwidth(
     data: RefundData,
     amount: bigint,
@@ -233,7 +332,10 @@ export class BandwidthLockService {
           },
         });
         accepted++;
-        this.cacheService.invalidateUserQuota(entry.userId).catch(() => {});
+        // Do NOT DEL the quota cache here. The Go data plane HIncrBy's the Redis
+        // hash at lock time and reads it cache-aside; deleting it after every
+        // report would wipe the seeded quota each request, so the limit could
+        // never accumulate. The hash self-heals via its TTL + cache-aside reseed.
       } catch {
         this.logger.warn(
           `Failed to reconcile bandwidth for file ${entry.fileId} user ${entry.userId}`,

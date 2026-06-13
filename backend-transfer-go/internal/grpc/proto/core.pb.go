@@ -2460,6 +2460,177 @@ func (x *ReportS3PutCompleteRequest) GetTotalChunks() int32 {
 	return 0
 }
 
+type GetBandwidthQuotaRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // empty → guest (resolve by ip)
+	Ip            string                 `protobuf:"bytes,2,opt,name=ip,proto3" json:"ip,omitempty"`                       // used when user_id is empty
+	FileId        string                 `protobuf:"bytes,3,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"` // per-file counters (optional)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetBandwidthQuotaRequest) Reset() {
+	*x = GetBandwidthQuotaRequest{}
+	mi := &file_core_proto_msgTypes[38]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBandwidthQuotaRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBandwidthQuotaRequest) ProtoMessage() {}
+
+func (x *GetBandwidthQuotaRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[38]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBandwidthQuotaRequest.ProtoReflect.Descriptor instead.
+func (*GetBandwidthQuotaRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{38}
+}
+
+func (x *GetBandwidthQuotaRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *GetBandwidthQuotaRequest) GetIp() string {
+	if x != nil {
+		return x.Ip
+	}
+	return ""
+}
+
+func (x *GetBandwidthQuotaRequest) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
+type GetBandwidthQuotaResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Tier 1 — user/guest daily bandwidth (post virtual-reset).
+	DailyUsed  int64  `protobuf:"varint,1,opt,name=daily_used,json=dailyUsed,proto3" json:"daily_used,omitempty"`
+	DailyLimit int64  `protobuf:"varint,2,opt,name=daily_limit,json=dailyLimit,proto3" json:"daily_limit,omitempty"` // 0 = unlimited
+	LastReset  string `protobuf:"bytes,3,opt,name=last_reset,json=lastReset,proto3" json:"last_reset,omitempty"`     // ISO8601
+	// Tier 3 — guest discriminator.
+	IsGuest bool `protobuf:"varint,4,opt,name=is_guest,json=isGuest,proto3" json:"is_guest,omitempty"`
+	// Tier 2 — per-file counters (from FileRecord; 0 limit = unlimited).
+	FileDownloads_24H      int32  `protobuf:"varint,10,opt,name=file_downloads_24h,json=fileDownloads24h,proto3" json:"file_downloads_24h,omitempty"`
+	FileDownloadLimit_24H  int32  `protobuf:"varint,11,opt,name=file_download_limit_24h,json=fileDownloadLimit24h,proto3" json:"file_download_limit_24h,omitempty"`
+	FileBandwidthUsed_24H  int64  `protobuf:"varint,12,opt,name=file_bandwidth_used_24h,json=fileBandwidthUsed24h,proto3" json:"file_bandwidth_used_24h,omitempty"`
+	FileBandwidthLimit_24H int64  `protobuf:"varint,13,opt,name=file_bandwidth_limit_24h,json=fileBandwidthLimit24h,proto3" json:"file_bandwidth_limit_24h,omitempty"`
+	FileLastDownloadReset  string `protobuf:"bytes,14,opt,name=file_last_download_reset,json=fileLastDownloadReset,proto3" json:"file_last_download_reset,omitempty"` // ISO8601
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
+}
+
+func (x *GetBandwidthQuotaResponse) Reset() {
+	*x = GetBandwidthQuotaResponse{}
+	mi := &file_core_proto_msgTypes[39]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetBandwidthQuotaResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetBandwidthQuotaResponse) ProtoMessage() {}
+
+func (x *GetBandwidthQuotaResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[39]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetBandwidthQuotaResponse.ProtoReflect.Descriptor instead.
+func (*GetBandwidthQuotaResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{39}
+}
+
+func (x *GetBandwidthQuotaResponse) GetDailyUsed() int64 {
+	if x != nil {
+		return x.DailyUsed
+	}
+	return 0
+}
+
+func (x *GetBandwidthQuotaResponse) GetDailyLimit() int64 {
+	if x != nil {
+		return x.DailyLimit
+	}
+	return 0
+}
+
+func (x *GetBandwidthQuotaResponse) GetLastReset() string {
+	if x != nil {
+		return x.LastReset
+	}
+	return ""
+}
+
+func (x *GetBandwidthQuotaResponse) GetIsGuest() bool {
+	if x != nil {
+		return x.IsGuest
+	}
+	return false
+}
+
+func (x *GetBandwidthQuotaResponse) GetFileDownloads_24H() int32 {
+	if x != nil {
+		return x.FileDownloads_24H
+	}
+	return 0
+}
+
+func (x *GetBandwidthQuotaResponse) GetFileDownloadLimit_24H() int32 {
+	if x != nil {
+		return x.FileDownloadLimit_24H
+	}
+	return 0
+}
+
+func (x *GetBandwidthQuotaResponse) GetFileBandwidthUsed_24H() int64 {
+	if x != nil {
+		return x.FileBandwidthUsed_24H
+	}
+	return 0
+}
+
+func (x *GetBandwidthQuotaResponse) GetFileBandwidthLimit_24H() int64 {
+	if x != nil {
+		return x.FileBandwidthLimit_24H
+	}
+	return 0
+}
+
+func (x *GetBandwidthQuotaResponse) GetFileLastDownloadReset() string {
+	if x != nil {
+		return x.FileLastDownloadReset
+	}
+	return ""
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
@@ -2643,13 +2814,31 @@ const file_core_proto_rawDesc = "" +
 	"\x04etag\x18\a \x01(\tR\x04etag\x12\x1d\n" +
 	"\n" +
 	"is_chunked\x18\b \x01(\bR\tisChunked\x12!\n" +
-	"\ftotal_chunks\x18\t \x01(\x05R\vtotalChunks*\x91\x01\n" +
+	"\ftotal_chunks\x18\t \x01(\x05R\vtotalChunks\"\\\n" +
+	"\x18GetBandwidthQuotaRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x0e\n" +
+	"\x02ip\x18\x02 \x01(\tR\x02ip\x12\x17\n" +
+	"\afile_id\x18\x03 \x01(\tR\x06fileId\"\xa3\x03\n" +
+	"\x19GetBandwidthQuotaResponse\x12\x1d\n" +
+	"\n" +
+	"daily_used\x18\x01 \x01(\x03R\tdailyUsed\x12\x1f\n" +
+	"\vdaily_limit\x18\x02 \x01(\x03R\n" +
+	"dailyLimit\x12\x1d\n" +
+	"\n" +
+	"last_reset\x18\x03 \x01(\tR\tlastReset\x12\x19\n" +
+	"\bis_guest\x18\x04 \x01(\bR\aisGuest\x12,\n" +
+	"\x12file_downloads_24h\x18\n" +
+	" \x01(\x05R\x10fileDownloads24h\x125\n" +
+	"\x17file_download_limit_24h\x18\v \x01(\x05R\x14fileDownloadLimit24h\x125\n" +
+	"\x17file_bandwidth_used_24h\x18\f \x01(\x03R\x14fileBandwidthUsed24h\x127\n" +
+	"\x18file_bandwidth_limit_24h\x18\r \x01(\x03R\x15fileBandwidthLimit24h\x127\n" +
+	"\x18file_last_download_reset\x18\x0e \x01(\tR\x15fileLastDownloadReset*\x91\x01\n" +
 	"\vChunkStatus\x12\x18\n" +
 	"\x14CHUNK_STATUS_UNKNOWN\x10\x00\x12\x18\n" +
 	"\x14CHUNK_STATUS_PENDING\x10\x01\x12\x19\n" +
 	"\x15CHUNK_STATUS_COMPLETE\x10\x02\x12\x17\n" +
 	"\x13CHUNK_STATUS_FAILED\x10\x03\x12\x1a\n" +
-	"\x16CHUNK_STATUS_NOT_FOUND\x10\x042\xd9\f\n" +
+	"\x16CHUNK_STATUS_NOT_FOUND\x10\x042\xaf\r\n" +
 	"\vCoreService\x12W\n" +
 	"\x12ReportChunkResults\x12\x1f.core.ReportChunkResultsRequest\x1a .core.ReportChunkResultsResponse\x12B\n" +
 	"\x12ReportFileComplete\x12\x1f.core.ReportFileCompleteRequest\x1a\v.core.Empty\x12C\n" +
@@ -2674,7 +2863,8 @@ const file_core_proto_rawDesc = "" +
 	"\x0fGetS3Credential\x12\x1c.core.GetS3CredentialRequest\x1a\x1d.core.GetS3CredentialResponse\x12N\n" +
 	"\x0fResolveS3Object\x12\x1c.core.ResolveS3ObjectRequest\x1a\x1d.core.ResolveS3ObjectResponse\x12E\n" +
 	"\fPrepareS3Put\x12\x19.core.PrepareS3PutRequest\x1a\x1a.core.PrepareS3PutResponse\x12D\n" +
-	"\x13ReportS3PutComplete\x12 .core.ReportS3PutCompleteRequest\x1a\v.core.EmptyBGZEgithub.com/realldz/tele-drive/backend-transfer-go/internal/grpc/protob\x06proto3"
+	"\x13ReportS3PutComplete\x12 .core.ReportS3PutCompleteRequest\x1a\v.core.Empty\x12T\n" +
+	"\x11GetBandwidthQuota\x12\x1e.core.GetBandwidthQuotaRequest\x1a\x1f.core.GetBandwidthQuotaResponseBGZEgithub.com/realldz/tele-drive/backend-transfer-go/internal/grpc/protob\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -2689,7 +2879,7 @@ func file_core_proto_rawDescGZIP() []byte {
 }
 
 var file_core_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 40)
 var file_core_proto_goTypes = []any{
 	(ChunkStatus)(0),                      // 0: core.ChunkStatus
 	(*Empty)(nil),                         // 1: core.Empty
@@ -2730,6 +2920,8 @@ var file_core_proto_goTypes = []any{
 	(*PrepareS3PutRequest)(nil),           // 36: core.PrepareS3PutRequest
 	(*PrepareS3PutResponse)(nil),          // 37: core.PrepareS3PutResponse
 	(*ReportS3PutCompleteRequest)(nil),    // 38: core.ReportS3PutCompleteRequest
+	(*GetBandwidthQuotaRequest)(nil),      // 39: core.GetBandwidthQuotaRequest
+	(*GetBandwidthQuotaResponse)(nil),     // 40: core.GetBandwidthQuotaResponse
 }
 var file_core_proto_depIdxs = []int32{
 	3,  // 0: core.ReportChunkResultsRequest.results:type_name -> core.ChunkResult
@@ -2762,31 +2954,33 @@ var file_core_proto_depIdxs = []int32{
 	34, // 27: core.CoreService.ResolveS3Object:input_type -> core.ResolveS3ObjectRequest
 	36, // 28: core.CoreService.PrepareS3Put:input_type -> core.PrepareS3PutRequest
 	38, // 29: core.CoreService.ReportS3PutComplete:input_type -> core.ReportS3PutCompleteRequest
-	5,  // 30: core.CoreService.ReportChunkResults:output_type -> core.ReportChunkResultsResponse
-	1,  // 31: core.CoreService.ReportFileComplete:output_type -> core.Empty
-	9,  // 32: core.CoreService.GetFileMetadata:output_type -> core.FileMetadata
-	24, // 33: core.CoreService.CollectZipEntries:output_type -> core.CollectZipEntriesResponse
-	1,  // 34: core.CoreService.ReportZipProgress:output_type -> core.Empty
-	12, // 35: core.CoreService.BatchCheckChunkStatus:output_type -> core.BatchCheckResponse
-	1,  // 36: core.CoreService.ReportBandwidthUsage:output_type -> core.Empty
-	1,  // 37: core.CoreService.ReportUploadFailed:output_type -> core.Empty
-	1,  // 38: core.CoreService.ReportDeleteSuccess:output_type -> core.Empty
-	1,  // 39: core.CoreService.ReportDeleteFailed:output_type -> core.Empty
-	1,  // 40: core.CoreService.ReportFileCorrupted:output_type -> core.Empty
-	1,  // 41: core.CoreService.ReportZipReady:output_type -> core.Empty
-	1,  // 42: core.CoreService.ReportZipFailed:output_type -> core.Empty
-	1,  // 43: core.CoreService.ReportBotUnauthorized:output_type -> core.Empty
-	1,  // 44: core.CoreService.ReportEmergencyCleanup:output_type -> core.Empty
-	28, // 45: core.CoreService.CheckDiskSpace:output_type -> core.DiskSpaceResponse
-	1,  // 46: core.CoreService.ReportCronStats:output_type -> core.Empty
-	31, // 47: core.CoreService.VerifyFolderShare:output_type -> core.VerifyFolderShareResponse
-	2,  // 48: core.CoreService.Ping:output_type -> core.Pong
-	33, // 49: core.CoreService.GetS3Credential:output_type -> core.GetS3CredentialResponse
-	35, // 50: core.CoreService.ResolveS3Object:output_type -> core.ResolveS3ObjectResponse
-	37, // 51: core.CoreService.PrepareS3Put:output_type -> core.PrepareS3PutResponse
-	1,  // 52: core.CoreService.ReportS3PutComplete:output_type -> core.Empty
-	30, // [30:53] is the sub-list for method output_type
-	7,  // [7:30] is the sub-list for method input_type
+	39, // 30: core.CoreService.GetBandwidthQuota:input_type -> core.GetBandwidthQuotaRequest
+	5,  // 31: core.CoreService.ReportChunkResults:output_type -> core.ReportChunkResultsResponse
+	1,  // 32: core.CoreService.ReportFileComplete:output_type -> core.Empty
+	9,  // 33: core.CoreService.GetFileMetadata:output_type -> core.FileMetadata
+	24, // 34: core.CoreService.CollectZipEntries:output_type -> core.CollectZipEntriesResponse
+	1,  // 35: core.CoreService.ReportZipProgress:output_type -> core.Empty
+	12, // 36: core.CoreService.BatchCheckChunkStatus:output_type -> core.BatchCheckResponse
+	1,  // 37: core.CoreService.ReportBandwidthUsage:output_type -> core.Empty
+	1,  // 38: core.CoreService.ReportUploadFailed:output_type -> core.Empty
+	1,  // 39: core.CoreService.ReportDeleteSuccess:output_type -> core.Empty
+	1,  // 40: core.CoreService.ReportDeleteFailed:output_type -> core.Empty
+	1,  // 41: core.CoreService.ReportFileCorrupted:output_type -> core.Empty
+	1,  // 42: core.CoreService.ReportZipReady:output_type -> core.Empty
+	1,  // 43: core.CoreService.ReportZipFailed:output_type -> core.Empty
+	1,  // 44: core.CoreService.ReportBotUnauthorized:output_type -> core.Empty
+	1,  // 45: core.CoreService.ReportEmergencyCleanup:output_type -> core.Empty
+	28, // 46: core.CoreService.CheckDiskSpace:output_type -> core.DiskSpaceResponse
+	1,  // 47: core.CoreService.ReportCronStats:output_type -> core.Empty
+	31, // 48: core.CoreService.VerifyFolderShare:output_type -> core.VerifyFolderShareResponse
+	2,  // 49: core.CoreService.Ping:output_type -> core.Pong
+	33, // 50: core.CoreService.GetS3Credential:output_type -> core.GetS3CredentialResponse
+	35, // 51: core.CoreService.ResolveS3Object:output_type -> core.ResolveS3ObjectResponse
+	37, // 52: core.CoreService.PrepareS3Put:output_type -> core.PrepareS3PutResponse
+	1,  // 53: core.CoreService.ReportS3PutComplete:output_type -> core.Empty
+	40, // 54: core.CoreService.GetBandwidthQuota:output_type -> core.GetBandwidthQuotaResponse
+	31, // [31:55] is the sub-list for method output_type
+	7,  // [7:31] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
 	7,  // [7:7] is the sub-list for extension extendee
 	0,  // [0:7] is the sub-list for field type_name
@@ -2803,7 +2997,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   38,
+			NumMessages:   40,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

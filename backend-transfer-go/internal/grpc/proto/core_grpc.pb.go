@@ -42,6 +42,7 @@ const (
 	CoreService_ResolveS3Object_FullMethodName        = "/core.CoreService/ResolveS3Object"
 	CoreService_PrepareS3Put_FullMethodName           = "/core.CoreService/PrepareS3Put"
 	CoreService_ReportS3PutComplete_FullMethodName    = "/core.CoreService/ReportS3PutComplete"
+	CoreService_GetBandwidthQuota_FullMethodName      = "/core.CoreService/GetBandwidthQuota"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -72,6 +73,11 @@ type CoreServiceClient interface {
 	ResolveS3Object(ctx context.Context, in *ResolveS3ObjectRequest, opts ...grpc.CallOption) (*ResolveS3ObjectResponse, error)
 	PrepareS3Put(ctx context.Context, in *PrepareS3PutRequest, opts ...grpc.CallOption) (*PrepareS3PutResponse, error)
 	ReportS3PutComplete(ctx context.Context, in *ReportS3PutCompleteRequest, opts ...grpc.CallOption) (*Empty, error)
+	// Bandwidth quota lookup (cache-aside source for the Go data plane). Go hits
+	// Redis first; on miss it calls this to seed the quota hash. Read-only — does
+	// NOT mutate DB (lock/increment happens in Redis on the Go side; the daily
+	// reset is applied virtually here so a stale row never blocks a fresh window).
+	GetBandwidthQuota(ctx context.Context, in *GetBandwidthQuotaRequest, opts ...grpc.CallOption) (*GetBandwidthQuotaResponse, error)
 }
 
 type coreServiceClient struct {
@@ -312,6 +318,16 @@ func (c *coreServiceClient) ReportS3PutComplete(ctx context.Context, in *ReportS
 	return out, nil
 }
 
+func (c *coreServiceClient) GetBandwidthQuota(ctx context.Context, in *GetBandwidthQuotaRequest, opts ...grpc.CallOption) (*GetBandwidthQuotaResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetBandwidthQuotaResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetBandwidthQuota_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -340,6 +356,11 @@ type CoreServiceServer interface {
 	ResolveS3Object(context.Context, *ResolveS3ObjectRequest) (*ResolveS3ObjectResponse, error)
 	PrepareS3Put(context.Context, *PrepareS3PutRequest) (*PrepareS3PutResponse, error)
 	ReportS3PutComplete(context.Context, *ReportS3PutCompleteRequest) (*Empty, error)
+	// Bandwidth quota lookup (cache-aside source for the Go data plane). Go hits
+	// Redis first; on miss it calls this to seed the quota hash. Read-only — does
+	// NOT mutate DB (lock/increment happens in Redis on the Go side; the daily
+	// reset is applied virtually here so a stale row never blocks a fresh window).
+	GetBandwidthQuota(context.Context, *GetBandwidthQuotaRequest) (*GetBandwidthQuotaResponse, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -418,6 +439,9 @@ func (UnimplementedCoreServiceServer) PrepareS3Put(context.Context, *PrepareS3Pu
 }
 func (UnimplementedCoreServiceServer) ReportS3PutComplete(context.Context, *ReportS3PutCompleteRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportS3PutComplete not implemented")
+}
+func (UnimplementedCoreServiceServer) GetBandwidthQuota(context.Context, *GetBandwidthQuotaRequest) (*GetBandwidthQuotaResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetBandwidthQuota not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -854,6 +878,24 @@ func _CoreService_ReportS3PutComplete_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_GetBandwidthQuota_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetBandwidthQuotaRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetBandwidthQuota(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetBandwidthQuota_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetBandwidthQuota(ctx, req.(*GetBandwidthQuotaRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -952,6 +994,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportS3PutComplete",
 			Handler:    _CoreService_ReportS3PutComplete_Handler,
+		},
+		{
+			MethodName: "GetBandwidthQuota",
+			Handler:    _CoreService_GetBandwidthQuota_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

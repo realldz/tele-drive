@@ -2,10 +2,9 @@ package telegram
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/labstack/echo/v4"
 )
@@ -30,6 +29,29 @@ type BandwidthReporter interface {
 	ReportBandwidth(report *BandwidthReport)
 }
 
+// BandwidthLimitError is returned by CheckAndLockBandwidth when a quota tier
+// rejects the request. Handlers map it to HTTP 429 (XML for S3, JSON for web)
+// and surface Code + ResetAt to the client. errors.As recovers it from the
+// error chain returned through ServeDownload.
+type BandwidthLimitError struct {
+	Code    string // USER_BANDWIDTH_LIMIT | GUEST_BANDWIDTH_LIMIT | FILE_DOWNLOAD_LIMIT | FILE_BANDWIDTH_LIMIT
+	ResetAt string // ISO8601; may be empty
+}
+
+func (e *BandwidthLimitError) Error() string {
+	return fmt.Sprintf("BANDWIDTH_LIMIT:%s:%s", e.Code, e.ResetAt)
+}
+
+// AsBandwidthLimitError extracts a *BandwidthLimitError from an error chain,
+// returning (err, true) when present. Handlers use it to detect the 429 case.
+func AsBandwidthLimitError(err error) (*BandwidthLimitError, bool) {
+	var ble *BandwidthLimitError
+	if errors.As(err, &ble) {
+		return ble, true
+	}
+	return nil, false
+}
+
 func resolveUserId(c echo.Context) string {
 	if s3Pub, ok := c.Get("s3PublicAccess").(bool); ok && s3Pub {
 		return ""
@@ -52,39 +74,20 @@ func userQuotaKey(userID string) string {
 	return fmt.Sprintf("user:%s:quota", userID)
 }
 
-func (d *Downloader) checkUserBandwidth(ctx context.Context, userID string, estimatedSize int64) (bool, error) {
-	key := userQuotaKey(userID)
-
-	vals, err := d.RedisClient.HMGet(ctx, key, "dailyBandwidthUsed", "dailyBandwidthLimit").Result()
-	if err != nil || vals[0] == nil {
-		return true, nil // cache miss — allow, not blocking
-	}
-
-	used, _ := strconv.ParseInt(vals[0].(string), 10, 64)
-	limit := int64(0)
-	if vals[1] != nil {
-		limit, _ = strconv.ParseInt(vals[1].(string), 10, 64)
-	}
-
-	if limit > 0 && used+estimatedSize > limit {
-		return false, nil
-	}
-
-	// Optimistic lock — increment
-	d.RedisClient.HIncrBy(ctx, key, "dailyBandwidthUsed", estimatedSize)
-	d.RedisClient.Expire(ctx, key, 1*time.Hour)
-
-	return true, nil
-}
-
+// CheckAndLockBandwidth enforces all three quota tiers (user/guest daily +
+// per-file) via the QuotaResolver and, when allowed, optimistically locks the
+// daily tier. Returns a *BandwidthLimitError when a tier rejects the request,
+// nil-error + lock when allowed. Bandwidth disabled or no resolver → pass-through.
 func (d *Downloader) CheckAndLockBandwidth(c echo.Context, fileID string, fileSize int64, estimatedSize int64, hasRangeHeader bool) (*BandwidthLock, error) {
 	userID := resolveUserId(c)
 	ip := c.RealIP()
 
-	if userID != "" && d.bandwidthEnabled {
-		ok, _ := d.checkUserBandwidth(c.Request().Context(), userID, estimatedSize)
-		if !ok {
-			return nil, fmt.Errorf("BANDWIDTH_LIMIT")
+	if d.bandwidthEnabled && d.quotaResolver != nil {
+		ctx := context.WithValue(c.Request().Context(), quotaRequestIDKey,
+			c.Response().Header().Get("X-Request-ID"))
+		decision := d.quotaResolver.CheckAndLock(ctx, userID, ip, fileID, estimatedSize)
+		if !decision.Allowed {
+			return nil, &BandwidthLimitError{Code: decision.Code, ResetAt: decision.ResetAt}
 		}
 	}
 
@@ -98,15 +101,24 @@ func (d *Downloader) CheckAndLockBandwidth(c echo.Context, fileID string, fileSi
 	}, nil
 }
 
+// RefundAndReconcile returns over-locked bytes to the daily hash and reports
+// actual usage for DB reconciliation. The daily refund targets the user hash
+// (user:{id}:quota) or, for guests, the guest hash (guest:{ip}:quota) — the
+// QuotaResolver locked whichever applies. Reporting runs for guests too: the
+// per-file FileRecord counters still update (NestJS no-ops the empty-userId
+// row), so a file's bandwidthUsed24h/downloads24h reflect anonymous traffic.
 func (d *Downloader) RefundAndReconcile(lock *BandwidthLock, actualBytes int64) {
-	if lock.UserID == "" {
+	if lock.UserID == "" && lock.IP == "" {
 		return
 	}
 
 	ctx := context.Background()
-	refund := lock.EstimatedSize - actualBytes
-	if refund > 0 {
-		d.RedisClient.HIncrBy(ctx, userQuotaKey(lock.UserID), "dailyBandwidthUsed", -refund)
+	if refund := lock.EstimatedSize - actualBytes; refund > 0 {
+		key := userQuotaKey(lock.UserID)
+		if lock.UserID == "" {
+			key = guestQuotaCacheKey(lock.IP)
+		}
+		d.RedisClient.HIncrBy(ctx, key, "dailyBandwidthUsed", -refund)
 	}
 
 	if d.batchReporter != nil {

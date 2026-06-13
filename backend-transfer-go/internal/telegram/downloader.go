@@ -56,6 +56,7 @@ type Downloader struct {
 	logger         *slog.Logger
 	bandwidthEnabled bool
 	batchReporter    BandwidthReporter
+	quotaResolver    *QuotaResolver
 }
 
 func NewDownloader(
@@ -66,6 +67,7 @@ func NewDownloader(
 	logger *slog.Logger,
 	bandwidthEnabled bool,
 	batchReporter BandwidthReporter,
+	quotaResolver *QuotaResolver,
 ) *Downloader {
 	return &Downloader{
 		telegramClient:   telegramClient,
@@ -75,6 +77,7 @@ func NewDownloader(
 		logger:           logger,
 		bandwidthEnabled: bandwidthEnabled,
 		batchReporter:    batchReporter,
+		quotaResolver:    quotaResolver,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Minute,
 		},

@@ -491,6 +491,36 @@ export class GrpcCoreController {
     return {};
   }
 
+  // Cache-aside source for the Go data plane's bandwidth enforcement. Go hits
+  // Redis first; on miss it calls this to seed the quota hash. Read-only — the
+  // 24h reset is applied virtually (no DB write); Go owns the Redis lock and the
+  // cron/lock path owns the real reset write.
+  @GrpcMethod('CoreService', 'GetBandwidthQuota')
+  async getBandwidthQuota(data: {
+    userId?: string;
+    ip?: string;
+    fileId?: string;
+  }) {
+    const snap = await this.bandwidthLockService.getQuotaSnapshot(
+      data.userId ?? '',
+      data.ip ?? '',
+      data.fileId ?? '',
+    );
+    return {
+      dailyUsed: Number(snap.dailyUsed),
+      dailyLimit: Number(snap.dailyLimit ?? 0n),
+      lastReset: snap.lastReset.toISOString(),
+      isGuest: snap.isGuest,
+      fileDownloads24h: snap.file?.downloads24h ?? 0,
+      fileDownloadLimit24h: snap.file?.downloadLimit24h ?? 0,
+      fileBandwidthUsed24h: Number(snap.file?.bandwidthUsed24h ?? 0n),
+      fileBandwidthLimit24h: Number(snap.file?.bandwidthLimit24h ?? 0n),
+      fileLastDownloadReset: (
+        snap.file?.lastDownloadReset ?? snap.lastReset
+      ).toISOString(),
+    };
+  }
+
   @GrpcMethod('CoreService', 'ReportDeleteSuccess')
   async reportDeleteSuccess(data: { fileId: string }) {
     try {

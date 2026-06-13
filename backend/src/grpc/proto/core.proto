@@ -30,6 +30,12 @@ service CoreService {
   rpc ResolveS3Object(ResolveS3ObjectRequest) returns (ResolveS3ObjectResponse);
   rpc PrepareS3Put(PrepareS3PutRequest) returns (PrepareS3PutResponse);
   rpc ReportS3PutComplete(ReportS3PutCompleteRequest) returns (Empty);
+
+  // Bandwidth quota lookup (cache-aside source for the Go data plane). Go hits
+  // Redis first; on miss it calls this to seed the quota hash. Read-only — does
+  // NOT mutate DB (lock/increment happens in Redis on the Go side; the daily
+  // reset is applied virtually here so a stale row never blocks a fresh window).
+  rpc GetBandwidthQuota(GetBandwidthQuotaRequest) returns (GetBandwidthQuotaResponse);
 }
 
 message Empty {}
@@ -319,5 +325,30 @@ message ReportS3PutCompleteRequest {
   string etag = 7;
   bool is_chunked = 8;
   int32 total_chunks = 9;
+}
+
+// --- Bandwidth quota lookup (cache-aside seed for Go data plane) ---
+
+message GetBandwidthQuotaRequest {
+  string user_id = 1; // empty → guest (resolve by ip)
+  string ip = 2;      // used when user_id is empty
+  string file_id = 3; // per-file counters (optional)
+}
+
+message GetBandwidthQuotaResponse {
+  // Tier 1 — user/guest daily bandwidth (post virtual-reset).
+  int64 daily_used = 1;
+  int64 daily_limit = 2; // 0 = unlimited
+  string last_reset = 3; // ISO8601
+
+  // Tier 3 — guest discriminator.
+  bool is_guest = 4;
+
+  // Tier 2 — per-file counters (from FileRecord; 0 limit = unlimited).
+  int32 file_downloads_24h = 10;
+  int32 file_download_limit_24h = 11;
+  int64 file_bandwidth_used_24h = 12;
+  int64 file_bandwidth_limit_24h = 13;
+  string file_last_download_reset = 14; // ISO8601
 }
 
