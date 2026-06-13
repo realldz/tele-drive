@@ -296,11 +296,22 @@ export class UploadQueueProcessor
         },
       });
 
-      const pendingChunksCount = await tx.fileChunk.count({
-        where: { fileId: fileRecordId, status: 'buffered' },
+      const completedChunksCount = await tx.fileChunk.count({
+        where: { fileId: fileRecordId, status: 'complete' },
       });
 
-      if (pendingChunksCount === 0) {
+      const currentFile = await tx.fileRecord.findUnique({
+        where: { id: fileRecordId },
+      });
+
+      // Sentinel totalChunks = 10000 is used for S3 multipart uploads.
+      // They are completed explicitly via CompleteMultipartUpload API.
+      if (
+        currentFile &&
+        currentFile.status !== 'complete' &&
+        currentFile.totalChunks < 10000 &&
+        completedChunksCount === currentFile.totalChunks
+      ) {
         await tx.fileRecord.update({
           where: { id: fileRecordId },
           data: { status: 'complete' },
@@ -308,11 +319,11 @@ export class UploadQueueProcessor
 
         await tx.user.update({
           where: { id: userId },
-          data: { usedSpace: { increment: chunk.file.size } },
+          data: { usedSpace: { increment: currentFile.size } },
         });
 
         this.logger.log(
-          `Chunked file fully complete: "${chunk.file.filename}" (${chunk.file.size} bytes)`,
+          `Chunked file fully complete: "${currentFile.filename}" (${currentFile.size} bytes)`,
         );
       }
     });
