@@ -3,10 +3,12 @@ import {
   Get,
   Post,
   Delete,
+  Req,
   UseGuards,
   Inject,
   Logger,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import { AdminGuard } from '../auth/admin.guard';
 import { PrismaService } from '../prisma/prisma.service';
 import { TEMP_STORAGE } from '../common/temp-storage';
@@ -56,7 +58,7 @@ export class AdminSystemController {
   }
 
   @Get('system-stats')
-  async getSystemStats() {
+  async getSystemStats(@Req() req: Request) {
     const [
       bufferedCount,
       failedCount,
@@ -98,12 +100,17 @@ export class AdminSystemController {
       this.logger.warn('Failed to get BullMQ job counts, returning empty', err);
     }
 
-    // Fetch Go transfer service stats
+    // Fetch Go transfer service stats — forward the admin's JWT so the Go
+    // service's auth middleware accepts the request (shared JWT_SECRET).
     let goStats: Record<string, unknown> | null = null;
     try {
+      const authHeader = req.headers.authorization;
       const goRes = await this.httpService.axiosRef.get(
         'http://backend-transfer:3001/v1/transfer/stats',
-        { timeout: 5000 },
+        {
+          timeout: 5000,
+          headers: authHeader ? { Authorization: authHeader } : undefined,
+        },
       );
       goStats = goRes.data;
     } catch {

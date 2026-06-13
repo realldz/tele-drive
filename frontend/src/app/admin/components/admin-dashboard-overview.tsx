@@ -41,6 +41,24 @@ const formatAge = (ms: number) => {
   return `${hr}h`;
 };
 
+const formatUptime = (sec: number) => {
+  const d = Math.floor(sec / 86400);
+  const h = Math.floor((sec % 86400) / 3600);
+  const m = Math.floor((sec % 3600) / 60);
+  if (d > 0) return `${d}d ${h}h`;
+  if (h > 0) return `${h}h ${m}m`;
+  return `${m}m`;
+};
+
+function MetricTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+      <div className="text-xs font-medium text-slate-500 uppercase">{label}</div>
+      <div className="mt-2 text-2xl font-bold text-slate-900">{value}</div>
+    </div>
+  );
+}
+
 export default function AdminDashboardOverview({
   summary,
   systemStats,
@@ -194,6 +212,65 @@ export default function AdminDashboardOverview({
                 {formatBytes(Number(systemStats.zip.tempStorageUsedBytes))}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Go Transfer Service */}
+      {systemStats?.go && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-6">
+          <div className="border-b border-gray-100 pb-4">
+            <h2 className="text-lg font-semibold text-gray-900">{t('admin.goServiceDashboard')}</h2>
+            <p className="text-sm text-gray-500">{t('admin.goServiceDescription')}</p>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('admin.goWorkerPool')}</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricTile label={t('admin.goPoolSize')} value={String(systemStats.go.workerPool.size)} />
+              <MetricTile label={t('admin.goActiveJobs')} value={String(systemStats.go.workerPool.activeJobs)} />
+              <MetricTile label={t('admin.goPendingQueue')} value={String(systemStats.go.workerPool.pendingQueue)} />
+              <MetricTile label={t('admin.goDelayedQueue')} value={String(systemStats.go.workerPool.delayedQueue)} />
+            </div>
+          </div>
+
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('admin.goTelegram')}</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <MetricTile label={t('admin.goBotCount')} value={String(systemStats.go.telegram.botCount)} />
+              <MetricTile
+                label={t('admin.goSemaphore')}
+                value={`${systemStats.go.telegram.semaphoreUsed} / ${systemStats.go.telegram.semaphoreCapacity}`}
+              />
+              <MetricTile
+                label={t('admin.goBufferUsed')}
+                value={`${formatBytes(systemStats.go.storage.bufferUsedBytes)} / ${formatBytes(systemStats.go.storage.bufferCapacityBytes)}`}
+              />
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-100">
+                <div className="text-xs font-medium text-slate-500 uppercase">{t('admin.goGrpcStatus')}</div>
+                <div className="mt-2 text-2xl font-bold text-slate-900 flex items-center gap-2">
+                  <span className={`w-2.5 h-2.5 rounded-full ${systemStats.go.grpc.coreConnected ? 'bg-green-500' : 'bg-red-500'}`} />
+                  <span>{systemStats.go.grpc.coreConnected ? t('admin.goConnected') : t('admin.goDisconnected')}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NestJS Process */}
+      {systemStats?.nestjs && (
+        <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-5 space-y-6">
+          <div className="border-b border-gray-100 pb-4">
+            <h2 className="text-lg font-semibold text-gray-900">{t('admin.nestjsDashboard')}</h2>
+            <p className="text-sm text-gray-500">{t('admin.nestjsDescription')}</p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <MetricTile label={t('admin.nestjsUptime')} value={formatUptime(systemStats.nestjs.uptime)} />
+            <MetricTile label={t('admin.nestjsMemoryRss')} value={formatBytes(Number(systemStats.nestjs.memoryRss))} />
+            <MetricTile label={t('admin.nestjsHeapUsed')} value={formatBytes(Number(systemStats.nestjs.memoryHeapUsed))} />
+            <MetricTile label={t('admin.nestjsHeapTotal')} value={formatBytes(Number(systemStats.nestjs.memoryHeapTotal))} />
           </div>
         </div>
       )}
