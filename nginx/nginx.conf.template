@@ -36,8 +36,9 @@ map "$request_method:$s3_has_upload_id:$s3_has_copy_source" $s3_object_upstream 
 }
 
 # Access log line that records which upstream served each S3 request — makes the
-# data/control split auditable from logs alone.
-log_format s3_split '$remote_addr - "$request" $status $body_bytes_sent '
+# data/control split auditable from logs alone. $request_id chains with the
+# X-Request-ID forwarded to upstreams so a request is greppable edge → Go → NestJS.
+log_format s3_split '$remote_addr - reqid=$request_id "$request" $status $body_bytes_sent '
                     'upstream=$upstream_addr classified=$s3_object_upstream '
                     'rt=$request_time uct=$upstream_connect_time';
 
@@ -357,6 +358,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
         proxy_request_buffering off;
         proxy_buffering off;
         proxy_read_timeout 600s;
@@ -376,6 +378,7 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header Authorization $http_authorization;
+        proxy_set_header X-Request-ID $request_id;
         proxy_request_buffering off;
         proxy_buffering off;
         proxy_read_timeout 3600s;

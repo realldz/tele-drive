@@ -59,17 +59,30 @@ func s3AuthErrorToXML(c echo.Context, err error) error {
 	}
 }
 
+// s3RequestID resolves the per-request correlation ID, preferring the inbound
+// X-Request-ID set by nginx (so the id chains edge → Go → gRPC → NestJS), then
+// any value already on the response, and finally a freshly generated uuid. It
+// echoes the resolved id back on the response so clients and the access log see
+// the same value. Idempotent — safe to call from multiple handlers per request.
+func s3RequestID(c echo.Context) string {
+	id := c.Request().Header.Get("X-Request-ID")
+	if id == "" {
+		id = c.Response().Header().Get("X-Request-ID")
+	}
+	if id == "" {
+		id = generateUUID()
+	}
+	c.Response().Header().Set("X-Request-ID", id)
+	return id
+}
+
 // s3Authenticate runs SigV4 verification on the request and stores the
 // authenticated userId in the echo context (key "s3UserId"). Returns an S3 XML
-// error response on failure. A per-request correlation ID is generated and
-// echoed back via X-Request-ID so the verifier's structured logs can be tied
-// to the HTTP access log.
+// error response on failure. The per-request correlation ID is taken from the
+// inbound X-Request-ID (nginx) when present so the verifier's structured logs
+// tie back to the edge access log.
 func (h *FileHandler) s3Authenticate(c echo.Context) (string, error) {
-	requestID := c.Response().Header().Get("X-Request-ID")
-	if requestID == "" {
-		requestID = generateUUID()
-		c.Response().Header().Set("X-Request-ID", requestID)
-	}
+	requestID := s3RequestID(c)
 
 	result, err := h.s3Verifier.Verify(c.Request().Context(), c.Request(), requestID)
 	if err != nil {
