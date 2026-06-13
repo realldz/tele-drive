@@ -4,6 +4,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FolderService } from '../folder/folder.service';
 import { BandwidthLockService } from '../common/bandwidth-lock.service';
 import { DownloadZipService } from '../download-zip/download-zip.service';
+import { S3AuthService } from '../s3/s3-auth.service';
 import { randomUUID } from 'crypto';
 
 @Controller()
@@ -15,6 +16,7 @@ export class GrpcCoreController {
     private readonly folderService: FolderService,
     private readonly bandwidthLockService: BandwidthLockService,
     private readonly downloadZipService: DownloadZipService,
+    private readonly s3AuthService: S3AuthService,
   ) {}
 
   @GrpcMethod('CoreService', 'Ping')
@@ -190,6 +192,36 @@ export class GrpcCoreController {
         encryptionIv: c.encryptionIv || '',
         etag: c.etag || '',
       })),
+    };
+  }
+
+  // Cold-path credential lookup for Go's SigV4 verifier. Go hits Redis first
+  // (write-through cache); on miss it falls back here. Returns found=false
+  // (NOT a gRPC error) for unknown/inactive keys so Go can tombstone.
+  @GrpcMethod('CoreService', 'GetS3Credential')
+  async getS3Credential(data: { accessKeyId: string }) {
+    const cred = await this.prisma.s3Credential.findUnique({
+      where: { accessKeyId: data.accessKeyId },
+    });
+
+    if (!cred || !cred.isActive) {
+      this.logger.debug(
+        `gRPC GetS3Credential miss: accessKeyId=${data.accessKeyId}`,
+      );
+      return { found: false, isActive: false, userId: '', secretAccessKey: '' };
+    }
+
+    const secretAccessKey = this.s3AuthService.decryptSecretPublic(
+      cred.secretAccessKey,
+    );
+    this.logger.debug(
+      `gRPC GetS3Credential hit: accessKeyId=${data.accessKeyId} userId=${cred.userId}`,
+    );
+    return {
+      found: true,
+      isActive: true,
+      userId: cred.userId,
+      secretAccessKey,
     };
   }
 
