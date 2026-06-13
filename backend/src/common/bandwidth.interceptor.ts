@@ -14,6 +14,14 @@ import { CryptoService } from '../crypto/crypto.service';
 import { BandwidthLockService } from './bandwidth-lock.service';
 import { getClientIp } from './utils/get-client-ip';
 
+// Bandwidth enforcement owner. Default `go`: the Go data plane enforces all
+// three quota tiers (user/guest daily + per-file) via its QuotaResolver, so this
+// NestJS interceptor short-circuits to a pass-through on every route it decorates.
+// Set `nest` to restore in-process enforcement (legacy path, fully retained
+// below) — e.g. when rolling the data plane back to NestJS.
+const bandwidthOwnerIsGo = (): boolean =>
+  (process.env.BANDWIDTH_OWNER || 'go').toLowerCase() === 'go';
+
 interface BandwidthReconcileData {
   fileId: string;
   userId: string | null;
@@ -149,6 +157,14 @@ export class BandwidthInterceptor implements NestInterceptor {
     context: ExecutionContext,
     next: CallHandler,
   ): Promise<Observable<unknown>> {
+    // Disabled when the Go data plane owns bandwidth enforcement (default). The
+    // download/stream/S3 routes this decorates are served by Go, which enforces
+    // quota itself; running the check here too would double-count. Pass straight
+    // through. Flip BANDWIDTH_OWNER=nest to re-enable the legacy path below.
+    if (bandwidthOwnerIsGo()) {
+      return next.handle();
+    }
+
     const isCheckOnly =
       this.reflector.get<boolean>(
         'BANDWIDTH_CHECK_ONLY',

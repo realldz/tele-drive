@@ -101,6 +101,11 @@ services:
       # delete, ListParts). Set to "nest" to instantly roll back to the legacy
       # 307/direct path (also revert nginx routing).
       S3_DATA_PLANE_OWNER: "go"
+      # Go owns bandwidth enforcement (user/guest daily + per-file quota) via its
+      # QuotaResolver on the download/stream/S3 data plane. The NestJS
+      # BandwidthInterceptor short-circuits to pass-through on every route it
+      # decorates. Set to "nest" to restore in-process enforcement (legacy path).
+      BANDWIDTH_OWNER: "go"
       GO_TRANSFER_GRPC_URL: backend-transfer:50051
       GRPC_PORT: "50051"
       S3_DOMAIN: ${S3_DOMAIN:-s3.example.com}

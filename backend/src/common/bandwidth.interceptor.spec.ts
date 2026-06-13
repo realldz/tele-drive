@@ -55,6 +55,21 @@ type TestExecutionContext = {
 };
 
 describe('BandwidthInterceptor', () => {
+  // These tests exercise the legacy in-process enforcement path. The interceptor
+  // now short-circuits to pass-through when BANDWIDTH_OWNER=go (the default —
+  // Go data plane owns enforcement), so force the nest path here.
+  const originalOwner = process.env.BANDWIDTH_OWNER;
+  beforeAll(() => {
+    process.env.BANDWIDTH_OWNER = 'nest';
+  });
+  afterAll(() => {
+    if (originalOwner === undefined) {
+      delete process.env.BANDWIDTH_OWNER;
+    } else {
+      process.env.BANDWIDTH_OWNER = originalOwner;
+    }
+  });
+
   const createInterceptor = () => {
     const prisma: MockPrisma = {
       folder: {
