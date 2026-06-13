@@ -138,6 +138,18 @@ func (c *TelegramClient) Init(ctx context.Context, extraTokens []string) error {
 	return nil
 }
 
+func (c *TelegramClient) BotCount() int {
+	return len(c.botList)
+}
+
+func (c *TelegramClient) SemaphoreUsed() int {
+	return len(c.semaphore)
+}
+
+func (c *TelegramClient) SemaphoreCapacity() int {
+	return cap(c.semaphore)
+}
+
 func (c *TelegramClient) getMe(ctx context.Context, token string) (*GetMeResult, error) {
 	urlStr := fmt.Sprintf("%s/bot%s/getMe", c.apiRoot, token)
 	req, err := http.NewRequestWithContext(ctx, "GET", urlStr, nil)

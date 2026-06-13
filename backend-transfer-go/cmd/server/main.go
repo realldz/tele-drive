@@ -20,6 +20,7 @@ import (
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/queue"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/storage"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/telegram"
+	"github.com/realldz/tele-drive/backend-transfer-go/internal/zip"
 )
 
 func main() {
@@ -79,16 +80,30 @@ func main() {
 	}
 	defer coreClient.Close()
 
-	// Verify NestJS gRPC connection (non-blocking, log warning if unavailable)
-	go func() {
-		pingCtx, pingCancel := context.WithTimeout(ctx, 10*time.Second)
-		defer pingCancel()
-		if pong, err := coreClient.Ping(pingCtx); err != nil {
-			log.Warn("NestJS gRPC not reachable at startup (will retry later)", "error", err)
-		} else {
-			log.Info("NestJS gRPC connection verified", "timestamp", pong.Timestamp)
+	// Block until NestJS gRPC is ready (retry up to 60s)
+	{
+		ready := false
+		for attempt := 0; attempt < 30; attempt++ {
+			pingCtx, pingCancel := context.WithTimeout(ctx, 5*time.Second)
+			pong, pingErr := coreClient.Ping(pingCtx)
+			pingCancel()
+			if pingErr == nil {
+				log.Info("NestJS gRPC ready", "timestamp", pong.Timestamp)
+				ready = true
+				break
+			}
+			log.Warn("NestJS gRPC not ready, retrying...", "attempt", attempt+1, "error", pingErr)
+			select {
+			case <-ctx.Done():
+				break
+			case <-time.After(2 * time.Second):
+			}
 		}
-	}()
+		if !ready {
+			log.Error("NestJS gRPC unreachable after 30 attempts", "error", "startup_timeout")
+			panic("NestJS gRPC not reachable after 60s")
+		}
+	}
 
 	// 8. Initialize Batch Reporter and Worker Pool for uploads
 	batchReporter := queue.NewBatchReporter(coreClient, log, 1*time.Second, 10)
@@ -130,20 +145,25 @@ func main() {
 	}
 	log.Info("Initialized TelegramClient bot pool", "botCount", len(cfg.TelegramUploadBotTokens)+1)
 
-	// 10b. Start Redis subscriber for async delete events
-	redisSubscriber := queue.NewRedisSubscriber(rdb, tgClient, coreClient, log)
-
-	redisSubscriber.Start()
-	defer redisSubscriber.Stop()
-
-	// 11. Initialize Downloader for I/O streaming
+	// 10b. Initialize Downloader for I/O streaming
 	downloader := telegram.NewDownloader(
 		tgClient,
 		cryptoEngine,
 		tempStorage,
 		rdb,
 		log,
+		cfg.BandwidthCheckEnabled,
+		batchReporter,
 	)
+
+	// 10c. Initialize ZIP worker (Go-owned archive assembly)
+	zipWorker := zip.NewWorker(coreClient, downloader, tempStorage, log)
+
+	// 10d. Start Redis subscriber for async delete + ZIP events
+	redisSubscriber := queue.NewRedisSubscriber(rdb, tgClient, coreClient, zipWorker, log)
+
+	redisSubscriber.Start()
+	defer redisSubscriber.Stop()
 
 	// 11. Set up Echo Web Server
 	e := echo.New()
@@ -167,8 +187,10 @@ func main() {
 		cryptoEngine,
 		tempStorage,
 		downloader,
+		log,
 		cfg.JWTSecret,
 		cfg.MaxChunkSize,
+		cfg.MaxBufferFileSize,
 	)
 	fileHandler.RegisterRoutes(e)
 

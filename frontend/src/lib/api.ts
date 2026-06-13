@@ -217,11 +217,11 @@ export async function permanentDeleteFile(id: string) {
 }
 
 export async function abortUpload(fileId: string) {
-  return api.post(`/files/upload/${fileId}/abort`);
+  return api.post(`/transfer/upload/${fileId}/abort`);
 }
 
 export async function retryBuffer(id: string) {
-  return api.post(`/files/${id}/buffer-retry`);
+  return api.post(`/transfer/${id}/buffer-retry`);
 }
 
 // ── Signed Download URL ─────────────────────────────────────────────────────
@@ -238,13 +238,13 @@ export interface StreamCookieResponse {
 
 /** Lấy signed download URL cho user (auth required) */
 export async function requestDownloadToken(fileId: string): Promise<SignedDownloadUrl> {
-  const res = await api.post(`/files/${fileId}/download-token`);
+  const res = await api.post(`/transfer/${fileId}/download-token`);
   return res.data;
 }
 
 /** Lấy signed download URL cho shared file (public) */
 export async function requestShareDownloadToken(shareToken: string): Promise<SignedDownloadUrl> {
-  const res = await api.post(`/files/share/${shareToken}/download-token`);
+  const res = await api.post(`/transfer/share/${shareToken}/download-token`);
   return res.data;
 }
 
@@ -258,29 +258,29 @@ export async function requestShareFolderDownloadToken(shareToken: string, fileId
 
 /** Yêu cầu stream cookie (auth required) — backend set HttpOnly cookie */
 export async function requestStreamCookie(): Promise<StreamCookieResponse> {
-  const res = await api.post(`/files/stream-cookie`, {}, { withCredentials: true });
+  const res = await api.post(`/transfer/stream-cookie`, {}, { withCredentials: true });
   return res.data;
 }
 
 /** Yêu cầu guest stream cookie (public) */
 export async function requestGuestStreamCookie(): Promise<StreamCookieResponse> {
-  const res = await api.post(`/files/stream-cookie/guest`, {}, { withCredentials: true });
+  const res = await api.post(`/transfer/stream-cookie/guest`, {}, { withCredentials: true });
   return res.data;
 }
 
 /** Xoá stream cookie */
 export async function clearStreamCookie(): Promise<void> {
-  await api.delete(`/files/stream-cookie`, { withCredentials: true });
+  await api.delete(`/transfer/stream-cookie`, { withCredentials: true });
 }
 
 /** Build stream URL (cookie-based, no token in URL) */
 export function getStreamUrl(fileId: string): string {
-  return `${API_URL}/files/stream/${fileId}`;
+  return `${API_URL}/transfer/stream/${fileId}`;
 }
 
 /** Build share stream URL */
 export function getShareStreamUrl(shareToken: string): string {
-  return `${API_URL}/files/share/stream/${shareToken}`;
+  return `${API_URL}/transfer/share/stream/${shareToken}`;
 }
 
 /** Build share folder stream URL */
@@ -487,6 +487,49 @@ export interface SystemStats {
   zip: ZipStats;
 }
 
+export interface GoWorkerPoolStats {
+  size: number;
+  activeJobs: number;
+  pendingQueue: number;
+  delayedQueue: number;
+}
+
+export interface GoTelegramStats {
+  botCount: number;
+  semaphoreUsed: number;
+  semaphoreCapacity: number;
+}
+
+export interface GoStorageStats {
+  bufferUsedBytes: number;
+  bufferCapacityBytes: number;
+}
+
+export interface GoGrpcStats {
+  coreConnected: boolean;
+}
+
+export interface GoStats {
+  workerPool: GoWorkerPoolStats;
+  telegram: GoTelegramStats;
+  storage: GoStorageStats;
+  grpc: GoGrpcStats;
+}
+
+export interface NestJSStats {
+  uptime: number;
+  memoryRss: string;
+  memoryHeapUsed: string;
+  memoryHeapTotal: string;
+}
+
+export interface SystemStats {
+  buffer: BufferStats;
+  zip: ZipStats;
+  go: GoStats | null;
+  nestjs: NestJSStats;
+}
+
 export async function fetchSystemStats(): Promise<SystemStats> {
   const res = await api.get('/admin/system-stats');
   return res.data;
@@ -521,7 +564,7 @@ export async function deleteS3Credential(id: string) {
 // ── Upload Config ────────────────────────────────────────────────────────────
 
 export async function fetchUploadConfig() {
-  const res = await api.get(`/files/config`);
+  const res = await api.get(`/transfer/config`);
   return res.data;
 }
 
@@ -630,17 +673,17 @@ export interface DownloadZipStatus {
 }
 
 export async function createDownloadZip(fileIds?: string[], folderIds?: string[]) {
-  const res = await api.post('/files/download-zip', { fileIds, folderIds });
+  const res = await api.post('/transfer/download-zip', { fileIds, folderIds });
   return res.data as { jobId: string };
 }
 
 export async function createSharedDownloadZip(shareToken: string, fileIds?: string[], folderIds?: string[]) {
-  const res = await api.post('/files/download-zip/shared', { shareToken, fileIds, folderIds });
+  const res = await api.post('/transfer/download-zip/shared', { shareToken, fileIds, folderIds });
   return res.data as { jobId: string };
 }
 
 export async function getDownloadZipStatus(jobId: string): Promise<DownloadZipStatus> {
-  const res = await api.get(`/files/download-zip/${jobId}/status`);
+  const res = await api.get(`/transfer/download-zip/${jobId}/status`);
   return res.data;
 }
 

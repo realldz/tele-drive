@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"time"
 
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/crypto"
 	pb "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto"
@@ -16,8 +17,10 @@ import (
 
 type CoreClient interface {
 	ReportChunkResults(ctx context.Context, results []*pb.ChunkResult) (int32, error)
+	ReportFileComplete(ctx context.Context, req *pb.ReportFileCompleteRequest) error
 	GetFileMetadata(ctx context.Context, fileID string) (*pb.FileMetadata, error)
 	ReportUploadFailed(ctx context.Context, req *pb.ReportUploadFailedRequest) error
+	ReportBandwidthUsage(ctx context.Context, entries []*pb.BandwidthUsageEntry) error
 }
 
 type UploadWorker struct {
@@ -59,15 +62,25 @@ func (cw *countingWriter) Write(p []byte) (n int, err error) {
 }
 
 func (uw *UploadWorker) ProcessInternalChunk(ctx context.Context, job ChunkJob) error {
+	// Cleanup temp file on return (success or failure)
+	defer func() {
+		if job.TempStorageKey != "" {
+			_ = uw.tempStorage.Delete(job.TempStorageKey)
+		}
+	}()
+
 	// Fetch metadata via gRPC instead of DB
 	meta, err := uw.grpcClient.GetFileMetadata(ctx, job.FileID)
 	if err != nil {
 		return err
 	}
 
-	dek, err := uw.cryptoEngine.DecryptKey(meta.EncryptedKey)
-	if err != nil {
-		return err
+	var dek []byte
+	if meta.IsEncrypted {
+		dek, err = uw.cryptoEngine.DecryptKey(meta.EncryptedKey)
+		if err != nil {
+			return err
+		}
 	}
 
 	ivBytes, _ := uw.cryptoEngine.GenerateIv()
@@ -97,22 +110,41 @@ func (uw *UploadWorker) ProcessInternalChunk(ctx context.Context, job ChunkJob) 
 	}
 
 	md5Hex := hex.EncodeToString(hash.Sum(nil))
+	etag := fmt.Sprintf("\"%s\"", md5Hex)
 
-	// Report via gRPC batcher instead of DB transaction
-	uw.batchReporter.Report(&pb.ChunkResult{
+	if job.IsChunked {
+		// Chunk path: report via batcher (NestJS upserts FileChunk)
+		uw.batchReporter.Report(&pb.ChunkResult{
+			FileId:            job.FileID,
+			ChunkIndex:        int32(job.ChunkIndex),
+			TelegramFileId:    telegramFileID,
+			TelegramMessageId: int32(telegramMessageID),
+			BotId:             botID,
+			EncryptionIv:      hex.EncodeToString(ivBytes),
+			Size:              int32(counter.count),
+			Etag:              etag,
+			ChunkId:           job.ID,
+		})
+		uw.logger.Info("Chunk dispatched via gRPC", "chunkIndex", job.ChunkIndex, "fileId", job.FileID)
+		return nil
+	}
+
+	// Non-chunked file path: report record-level completion (NestJS completes FileRecord)
+	reportCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := uw.grpcClient.ReportFileComplete(reportCtx, &pb.ReportFileCompleteRequest{
 		FileId:            job.FileID,
-		ChunkIndex:        int32(job.ChunkIndex),
 		TelegramFileId:    telegramFileID,
 		TelegramMessageId: int32(telegramMessageID),
 		BotId:             botID,
 		EncryptionIv:      hex.EncodeToString(ivBytes),
-		Size:              int32(counter.count),
-		Etag:              fmt.Sprintf("\"%s\"", md5Hex),
-		ChunkId:           job.ID,
-	})
+		Size:              counter.count,
+		Etag:              etag,
+	}); err != nil {
+		return err
+	}
 
-	_ = uw.tempStorage.Delete(job.TempStorageKey)
-	uw.logger.Info("Chunk dispatched via gRPC", "chunkIndex", job.ChunkIndex, "fileId", job.FileID)
+	uw.logger.Info("File dispatched via gRPC", "fileId", job.FileID, "botId", botID)
 
 	return nil
 }

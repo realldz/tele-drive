@@ -16,21 +16,28 @@ type DeleteReporter interface {
 	ReportDeleteFailed(ctx context.Context, fileID string, reason string) error
 }
 
+// ZipProcessor handles CREATE_ZIP events by assembling a ZIP archive.
+type ZipProcessor interface {
+	Process(jobID string)
+}
+
 type RedisSubscriber struct {
 	redisClient    *redis.Client
 	telegramClient *telegram.TelegramClient
 	reporter       DeleteReporter
+	zipProcessor   ZipProcessor
 	logger         *slog.Logger
 	ctx            context.Context
 	cancel         context.CancelFunc
 }
 
-func NewRedisSubscriber(rdb *redis.Client, tg *telegram.TelegramClient, reporter DeleteReporter, logger *slog.Logger) *RedisSubscriber {
+func NewRedisSubscriber(rdb *redis.Client, tg *telegram.TelegramClient, reporter DeleteReporter, zipProcessor ZipProcessor, logger *slog.Logger) *RedisSubscriber {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &RedisSubscriber{
 		redisClient:    rdb,
 		telegramClient: tg,
 		reporter:       reporter,
+		zipProcessor:   zipProcessor,
 		logger:         logger,
 		ctx:            ctx,
 		cancel:         cancel,
@@ -80,9 +87,34 @@ func (s *RedisSubscriber) handleMessage(data string) {
 		return
 	}
 
-	if event.Type == "DELETE_FILE" {
+	switch event.Type {
+	case "DELETE_FILE":
 		s.handleDeleteFile(event.Payload)
+	case "CREATE_ZIP":
+		s.handleCreateZip(event.Payload)
 	}
+}
+
+type CreateZipPayload struct {
+	JobID string `json:"jobId"`
+}
+
+func (s *RedisSubscriber) handleCreateZip(payloadRaw json.RawMessage) {
+	if s.zipProcessor == nil {
+		s.logger.Warn("Received CREATE_ZIP event but no ZIP processor configured")
+		return
+	}
+	var payload CreateZipPayload
+	if err := json.Unmarshal(payloadRaw, &payload); err != nil {
+		s.logger.Error("Failed to parse CREATE_ZIP payload", "error", err)
+		return
+	}
+	if payload.JobID == "" {
+		s.logger.Error("CREATE_ZIP event missing jobId")
+		return
+	}
+	s.logger.Info("Processing CREATE_ZIP event", "jobId", payload.JobID)
+	s.zipProcessor.Process(payload.JobID)
 }
 
 func (s *RedisSubscriber) handleDeleteFile(payloadRaw json.RawMessage) {

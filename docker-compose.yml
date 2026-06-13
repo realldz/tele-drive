@@ -88,6 +88,15 @@ services:
       REDIS_URL: redis://redis:6379
       UPLOAD_BUFFER_DIR: /data/upload-buffer
       IS_TRANSFER_SERVICE: "false"
+      # Data-plane ownership: Go transfer service owns heavy I/O (upload dispatch + ZIP assembly).
+      # NestJS disables its BullMQ workers and hands off via gRPC / Redis events.
+      UPLOAD_DISPATCH_OWNER: "go"
+      ZIP_OWNER: "go"
+      # Go owns ALL binary ingestion (encrypt + Telegram upload). NestJS only does
+      # metadata/quota and disables every in-process direct-upload path.
+      UPLOAD_IO_OWNER: "go"
+      # Route S3 PutObject / UploadPart binary to Go via 307 redirect.
+      ENABLE_S3_PUT_REDIRECT: "true"
       GO_TRANSFER_GRPC_URL: backend-transfer:50051
       GRPC_PORT: "50051"
       S3_DOMAIN: ${S3_DOMAIN:-s3.example.com}
@@ -116,9 +125,15 @@ services:
       - ./backend/.env
     environment:
       PORT: 3001
+      # This service is the data plane: it owns upload dispatch + ZIP assembly
+      # (see UPLOAD_DISPATCH_OWNER / ZIP_OWNER on backend-core).
       TELEGRAM_API_ROOT: http://nginx:8088
       REDIS_URL: redis://redis:6379
       UPLOAD_BUFFER_DIR: /data/upload-buffer
+      # Files at or below this size are buffered to disk (enables retry +
+      # concurrency); larger files stream straight to Telegram (no RAM/disk).
+      # Keep in sync with NestJS MAX_BUFFER_FILE_SIZE.
+      MAX_BUFFER_FILE_SIZE: ${MAX_BUFFER_FILE_SIZE:-52428800}
       NESTJS_GRPC_URL: backend-core:50051
       GRPC_PORT: "50051"
     volumes:
@@ -128,6 +143,8 @@ services:
       telegram-bot-api:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      backend-core:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3001/files/config || exit 1"]

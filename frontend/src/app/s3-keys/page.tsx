@@ -122,6 +122,7 @@ export default function S3KeysPage() {
 [profile tele-drive]
 region = us-east-1
 s3 =
+  addressing_style = path
   max_concurrent_requests = ${maxConcurrent}
   multipart_threshold = ${recommendedChunkMB}MB
   multipart_chunksize = ${recommendedChunkMB}MB
@@ -431,6 +432,7 @@ aws --profile tele-drive \\
                     {`[profile tele-drive]
 region = us-east-1
 s3 =
+  addressing_style = path
   max_concurrent_requests = ${maxConcurrent}
   multipart_threshold = ${recommendedChunkMB}MB
   multipart_chunksize = ${recommendedChunkMB}MB

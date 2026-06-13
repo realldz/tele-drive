@@ -2,6 +2,8 @@ import { Controller, Logger } from '@nestjs/common';
 import { GrpcMethod } from '@nestjs/microservices';
 import { PrismaService } from '../prisma/prisma.service';
 import { FolderService } from '../folder/folder.service';
+import { BandwidthLockService } from '../common/bandwidth-lock.service';
+import { DownloadZipService } from '../download-zip/download-zip.service';
 import { randomUUID } from 'crypto';
 
 @Controller()
@@ -11,6 +13,8 @@ export class GrpcCoreController {
   constructor(
     private readonly prisma: PrismaService,
     private readonly folderService: FolderService,
+    private readonly bandwidthLockService: BandwidthLockService,
+    private readonly downloadZipService: DownloadZipService,
   ) {}
 
   @GrpcMethod('CoreService', 'Ping')
@@ -82,6 +86,62 @@ export class GrpcCoreController {
     return { accepted };
   }
 
+  @GrpcMethod('CoreService', 'ReportFileComplete')
+  async reportFileComplete(data: {
+    fileId: string;
+    telegramFileId: string;
+    telegramMessageId: number;
+    botId: number;
+    encryptionIv: string;
+    size: number;
+    etag: string;
+  }) {
+    const record = await this.prisma.fileRecord.findUnique({
+      where: { id: data.fileId },
+    });
+
+    if (!record) {
+      this.logger.warn(
+        `ReportFileComplete: file record ${data.fileId} not found`,
+      );
+      return {};
+    }
+
+    if (record.status === 'complete') {
+      this.logger.debug(
+        `ReportFileComplete: file ${data.fileId} already complete, skipping`,
+      );
+      return {};
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.fileRecord.update({
+        where: { id: data.fileId },
+        data: {
+          status: 'complete',
+          telegramFileId: data.telegramFileId,
+          telegramMessageId: data.telegramMessageId,
+          botId: BigInt(data.botId),
+          isEncrypted: true,
+          encryptionAlgo: 'aes-256-ctr',
+          encryptionIv: data.encryptionIv,
+          etag: data.etag || record.etag,
+          tempStorageKey: null,
+        },
+      });
+
+      await tx.user.update({
+        where: { id: record.userId },
+        data: { usedSpace: { increment: BigInt(data.size) } },
+      });
+    });
+
+    this.logger.log(
+      `File dispatched by Go transfer service: "${record.filename}" (${data.size} bytes, fileId: ${data.fileId})`,
+    );
+    return {};
+  }
+
   @GrpcMethod('CoreService', 'GetFileMetadata')
   async getFileMetadata(data: { fileId: string }) {
     const isUuid =
@@ -118,6 +178,8 @@ export class GrpcCoreController {
 
       status: record.status,
       visibility: record.visibility,
+
+      tempStorageKey: record.tempStorageKey || '',
 
       chunks: record.chunks.map((c) => ({
         chunkIndex: c.chunkIndex,
@@ -178,6 +240,34 @@ export class GrpcCoreController {
     return {};
   }
 
+  @GrpcMethod('CoreService', 'ReportBandwidthUsage')
+  async reportBandwidthUsage(data: {
+    entries: Array<{
+      userId: string;
+      fileId: string;
+      actualBytes: number;
+      countDownload: boolean;
+    }>;
+  }) {
+    if (!data.entries || data.entries.length === 0) {
+      return {};
+    }
+
+    const entries = data.entries.map((e) => ({
+      userId: e.userId ?? '',
+      fileId: e.fileId ?? '',
+      actualBytes: BigInt(e.actualBytes ?? 0),
+      countDownload: e.countDownload ?? false,
+    }));
+
+    const { accepted } =
+      await this.bandwidthLockService.reconcileFromReport(entries);
+    this.logger.debug(
+      `Reconciled ${accepted}/${entries.length} bandwidth reports from Go`,
+    );
+    return {};
+  }
+
   @GrpcMethod('CoreService', 'ReportDeleteSuccess')
   async reportDeleteSuccess(data: { fileId: string }) {
     try {
@@ -226,13 +316,54 @@ export class GrpcCoreController {
     return {};
   }
 
+  @GrpcMethod('CoreService', 'CollectZipEntries')
+  async collectZipEntries(data: { jobId: string }) {
+    const entries = await this.downloadZipService.collectEntries(data.jobId);
+    return {
+      entries: entries.map((e) => ({
+        fileRecordId: e.fileRecordId,
+        relativePath: e.relativePath,
+        size: Number(e.size),
+      })),
+    };
+  }
+
+  @GrpcMethod('CoreService', 'ReportZipProgress')
+  async reportZipProgress(data: { jobId: string; processedFiles: number }) {
+    await this.downloadZipService.reportProgress(
+      data.jobId,
+      data.processedFiles ?? 0,
+    );
+    return {};
+  }
+
   @GrpcMethod('CoreService', 'ReportZipReady')
-  reportZipReady() {
+  async reportZipReady(data: {
+    jobId: string;
+    parts: Array<{ key: string; size: number; index: number }>;
+    totalSize: number;
+    streaming: boolean;
+  }) {
+    await this.downloadZipService.markReady(
+      data.jobId,
+      data.parts || [],
+      data.totalSize ?? 0,
+    );
+    this.logger.log(
+      `ZIP ready (assembled by Go): jobId=${data.jobId}, parts=${(data.parts || []).length}`,
+    );
     return {};
   }
 
   @GrpcMethod('CoreService', 'ReportZipFailed')
-  reportZipFailed() {
+  async reportZipFailed(data: { jobId: string; reason: string }) {
+    await this.downloadZipService.markFailed(
+      data.jobId,
+      data.reason || 'unknown',
+    );
+    this.logger.warn(
+      `ZIP failed (reported by Go): jobId=${data.jobId}, reason=${data.reason}`,
+    );
     return {};
   }
 

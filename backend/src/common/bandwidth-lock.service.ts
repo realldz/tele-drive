@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { CacheService } from '../cache/cache.service';
 
 interface LockResult {
   requiresReset: boolean;
@@ -15,7 +16,10 @@ interface RefundData {
 export class BandwidthLockService {
   private readonly logger = new Logger(BandwidthLockService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly cacheService: CacheService,
+  ) {}
 
   /** Pre-check + LOCK bandwidth. Trả về `requiresReset` để reconcile dùng. */
   async lockBandwidth(
@@ -64,6 +68,16 @@ export class BandwidthLockService {
         data: { dailyBandwidthUsed: { increment: lockSize } },
       });
     }
+
+    // Sync to Redis for Go transfer service to check bandwidth
+    this.cacheService
+      .syncUserBandwidth(userId, {
+        dailyBandwidthUsed: requiresReset ? lockSize : currentUsed + lockSize,
+        dailyBandwidthLimit: limit,
+        lastBandwidthReset: requiresReset ? now : user.lastBandwidthReset,
+      })
+      .catch(() => {});
+
     return { requiresReset };
   }
 
@@ -192,6 +206,41 @@ export class BandwidthLockService {
           : {}),
       },
     });
+  }
+
+  async reconcileFromReport(
+    entries: Array<{
+      userId: string;
+      fileId: string;
+      actualBytes: bigint;
+      countDownload: boolean;
+    }>,
+  ): Promise<{ accepted: number }> {
+    let accepted = 0;
+    for (const entry of entries) {
+      try {
+        if (entry.actualBytes > 0n) {
+          await this.prisma.user.updateMany({
+            where: { id: entry.userId },
+            data: { dailyBandwidthUsed: { increment: entry.actualBytes } },
+          });
+        }
+        await this.prisma.fileRecord.updateMany({
+          where: { id: entry.fileId },
+          data: {
+            bandwidthUsed24h: { increment: entry.actualBytes },
+            ...(entry.countDownload ? { downloads24h: { increment: 1 } } : {}),
+          },
+        });
+        accepted++;
+        this.cacheService.invalidateUserQuota(entry.userId).catch(() => {});
+      } catch {
+        this.logger.warn(
+          `Failed to reconcile bandwidth for file ${entry.fileId} user ${entry.userId}`,
+        );
+      }
+    }
+    return { accepted };
   }
 
   private throwLimitExceeded(code: string, lastReset: Date): never {

@@ -21,6 +21,142 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+type EnqueueBufferedUploadRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	FileId         string                 `protobuf:"bytes,1,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
+	TempStorageKey string                 `protobuf:"bytes,2,opt,name=temp_storage_key,json=tempStorageKey,proto3" json:"temp_storage_key,omitempty"`
+	UserId         string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	IsChunk        bool                   `protobuf:"varint,4,opt,name=is_chunk,json=isChunk,proto3" json:"is_chunk,omitempty"`
+	ChunkIndex     int32                  `protobuf:"varint,5,opt,name=chunk_index,json=chunkIndex,proto3" json:"chunk_index,omitempty"`
+	Size           int64                  `protobuf:"varint,6,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *EnqueueBufferedUploadRequest) Reset() {
+	*x = EnqueueBufferedUploadRequest{}
+	mi := &file_transfer_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnqueueBufferedUploadRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnqueueBufferedUploadRequest) ProtoMessage() {}
+
+func (x *EnqueueBufferedUploadRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_transfer_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnqueueBufferedUploadRequest.ProtoReflect.Descriptor instead.
+func (*EnqueueBufferedUploadRequest) Descriptor() ([]byte, []int) {
+	return file_transfer_proto_rawDescGZIP(), []int{0}
+}
+
+func (x *EnqueueBufferedUploadRequest) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
+func (x *EnqueueBufferedUploadRequest) GetTempStorageKey() string {
+	if x != nil {
+		return x.TempStorageKey
+	}
+	return ""
+}
+
+func (x *EnqueueBufferedUploadRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *EnqueueBufferedUploadRequest) GetIsChunk() bool {
+	if x != nil {
+		return x.IsChunk
+	}
+	return false
+}
+
+func (x *EnqueueBufferedUploadRequest) GetChunkIndex() int32 {
+	if x != nil {
+		return x.ChunkIndex
+	}
+	return 0
+}
+
+func (x *EnqueueBufferedUploadRequest) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+type EnqueueBufferedUploadResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Accepted      bool                   `protobuf:"varint,1,opt,name=accepted,proto3" json:"accepted,omitempty"`
+	Reason        string                 `protobuf:"bytes,2,opt,name=reason,proto3" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EnqueueBufferedUploadResponse) Reset() {
+	*x = EnqueueBufferedUploadResponse{}
+	mi := &file_transfer_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EnqueueBufferedUploadResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EnqueueBufferedUploadResponse) ProtoMessage() {}
+
+func (x *EnqueueBufferedUploadResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_transfer_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EnqueueBufferedUploadResponse.ProtoReflect.Descriptor instead.
+func (*EnqueueBufferedUploadResponse) Descriptor() ([]byte, []int) {
+	return file_transfer_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *EnqueueBufferedUploadResponse) GetAccepted() bool {
+	if x != nil {
+		return x.Accepted
+	}
+	return false
+}
+
+func (x *EnqueueBufferedUploadResponse) GetReason() string {
+	if x != nil {
+		return x.Reason
+	}
+	return ""
+}
+
 type TransferPingRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	unknownFields protoimpl.UnknownFields
@@ -29,7 +165,7 @@ type TransferPingRequest struct {
 
 func (x *TransferPingRequest) Reset() {
 	*x = TransferPingRequest{}
-	mi := &file_transfer_proto_msgTypes[0]
+	mi := &file_transfer_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -41,7 +177,7 @@ func (x *TransferPingRequest) String() string {
 func (*TransferPingRequest) ProtoMessage() {}
 
 func (x *TransferPingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_transfer_proto_msgTypes[0]
+	mi := &file_transfer_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -54,7 +190,7 @@ func (x *TransferPingRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferPingRequest.ProtoReflect.Descriptor instead.
 func (*TransferPingRequest) Descriptor() ([]byte, []int) {
-	return file_transfer_proto_rawDescGZIP(), []int{0}
+	return file_transfer_proto_rawDescGZIP(), []int{2}
 }
 
 type TransferPingResponse struct {
@@ -66,7 +202,7 @@ type TransferPingResponse struct {
 
 func (x *TransferPingResponse) Reset() {
 	*x = TransferPingResponse{}
-	mi := &file_transfer_proto_msgTypes[1]
+	mi := &file_transfer_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -78,7 +214,7 @@ func (x *TransferPingResponse) String() string {
 func (*TransferPingResponse) ProtoMessage() {}
 
 func (x *TransferPingResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_transfer_proto_msgTypes[1]
+	mi := &file_transfer_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -91,7 +227,7 @@ func (x *TransferPingResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TransferPingResponse.ProtoReflect.Descriptor instead.
 func (*TransferPingResponse) Descriptor() ([]byte, []int) {
-	return file_transfer_proto_rawDescGZIP(), []int{1}
+	return file_transfer_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *TransferPingResponse) GetTimestamp() int64 {
@@ -110,7 +246,7 @@ type FlushAndConfirmRequest struct {
 
 func (x *FlushAndConfirmRequest) Reset() {
 	*x = FlushAndConfirmRequest{}
-	mi := &file_transfer_proto_msgTypes[2]
+	mi := &file_transfer_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -122,7 +258,7 @@ func (x *FlushAndConfirmRequest) String() string {
 func (*FlushAndConfirmRequest) ProtoMessage() {}
 
 func (x *FlushAndConfirmRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_transfer_proto_msgTypes[2]
+	mi := &file_transfer_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -135,7 +271,7 @@ func (x *FlushAndConfirmRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlushAndConfirmRequest.ProtoReflect.Descriptor instead.
 func (*FlushAndConfirmRequest) Descriptor() ([]byte, []int) {
-	return file_transfer_proto_rawDescGZIP(), []int{2}
+	return file_transfer_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *FlushAndConfirmRequest) GetFileId() string {
@@ -160,7 +296,7 @@ type ChunkConfirmation struct {
 
 func (x *ChunkConfirmation) Reset() {
 	*x = ChunkConfirmation{}
-	mi := &file_transfer_proto_msgTypes[3]
+	mi := &file_transfer_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -172,7 +308,7 @@ func (x *ChunkConfirmation) String() string {
 func (*ChunkConfirmation) ProtoMessage() {}
 
 func (x *ChunkConfirmation) ProtoReflect() protoreflect.Message {
-	mi := &file_transfer_proto_msgTypes[3]
+	mi := &file_transfer_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -185,7 +321,7 @@ func (x *ChunkConfirmation) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChunkConfirmation.ProtoReflect.Descriptor instead.
 func (*ChunkConfirmation) Descriptor() ([]byte, []int) {
-	return file_transfer_proto_rawDescGZIP(), []int{3}
+	return file_transfer_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ChunkConfirmation) GetChunkIndex() int32 {
@@ -249,7 +385,7 @@ type FlushAndConfirmResponse struct {
 
 func (x *FlushAndConfirmResponse) Reset() {
 	*x = FlushAndConfirmResponse{}
-	mi := &file_transfer_proto_msgTypes[4]
+	mi := &file_transfer_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -261,7 +397,7 @@ func (x *FlushAndConfirmResponse) String() string {
 func (*FlushAndConfirmResponse) ProtoMessage() {}
 
 func (x *FlushAndConfirmResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_transfer_proto_msgTypes[4]
+	mi := &file_transfer_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -274,7 +410,7 @@ func (x *FlushAndConfirmResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FlushAndConfirmResponse.ProtoReflect.Descriptor instead.
 func (*FlushAndConfirmResponse) Descriptor() ([]byte, []int) {
-	return file_transfer_proto_rawDescGZIP(), []int{4}
+	return file_transfer_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *FlushAndConfirmResponse) GetAllComplete() bool {
@@ -309,7 +445,18 @@ var File_transfer_proto protoreflect.FileDescriptor
 
 const file_transfer_proto_rawDesc = "" +
 	"\n" +
-	"\x0etransfer.proto\x12\btransfer\"\x15\n" +
+	"\x0etransfer.proto\x12\btransfer\"\xca\x01\n" +
+	"\x1cEnqueueBufferedUploadRequest\x12\x17\n" +
+	"\afile_id\x18\x01 \x01(\tR\x06fileId\x12(\n" +
+	"\x10temp_storage_key\x18\x02 \x01(\tR\x0etempStorageKey\x12\x17\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\x12\x19\n" +
+	"\bis_chunk\x18\x04 \x01(\bR\aisChunk\x12\x1f\n" +
+	"\vchunk_index\x18\x05 \x01(\x05R\n" +
+	"chunkIndex\x12\x12\n" +
+	"\x04size\x18\x06 \x01(\x03R\x04size\"S\n" +
+	"\x1dEnqueueBufferedUploadResponse\x12\x1a\n" +
+	"\baccepted\x18\x01 \x01(\bR\baccepted\x12\x16\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"\x15\n" +
 	"\x13TransferPingRequest\"4\n" +
 	"\x14TransferPingResponse\x12\x1c\n" +
 	"\ttimestamp\x18\x01 \x01(\x03R\ttimestamp\"1\n" +
@@ -328,9 +475,10 @@ const file_transfer_proto_rawDesc = "" +
 	"\fall_complete\x18\x01 \x01(\bR\vallComplete\x12!\n" +
 	"\ftotal_chunks\x18\x02 \x01(\x05R\vtotalChunks\x12)\n" +
 	"\x10completed_chunks\x18\x03 \x01(\x05R\x0fcompletedChunks\x123\n" +
-	"\x06chunks\x18\x04 \x03(\v2\x1b.transfer.ChunkConfirmationR\x06chunks2\xb0\x01\n" +
+	"\x06chunks\x18\x04 \x03(\v2\x1b.transfer.ChunkConfirmationR\x06chunks2\x9a\x02\n" +
 	"\x0fTransferService\x12V\n" +
-	"\x0fFlushAndConfirm\x12 .transfer.FlushAndConfirmRequest\x1a!.transfer.FlushAndConfirmResponse\x12E\n" +
+	"\x0fFlushAndConfirm\x12 .transfer.FlushAndConfirmRequest\x1a!.transfer.FlushAndConfirmResponse\x12h\n" +
+	"\x15EnqueueBufferedUpload\x12&.transfer.EnqueueBufferedUploadRequest\x1a'.transfer.EnqueueBufferedUploadResponse\x12E\n" +
 	"\x04Ping\x12\x1d.transfer.TransferPingRequest\x1a\x1e.transfer.TransferPingResponseBGZEgithub.com/realldz/tele-drive/backend-transfer-go/internal/grpc/protob\x06proto3"
 
 var (
@@ -345,22 +493,26 @@ func file_transfer_proto_rawDescGZIP() []byte {
 	return file_transfer_proto_rawDescData
 }
 
-var file_transfer_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_transfer_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
 var file_transfer_proto_goTypes = []any{
-	(*TransferPingRequest)(nil),     // 0: transfer.TransferPingRequest
-	(*TransferPingResponse)(nil),    // 1: transfer.TransferPingResponse
-	(*FlushAndConfirmRequest)(nil),  // 2: transfer.FlushAndConfirmRequest
-	(*ChunkConfirmation)(nil),       // 3: transfer.ChunkConfirmation
-	(*FlushAndConfirmResponse)(nil), // 4: transfer.FlushAndConfirmResponse
+	(*EnqueueBufferedUploadRequest)(nil),  // 0: transfer.EnqueueBufferedUploadRequest
+	(*EnqueueBufferedUploadResponse)(nil), // 1: transfer.EnqueueBufferedUploadResponse
+	(*TransferPingRequest)(nil),           // 2: transfer.TransferPingRequest
+	(*TransferPingResponse)(nil),          // 3: transfer.TransferPingResponse
+	(*FlushAndConfirmRequest)(nil),        // 4: transfer.FlushAndConfirmRequest
+	(*ChunkConfirmation)(nil),             // 5: transfer.ChunkConfirmation
+	(*FlushAndConfirmResponse)(nil),       // 6: transfer.FlushAndConfirmResponse
 }
 var file_transfer_proto_depIdxs = []int32{
-	3, // 0: transfer.FlushAndConfirmResponse.chunks:type_name -> transfer.ChunkConfirmation
-	2, // 1: transfer.TransferService.FlushAndConfirm:input_type -> transfer.FlushAndConfirmRequest
-	0, // 2: transfer.TransferService.Ping:input_type -> transfer.TransferPingRequest
-	4, // 3: transfer.TransferService.FlushAndConfirm:output_type -> transfer.FlushAndConfirmResponse
-	1, // 4: transfer.TransferService.Ping:output_type -> transfer.TransferPingResponse
-	3, // [3:5] is the sub-list for method output_type
-	1, // [1:3] is the sub-list for method input_type
+	5, // 0: transfer.FlushAndConfirmResponse.chunks:type_name -> transfer.ChunkConfirmation
+	4, // 1: transfer.TransferService.FlushAndConfirm:input_type -> transfer.FlushAndConfirmRequest
+	0, // 2: transfer.TransferService.EnqueueBufferedUpload:input_type -> transfer.EnqueueBufferedUploadRequest
+	2, // 3: transfer.TransferService.Ping:input_type -> transfer.TransferPingRequest
+	6, // 4: transfer.TransferService.FlushAndConfirm:output_type -> transfer.FlushAndConfirmResponse
+	1, // 5: transfer.TransferService.EnqueueBufferedUpload:output_type -> transfer.EnqueueBufferedUploadResponse
+	3, // 6: transfer.TransferService.Ping:output_type -> transfer.TransferPingResponse
+	4, // [4:7] is the sub-list for method output_type
+	1, // [1:4] is the sub-list for method input_type
 	1, // [1:1] is the sub-list for extension type_name
 	1, // [1:1] is the sub-list for extension extendee
 	0, // [0:1] is the sub-list for field type_name
@@ -377,7 +529,7 @@ func file_transfer_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_transfer_proto_rawDesc), len(file_transfer_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   5,
+			NumMessages:   7,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

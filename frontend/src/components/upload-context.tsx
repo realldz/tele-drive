@@ -87,40 +87,14 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     setQueue(prev => prev.map(item => item.id === id ? { ...item, ...updates } : item));
   }, []);
 
-  // Upload a single small file
-  const uploadSimple = useCallback(async (item: QueueItem) => {
-    const abortController = new AbortController();
-    abortControllersRef.current.set(item.id, [abortController]);
-
-    const formData = new FormData();
-    formData.append('file', item.file);
-    if (item.targetFolderId) formData.append('folderId', item.targetFolderId);
-
-    const url = item.conflictAction
-      ? `/files/upload?onConflict=${item.conflictAction}`
-      : `/files/upload`;
-
-    await api.post(url, formData, {
-      headers: { 'Content-Type': 'multipart/form-data' },
-      signal: abortController.signal,
-      onUploadProgress: (progressEvent) => {
-        const uploaded = progressEvent.loaded || 0;
-        updateItem(item.id, {
-          uploadedBytes: uploaded,
-          progress: Math.round((uploaded / item.totalBytes) * 100),
-        });
-      },
-    });
-  }, [updateItem]);
-
   // Upload a large file in chunks
   const uploadChunked = useCallback(async (item: QueueItem) => {
     const totalChunks = Math.ceil(item.file.size / maxChunkSize);
     updateItem(item.id, { totalChunks });
 
     const initUrl = item.conflictAction
-      ? `/files/upload/init?onConflict=${item.conflictAction}`
-      : `/files/upload/init`;
+      ? `/transfer/upload/init?onConflict=${item.conflictAction}`
+      : `/transfer/upload/init`;
 
     const initRes = await api.post(initUrl, {
       filename: item.file.name,
@@ -164,7 +138,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       const abortController = new AbortController();
       controllers.push(abortController);
 
-      const MAX_429_RETRIES = 5;
+      const MAX_RETRIES = 5;
       for (let attempt = 0; ; attempt++) {
         try {
           await api.post(
@@ -182,17 +156,16 @@ export function UploadProvider({ children }: { children: ReactNode }) {
           );
           break; // success
         } catch (err: unknown) {
-          if (
-            axios.isAxiosError(err) &&
-            err.response?.status === 429 &&
-            attempt < MAX_429_RETRIES &&
-            !abortController.signal.aborted
-          ) {
-            const retryAfter = err.response?.data?.retryAfter || 5;
-            chunkProgress[chunkIndex] = 0;
-            updateProgress();
-            await new Promise(r => setTimeout(r, retryAfter * 1000));
-            continue;
+          if (axios.isAxiosError(err) && !abortController.signal.aborted) {
+            const status = err.response?.status;
+            const retryable = status === 429 || (status === 503 && err.response?.data?.error === 'upload_buffer_full');
+            if (retryable && attempt < MAX_RETRIES) {
+              const retryAfter = err.response?.data?.retryAfter || (status === 429 ? 5 : 10);
+              chunkProgress[chunkIndex] = 0;
+              updateProgress();
+              await new Promise(r => setTimeout(r, retryAfter * 1000));
+              continue;
+            }
           }
           throw err;
         }
@@ -242,7 +215,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       throw new Error('Upload cancelled');
     }
 
-    await api.post(`/files/upload/${serverFileId}/complete`);
+    await api.post(`/transfer/upload/${serverFileId}/complete`);
   }, [maxChunkSize, concurrency, updateItem]);
 
   // Process queue — pick next pending item and upload
@@ -254,11 +227,10 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       updateItem(item.id, { status: 'uploading' });
 
       try {
-        if (item.file.size <= maxChunkSize) {
-          await uploadSimple(item);
-        } else {
-          await uploadChunked(item);
-        }
+        // All uploads go through the chunked flow (init → chunk → complete) so
+        // binary data is ingested by the Go transfer service, never NestJS.
+        // Small files simply resolve to a single chunk (totalChunks = 1).
+        await uploadChunked(item);
 
         const currentItem = queueRef.current.find(q => q.id === item.id);
         if (currentItem && currentItem.status !== 'cancelled') {
@@ -313,8 +285,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     } finally {
       processingRef.current = false;
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [maxChunkSize, uploadSimple, uploadChunked, updateItem, refreshQuota]);
+  }, [maxChunkSize, uploadChunked, updateItem, refreshQuota]);
 
   // Auto-process queue when items are added
   useEffect(() => {

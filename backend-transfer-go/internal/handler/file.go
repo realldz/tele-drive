@@ -4,34 +4,37 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/labstack/echo/v4"
-	"github.com/redis/go-redis/v9"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/crypto"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/grpc"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/middleware"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/queue"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/storage"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/telegram"
+	"github.com/redis/go-redis/v9"
 )
 
 type FileHandler struct {
-	grpcClient     *grpc.CoreClient
-	redisClient    *redis.Client
-	workerPool     *queue.WorkerPool
-	telegramClient *telegram.TelegramClient
-	cryptoEngine   *crypto.CryptoEngine
-	tempStorage    *storage.TempStorage
-	downloader     *telegram.Downloader
-	jwtSecret      string
-	maxChunkSize   int64
+	grpcClient        *grpc.CoreClient
+	redisClient       *redis.Client
+	workerPool        *queue.WorkerPool
+	telegramClient    *telegram.TelegramClient
+	cryptoEngine      *crypto.CryptoEngine
+	tempStorage       *storage.TempStorage
+	downloader        *telegram.Downloader
+	logger            *slog.Logger
+	jwtSecret         string
+	maxChunkSize      int64
+	maxBufferFileSize int64
 
-	mu             sync.Mutex
-	activeUploads  map[string]int
+	mu            sync.Mutex
+	activeUploads map[string]int
 }
 
 func NewFileHandler(
@@ -42,20 +45,24 @@ func NewFileHandler(
 	cryptoEngine *crypto.CryptoEngine,
 	tempStorage *storage.TempStorage,
 	downloader *telegram.Downloader,
+	logger *slog.Logger,
 	jwtSecret string,
 	maxChunkSize int64,
+	maxBufferFileSize int64,
 ) *FileHandler {
 	return &FileHandler{
-		grpcClient:     grpcClient,
-		redisClient:    redisClient,
-		workerPool:     workerPool,
-		telegramClient: telegramClient,
-		cryptoEngine:   cryptoEngine,
-		tempStorage:    tempStorage,
-		downloader:     downloader,
-		jwtSecret:      jwtSecret,
-		maxChunkSize:   maxChunkSize,
-		activeUploads:  make(map[string]int),
+		grpcClient:        grpcClient,
+		redisClient:       redisClient,
+		workerPool:        workerPool,
+		telegramClient:    telegramClient,
+		cryptoEngine:      cryptoEngine,
+		tempStorage:       tempStorage,
+		downloader:        downloader,
+		logger:            logger,
+		jwtSecret:         jwtSecret,
+		maxChunkSize:      maxChunkSize,
+		maxBufferFileSize: maxBufferFileSize,
+		activeUploads:     make(map[string]int),
 	}
 }
 
@@ -75,6 +82,7 @@ func (h *FileHandler) RegisterRoutes(e *echo.Echo) {
 
 	// Authenticated endpoints
 	files.GET("/buffer-status", h.GetBufferStatus, authMiddleware)
+	files.GET("/stats", h.GetStats, authMiddleware)
 	files.POST("/upload/:fileId", h.Upload, authMiddleware)
 	files.POST("/upload/:fileId/chunk/:index", h.UploadChunk, authMiddleware)
 	files.POST("/upload/:fileId/abort", h.AbortUpload, authMiddleware)
@@ -183,6 +191,32 @@ func (h *FileHandler) GetBufferStatus(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, results)
+}
+
+func (h *FileHandler) GetStats(c echo.Context) error {
+	usedBytes, _ := h.tempStorage.GetUsedBytes()
+	stats := map[string]interface{}{
+		"workerPool": map[string]interface{}{
+			"size":         h.workerPool.Size(),
+			"activeJobs":   h.workerPool.ActiveCount(),
+			"pendingQueue": h.workerPool.PendingCount(),
+			"delayedQueue": h.workerPool.DelayedCount(),
+		},
+		"telegram": map[string]interface{}{
+			"botCount":          h.telegramClient.BotCount(),
+			"semaphoreUsed":     h.telegramClient.SemaphoreUsed(),
+			"semaphoreCapacity": h.telegramClient.SemaphoreCapacity(),
+		},
+		"storage": map[string]interface{}{
+			"bufferUsedBytes":     usedBytes,
+			"bufferCapacityBytes": 2048 * 1024 * 1024,
+		},
+		"grpc": map[string]interface{}{
+			"coreConnected": h.grpcClient.IsConnected(),
+		},
+	}
+
+	return c.JSON(http.StatusOK, stats)
 }
 
 // ---------------------------------------------------------------------------

@@ -25,6 +25,7 @@ func (h *FileHandler) GetCachedMetadata(ctx context.Context, fileID string) (*pb
 	// Cache miss -> gRPC
 	meta, err := h.grpcClient.GetFileMetadata(ctx, fileID)
 	if err != nil {
+		h.logger.Error("gRPC GetFileMetadata failed", "fileId", fileID, "error", err)
 		return nil, err
 	}
 

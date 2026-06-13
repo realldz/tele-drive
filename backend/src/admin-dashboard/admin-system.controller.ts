@@ -5,6 +5,7 @@ import {
   Delete,
   UseGuards,
   Inject,
+  Logger,
 } from '@nestjs/common';
 import { AdminGuard } from '../auth/admin.guard';
 import { PrismaService } from '../prisma/prisma.service';
@@ -12,17 +13,20 @@ import { TEMP_STORAGE } from '../common/temp-storage';
 import type { TempStorage } from '../common/temp-storage';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
+import { HttpService } from '@nestjs/axios';
 import * as fs from 'fs';
 import * as path from 'path';
 
 @UseGuards(AdminGuard)
 @Controller('admin')
 export class AdminSystemController {
+  private readonly logger = new Logger(AdminSystemController.name);
   private readonly zipBaseDir: string;
   constructor(
     private readonly prisma: PrismaService,
     @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
     @InjectQueue('upload-dispatch') private readonly uploadQueue: Queue,
+    private readonly httpService: HttpService,
   ) {
     this.zipBaseDir = path.join(
       process.env.UPLOAD_BUFFER_DIR || './.upload-buffer',
@@ -82,12 +86,38 @@ export class AdminSystemController {
       ? Date.now() - bufferedFiles[0].createdAt.getTime()
       : 0;
 
-    const jobCounts = await this.uploadQueue.getJobCounts(
-      'waiting',
-      'active',
-      'delayed',
-      'failed',
-    );
+    let jobCounts: Record<string, number> = {};
+    try {
+      jobCounts = await this.uploadQueue.getJobCounts(
+        'waiting',
+        'active',
+        'delayed',
+        'failed',
+      );
+    } catch (err) {
+      this.logger.warn('Failed to get BullMQ job counts, returning empty', err);
+    }
+
+    // Fetch Go transfer service stats
+    let goStats: Record<string, unknown> | null = null;
+    try {
+      const goRes = await this.httpService.axiosRef.get(
+        'http://backend-transfer:3001/v1/transfer/stats',
+        { timeout: 5000 },
+      );
+      goStats = goRes.data;
+    } catch {
+      this.logger.warn('Failed to fetch Go transfer service stats');
+    }
+
+    // NestJS process metrics
+    const memUsage = process.memoryUsage();
+    const nestjsStats = {
+      uptime: Math.floor(process.uptime()),
+      memoryRss: memUsage.rss.toString(),
+      memoryHeapUsed: memUsage.heapUsed.toString(),
+      memoryHeapTotal: memUsage.heapTotal.toString(),
+    };
 
     return {
       buffer: {
@@ -103,6 +133,8 @@ export class AdminSystemController {
         failedCount: zipFailedCount,
         tempStorageUsedBytes: zipTempStorageUsed.toString(),
       },
+      go: goStats,
+      nestjs: nestjsStats,
     };
   }
 

@@ -19,6 +19,14 @@ interface TransferService {
     }>;
   }>;
   ping(data: Record<string, never>): Observable<{ timestamp: number }>;
+  enqueueBufferedUpload(data: {
+    fileId: string;
+    tempStorageKey: string;
+    userId: string;
+    isChunk: boolean;
+    chunkIndex: number;
+    size: number;
+  }): Observable<{ accepted: boolean; reason: string }>;
 }
 
 @Injectable()
@@ -53,5 +61,16 @@ export class GrpcTransferClient implements OnModuleInit {
 
   async flushAndConfirm(fileId: string) {
     return lastValueFrom(this.transferService.flushAndConfirm({ fileId }));
+  }
+
+  async enqueueBufferedUpload(data: {
+    fileId: string;
+    tempStorageKey: string;
+    userId: string;
+    isChunk: boolean;
+    chunkIndex: number;
+    size: number;
+  }): Promise<{ accepted: boolean; reason: string }> {
+    return lastValueFrom(this.transferService.enqueueBufferedUpload(data));
   }
 }

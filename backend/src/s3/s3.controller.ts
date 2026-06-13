@@ -11,6 +11,7 @@ import {
   Res,
   UseGuards,
   HttpStatus,
+  VERSION_NEUTRAL,
 } from '@nestjs/common';
 import { S3AuthGuard } from './s3-auth.guard';
 import { S3Service } from './s3.service';
@@ -116,7 +117,7 @@ function isRetryableUpstreamError(err: unknown): boolean {
  */
 @Public()
 @SkipThrottle()
-@Controller('s3')
+@Controller({ path: 's3', version: VERSION_NEUTRAL })
 export class S3Controller {
   private readonly logger = new Logger(S3Controller.name);
 
@@ -543,6 +544,62 @@ export class S3Controller {
   }
 
   // ---------------------------------------------------------------------------
+  // HEAD /s3/:bucket/* — HeadObject
+  //
+  // MUST be declared BEFORE @Get(':bucket/*key'). Express 5 Route registration
+  // order matters: when no explicit HEAD handler matches, Express falls back to
+  // the GET Route's handler for HEAD requests. NestJS registers Get/Head as
+  // separate Routes (not on the same Layer), so a HEAD request would otherwise
+  // hit the GET Route first and trigger its 307 redirect.
+  // ---------------------------------------------------------------------------
+
+  @UseGuards(S3AuthGuard)
+  @Head(':bucket/*key')
+  async headObject(
+    @Param('bucket') bucket: string,
+    @Param() params: Record<string, string>,
+    @Req() req: S3AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const userId = req.s3UserId as string;
+    this.logger.debug(
+      `S3 HeadObject: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
+    );
+    const key = this.getObjectKey(bucket, params, req);
+
+    this.logger.log(`S3 HeadObject: s3://${bucket}/${key} (userId: ${userId})`);
+    this.setRequestId(res);
+
+    try {
+      const file = await this.s3Service.findObject(userId, bucket, key);
+      const lastModified = file.createdAt.toUTCString();
+      const etag = file.etag || `"${file.id}"`;
+
+      res.setHeader(
+        'Content-Type',
+        file.mimeType || 'application/octet-stream',
+      );
+      res.setHeader('Content-Length', file.size.toString());
+      res.setHeader('ETag', etag);
+      res.setHeader('Last-Modified', lastModified);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.status(200).end();
+    } catch (err: unknown) {
+      this.logger.warn(`S3 HeadObject not found: s3://${bucket}/${key}`);
+      const status = (err as { status?: number }).status;
+      res
+        .status(status || 404)
+        .setHeader('Content-Type', 'application/xml')
+        .send(
+          this.s3Service.buildErrorXml(
+            'NoSuchKey',
+            'The specified key does not exist.',
+          ),
+        );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // GET /s3/:bucket/* — GetObject / ListParts
   // ---------------------------------------------------------------------------
 
@@ -606,56 +663,6 @@ export class S3Controller {
         `S3 GetObject error: ${err instanceof Error ? err.message : err}`,
       );
       this.sendS3Error(res, err);
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // HEAD /s3/:bucket/* — HeadObject
-  // ---------------------------------------------------------------------------
-
-  @UseGuards(S3AuthGuard)
-  @Head(':bucket/*key')
-  async headObject(
-    @Param('bucket') bucket: string,
-    @Param() params: Record<string, string>,
-    @Req() req: S3AuthenticatedRequest,
-    @Res() res: Response,
-  ) {
-    const userId = req.s3UserId as string;
-    this.logger.debug(
-      `S3 HeadObject: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
-    );
-    const key = this.getObjectKey(bucket, params, req);
-
-    this.logger.log(`S3 HeadObject: s3://${bucket}/${key} (userId: ${userId})`);
-    this.setRequestId(res);
-
-    try {
-      const file = await this.s3Service.findObject(userId, bucket, key);
-      const lastModified = file.createdAt.toUTCString();
-      const etag = file.etag || `"${file.id}"`;
-
-      res.setHeader(
-        'Content-Type',
-        file.mimeType || 'application/octet-stream',
-      );
-      res.setHeader('Content-Length', file.size.toString());
-      res.setHeader('ETag', etag);
-      res.setHeader('Last-Modified', lastModified);
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.status(200).end();
-    } catch (err: unknown) {
-      this.logger.warn(`S3 HeadObject not found: s3://${bucket}/${key}`);
-      const status = (err as { status?: number }).status;
-      res
-        .status(status || 404)
-        .setHeader('Content-Type', 'application/xml')
-        .send(
-          this.s3Service.buildErrorXml(
-            'NoSuchKey',
-            'The specified key does not exist.',
-          ),
-        );
     }
   }
 
@@ -985,13 +992,23 @@ export class S3Controller {
         true,
       );
 
-      // Create FileRecord in 'uploading' status
+      // Create FileRecord in 'uploading' status. Provision encryption upfront
+      // so the Go transfer service encrypts the stream (it reads isEncrypted +
+      // encryptedKey from metadata); the IV is generated by Go and reported on
+      // completion. Without this, Go would upload plaintext while the record is
+      // later marked encrypted, corrupting downloads.
+      const encryptedKey = this.cryptoService.encryptKey(
+        this.cryptoService.generateFileKey(),
+      );
       const fileRecord = await this.prisma.fileRecord.create({
         data: {
           filename,
           size: BigInt(contentLength),
           mimeType: contentType,
           status: 'uploading',
+          isEncrypted: true,
+          encryptionAlgo: 'aes-256-ctr',
+          encryptedKey,
           folderId: folderId || null,
           userId,
         },

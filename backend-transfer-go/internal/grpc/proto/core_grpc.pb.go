@@ -20,8 +20,12 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	CoreService_ReportChunkResults_FullMethodName     = "/core.CoreService/ReportChunkResults"
+	CoreService_ReportFileComplete_FullMethodName     = "/core.CoreService/ReportFileComplete"
 	CoreService_GetFileMetadata_FullMethodName        = "/core.CoreService/GetFileMetadata"
+	CoreService_CollectZipEntries_FullMethodName      = "/core.CoreService/CollectZipEntries"
+	CoreService_ReportZipProgress_FullMethodName      = "/core.CoreService/ReportZipProgress"
 	CoreService_BatchCheckChunkStatus_FullMethodName  = "/core.CoreService/BatchCheckChunkStatus"
+	CoreService_ReportBandwidthUsage_FullMethodName   = "/core.CoreService/ReportBandwidthUsage"
 	CoreService_ReportUploadFailed_FullMethodName     = "/core.CoreService/ReportUploadFailed"
 	CoreService_ReportDeleteSuccess_FullMethodName    = "/core.CoreService/ReportDeleteSuccess"
 	CoreService_ReportDeleteFailed_FullMethodName     = "/core.CoreService/ReportDeleteFailed"
@@ -41,8 +45,12 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CoreServiceClient interface {
 	ReportChunkResults(ctx context.Context, in *ReportChunkResultsRequest, opts ...grpc.CallOption) (*ReportChunkResultsResponse, error)
+	ReportFileComplete(ctx context.Context, in *ReportFileCompleteRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetFileMetadata(ctx context.Context, in *GetFileMetadataRequest, opts ...grpc.CallOption) (*FileMetadata, error)
+	CollectZipEntries(ctx context.Context, in *CollectZipEntriesRequest, opts ...grpc.CallOption) (*CollectZipEntriesResponse, error)
+	ReportZipProgress(ctx context.Context, in *ReportZipProgressRequest, opts ...grpc.CallOption) (*Empty, error)
 	BatchCheckChunkStatus(ctx context.Context, in *BatchCheckRequest, opts ...grpc.CallOption) (*BatchCheckResponse, error)
+	ReportBandwidthUsage(ctx context.Context, in *ReportBandwidthUsageRequest, opts ...grpc.CallOption) (*Empty, error)
 	ReportUploadFailed(ctx context.Context, in *ReportUploadFailedRequest, opts ...grpc.CallOption) (*Empty, error)
 	ReportDeleteSuccess(ctx context.Context, in *ReportDeleteSuccessRequest, opts ...grpc.CallOption) (*Empty, error)
 	ReportDeleteFailed(ctx context.Context, in *ReportDeleteFailedRequest, opts ...grpc.CallOption) (*Empty, error)
@@ -75,6 +83,16 @@ func (c *coreServiceClient) ReportChunkResults(ctx context.Context, in *ReportCh
 	return out, nil
 }
 
+func (c *coreServiceClient) ReportFileComplete(ctx context.Context, in *ReportFileCompleteRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, CoreService_ReportFileComplete_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *coreServiceClient) GetFileMetadata(ctx context.Context, in *GetFileMetadataRequest, opts ...grpc.CallOption) (*FileMetadata, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(FileMetadata)
@@ -85,10 +103,40 @@ func (c *coreServiceClient) GetFileMetadata(ctx context.Context, in *GetFileMeta
 	return out, nil
 }
 
+func (c *coreServiceClient) CollectZipEntries(ctx context.Context, in *CollectZipEntriesRequest, opts ...grpc.CallOption) (*CollectZipEntriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(CollectZipEntriesResponse)
+	err := c.cc.Invoke(ctx, CoreService_CollectZipEntries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ReportZipProgress(ctx context.Context, in *ReportZipProgressRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, CoreService_ReportZipProgress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *coreServiceClient) BatchCheckChunkStatus(ctx context.Context, in *BatchCheckRequest, opts ...grpc.CallOption) (*BatchCheckResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(BatchCheckResponse)
 	err := c.cc.Invoke(ctx, CoreService_BatchCheckChunkStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ReportBandwidthUsage(ctx context.Context, in *ReportBandwidthUsageRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, CoreService_ReportBandwidthUsage_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -220,8 +268,12 @@ func (c *coreServiceClient) Ping(ctx context.Context, in *Empty, opts ...grpc.Ca
 // for forward compatibility.
 type CoreServiceServer interface {
 	ReportChunkResults(context.Context, *ReportChunkResultsRequest) (*ReportChunkResultsResponse, error)
+	ReportFileComplete(context.Context, *ReportFileCompleteRequest) (*Empty, error)
 	GetFileMetadata(context.Context, *GetFileMetadataRequest) (*FileMetadata, error)
+	CollectZipEntries(context.Context, *CollectZipEntriesRequest) (*CollectZipEntriesResponse, error)
+	ReportZipProgress(context.Context, *ReportZipProgressRequest) (*Empty, error)
 	BatchCheckChunkStatus(context.Context, *BatchCheckRequest) (*BatchCheckResponse, error)
+	ReportBandwidthUsage(context.Context, *ReportBandwidthUsageRequest) (*Empty, error)
 	ReportUploadFailed(context.Context, *ReportUploadFailedRequest) (*Empty, error)
 	ReportDeleteSuccess(context.Context, *ReportDeleteSuccessRequest) (*Empty, error)
 	ReportDeleteFailed(context.Context, *ReportDeleteFailedRequest) (*Empty, error)
@@ -247,11 +299,23 @@ type UnimplementedCoreServiceServer struct{}
 func (UnimplementedCoreServiceServer) ReportChunkResults(context.Context, *ReportChunkResultsRequest) (*ReportChunkResultsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportChunkResults not implemented")
 }
+func (UnimplementedCoreServiceServer) ReportFileComplete(context.Context, *ReportFileCompleteRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportFileComplete not implemented")
+}
 func (UnimplementedCoreServiceServer) GetFileMetadata(context.Context, *GetFileMetadataRequest) (*FileMetadata, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetFileMetadata not implemented")
 }
+func (UnimplementedCoreServiceServer) CollectZipEntries(context.Context, *CollectZipEntriesRequest) (*CollectZipEntriesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CollectZipEntries not implemented")
+}
+func (UnimplementedCoreServiceServer) ReportZipProgress(context.Context, *ReportZipProgressRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportZipProgress not implemented")
+}
 func (UnimplementedCoreServiceServer) BatchCheckChunkStatus(context.Context, *BatchCheckRequest) (*BatchCheckResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BatchCheckChunkStatus not implemented")
+}
+func (UnimplementedCoreServiceServer) ReportBandwidthUsage(context.Context, *ReportBandwidthUsageRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportBandwidthUsage not implemented")
 }
 func (UnimplementedCoreServiceServer) ReportUploadFailed(context.Context, *ReportUploadFailedRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportUploadFailed not implemented")
@@ -328,6 +392,24 @@ func _CoreService_ReportChunkResults_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_ReportFileComplete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportFileCompleteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ReportFileComplete(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ReportFileComplete_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ReportFileComplete(ctx, req.(*ReportFileCompleteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CoreService_GetFileMetadata_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetFileMetadataRequest)
 	if err := dec(in); err != nil {
@@ -346,6 +428,42 @@ func _CoreService_GetFileMetadata_Handler(srv interface{}, ctx context.Context, 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_CollectZipEntries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CollectZipEntriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).CollectZipEntries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_CollectZipEntries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).CollectZipEntries(ctx, req.(*CollectZipEntriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ReportZipProgress_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportZipProgressRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ReportZipProgress(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ReportZipProgress_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ReportZipProgress(ctx, req.(*ReportZipProgressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _CoreService_BatchCheckChunkStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(BatchCheckRequest)
 	if err := dec(in); err != nil {
@@ -360,6 +478,24 @@ func _CoreService_BatchCheckChunkStatus_Handler(srv interface{}, ctx context.Con
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CoreServiceServer).BatchCheckChunkStatus(ctx, req.(*BatchCheckRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ReportBandwidthUsage_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportBandwidthUsageRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ReportBandwidthUsage(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ReportBandwidthUsage_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ReportBandwidthUsage(ctx, req.(*ReportBandwidthUsageRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -592,12 +728,28 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _CoreService_ReportChunkResults_Handler,
 		},
 		{
+			MethodName: "ReportFileComplete",
+			Handler:    _CoreService_ReportFileComplete_Handler,
+		},
+		{
 			MethodName: "GetFileMetadata",
 			Handler:    _CoreService_GetFileMetadata_Handler,
 		},
 		{
+			MethodName: "CollectZipEntries",
+			Handler:    _CoreService_CollectZipEntries_Handler,
+		},
+		{
+			MethodName: "ReportZipProgress",
+			Handler:    _CoreService_ReportZipProgress_Handler,
+		},
+		{
 			MethodName: "BatchCheckChunkStatus",
 			Handler:    _CoreService_BatchCheckChunkStatus_Handler,
+		},
+		{
+			MethodName: "ReportBandwidthUsage",
+			Handler:    _CoreService_ReportBandwidthUsage_Handler,
 		},
 		{
 			MethodName: "ReportUploadFailed",

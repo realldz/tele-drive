@@ -6,7 +6,22 @@ option go_package = "github.com/realldz/tele-drive/backend-transfer-go/internal/
 
 service TransferService {
   rpc FlushAndConfirm(FlushAndConfirmRequest) returns (FlushAndConfirmResponse);
+  rpc EnqueueBufferedUpload(EnqueueBufferedUploadRequest) returns (EnqueueBufferedUploadResponse);
   rpc Ping(TransferPingRequest) returns (TransferPingResponse);
+}
+
+message EnqueueBufferedUploadRequest {
+  string file_id = 1;
+  string temp_storage_key = 2;
+  string user_id = 3;
+  bool is_chunk = 4;
+  int32 chunk_index = 5;
+  int64 size = 6;
+}
+
+message EnqueueBufferedUploadResponse {
+  bool accepted = 1;
+  string reason = 2;
 }
 
 message TransferPingRequest {}

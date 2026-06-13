@@ -352,6 +352,98 @@ func (x *ReportChunkResultsResponse) GetAccepted() int32 {
 	return 0
 }
 
+type ReportFileCompleteRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	FileId            string                 `protobuf:"bytes,1,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
+	TelegramFileId    string                 `protobuf:"bytes,2,opt,name=telegram_file_id,json=telegramFileId,proto3" json:"telegram_file_id,omitempty"`
+	TelegramMessageId int32                  `protobuf:"varint,3,opt,name=telegram_message_id,json=telegramMessageId,proto3" json:"telegram_message_id,omitempty"`
+	BotId             int64                  `protobuf:"varint,4,opt,name=bot_id,json=botId,proto3" json:"bot_id,omitempty"`
+	EncryptionIv      string                 `protobuf:"bytes,5,opt,name=encryption_iv,json=encryptionIv,proto3" json:"encryption_iv,omitempty"`
+	Size              int64                  `protobuf:"varint,6,opt,name=size,proto3" json:"size,omitempty"`
+	Etag              string                 `protobuf:"bytes,7,opt,name=etag,proto3" json:"etag,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ReportFileCompleteRequest) Reset() {
+	*x = ReportFileCompleteRequest{}
+	mi := &file_core_proto_msgTypes[5]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportFileCompleteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportFileCompleteRequest) ProtoMessage() {}
+
+func (x *ReportFileCompleteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[5]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportFileCompleteRequest.ProtoReflect.Descriptor instead.
+func (*ReportFileCompleteRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{5}
+}
+
+func (x *ReportFileCompleteRequest) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
+func (x *ReportFileCompleteRequest) GetTelegramFileId() string {
+	if x != nil {
+		return x.TelegramFileId
+	}
+	return ""
+}
+
+func (x *ReportFileCompleteRequest) GetTelegramMessageId() int32 {
+	if x != nil {
+		return x.TelegramMessageId
+	}
+	return 0
+}
+
+func (x *ReportFileCompleteRequest) GetBotId() int64 {
+	if x != nil {
+		return x.BotId
+	}
+	return 0
+}
+
+func (x *ReportFileCompleteRequest) GetEncryptionIv() string {
+	if x != nil {
+		return x.EncryptionIv
+	}
+	return ""
+}
+
+func (x *ReportFileCompleteRequest) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *ReportFileCompleteRequest) GetEtag() string {
+	if x != nil {
+		return x.Etag
+	}
+	return ""
+}
+
 type GetFileMetadataRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FileId        string                 `protobuf:"bytes,1,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
@@ -361,7 +453,7 @@ type GetFileMetadataRequest struct {
 
 func (x *GetFileMetadataRequest) Reset() {
 	*x = GetFileMetadataRequest{}
-	mi := &file_core_proto_msgTypes[5]
+	mi := &file_core_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -373,7 +465,7 @@ func (x *GetFileMetadataRequest) String() string {
 func (*GetFileMetadataRequest) ProtoMessage() {}
 
 func (x *GetFileMetadataRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[5]
+	mi := &file_core_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -386,7 +478,7 @@ func (x *GetFileMetadataRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetFileMetadataRequest.ProtoReflect.Descriptor instead.
 func (*GetFileMetadataRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{5}
+	return file_core_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *GetFileMetadataRequest) GetFileId() string {
@@ -411,7 +503,7 @@ type ChunkMetadata struct {
 
 func (x *ChunkMetadata) Reset() {
 	*x = ChunkMetadata{}
-	mi := &file_core_proto_msgTypes[6]
+	mi := &file_core_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -423,7 +515,7 @@ func (x *ChunkMetadata) String() string {
 func (*ChunkMetadata) ProtoMessage() {}
 
 func (x *ChunkMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[6]
+	mi := &file_core_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -436,7 +528,7 @@ func (x *ChunkMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChunkMetadata.ProtoReflect.Descriptor instead.
 func (*ChunkMetadata) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{6}
+	return file_core_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *ChunkMetadata) GetChunkIndex() int32 {
@@ -511,13 +603,14 @@ type FileMetadata struct {
 	Downloads_24H      int32                  `protobuf:"varint,41,opt,name=downloads_24h,json=downloads24h,proto3" json:"downloads_24h,omitempty"`
 	BandwidthLimit_24H int64                  `protobuf:"varint,42,opt,name=bandwidth_limit_24h,json=bandwidthLimit24h,proto3" json:"bandwidth_limit_24h,omitempty"`
 	BandwidthUsed_24H  int64                  `protobuf:"varint,43,opt,name=bandwidth_used_24h,json=bandwidthUsed24h,proto3" json:"bandwidth_used_24h,omitempty"`
+	TempStorageKey     string                 `protobuf:"bytes,50,opt,name=temp_storage_key,json=tempStorageKey,proto3" json:"temp_storage_key,omitempty"`
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
 
 func (x *FileMetadata) Reset() {
 	*x = FileMetadata{}
-	mi := &file_core_proto_msgTypes[7]
+	mi := &file_core_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -529,7 +622,7 @@ func (x *FileMetadata) String() string {
 func (*FileMetadata) ProtoMessage() {}
 
 func (x *FileMetadata) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[7]
+	mi := &file_core_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -542,7 +635,7 @@ func (x *FileMetadata) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileMetadata.ProtoReflect.Descriptor instead.
 func (*FileMetadata) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{7}
+	return file_core_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *FileMetadata) GetId() string {
@@ -692,6 +785,13 @@ func (x *FileMetadata) GetBandwidthUsed_24H() int64 {
 	return 0
 }
 
+func (x *FileMetadata) GetTempStorageKey() string {
+	if x != nil {
+		return x.TempStorageKey
+	}
+	return ""
+}
+
 type BatchCheckRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	FileIds       []string               `protobuf:"bytes,1,rep,name=file_ids,json=fileIds,proto3" json:"file_ids,omitempty"`
@@ -701,7 +801,7 @@ type BatchCheckRequest struct {
 
 func (x *BatchCheckRequest) Reset() {
 	*x = BatchCheckRequest{}
-	mi := &file_core_proto_msgTypes[8]
+	mi := &file_core_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -713,7 +813,7 @@ func (x *BatchCheckRequest) String() string {
 func (*BatchCheckRequest) ProtoMessage() {}
 
 func (x *BatchCheckRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[8]
+	mi := &file_core_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -726,7 +826,7 @@ func (x *BatchCheckRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchCheckRequest.ProtoReflect.Descriptor instead.
 func (*BatchCheckRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{8}
+	return file_core_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *BatchCheckRequest) GetFileIds() []string {
@@ -746,7 +846,7 @@ type ChunkStatusEntry struct {
 
 func (x *ChunkStatusEntry) Reset() {
 	*x = ChunkStatusEntry{}
-	mi := &file_core_proto_msgTypes[9]
+	mi := &file_core_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -758,7 +858,7 @@ func (x *ChunkStatusEntry) String() string {
 func (*ChunkStatusEntry) ProtoMessage() {}
 
 func (x *ChunkStatusEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[9]
+	mi := &file_core_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -771,7 +871,7 @@ func (x *ChunkStatusEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ChunkStatusEntry.ProtoReflect.Descriptor instead.
 func (*ChunkStatusEntry) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{9}
+	return file_core_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *ChunkStatusEntry) GetFileId() string {
@@ -797,7 +897,7 @@ type BatchCheckResponse struct {
 
 func (x *BatchCheckResponse) Reset() {
 	*x = BatchCheckResponse{}
-	mi := &file_core_proto_msgTypes[10]
+	mi := &file_core_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -809,7 +909,7 @@ func (x *BatchCheckResponse) String() string {
 func (*BatchCheckResponse) ProtoMessage() {}
 
 func (x *BatchCheckResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[10]
+	mi := &file_core_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -822,10 +922,122 @@ func (x *BatchCheckResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BatchCheckResponse.ProtoReflect.Descriptor instead.
 func (*BatchCheckResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{10}
+	return file_core_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *BatchCheckResponse) GetEntries() []*ChunkStatusEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+type BandwidthUsageEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	FileId        string                 `protobuf:"bytes,2,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
+	ActualBytes   int64                  `protobuf:"varint,3,opt,name=actual_bytes,json=actualBytes,proto3" json:"actual_bytes,omitempty"`
+	CountDownload bool                   `protobuf:"varint,4,opt,name=count_download,json=countDownload,proto3" json:"count_download,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *BandwidthUsageEntry) Reset() {
+	*x = BandwidthUsageEntry{}
+	mi := &file_core_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BandwidthUsageEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BandwidthUsageEntry) ProtoMessage() {}
+
+func (x *BandwidthUsageEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BandwidthUsageEntry.ProtoReflect.Descriptor instead.
+func (*BandwidthUsageEntry) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *BandwidthUsageEntry) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *BandwidthUsageEntry) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
+func (x *BandwidthUsageEntry) GetActualBytes() int64 {
+	if x != nil {
+		return x.ActualBytes
+	}
+	return 0
+}
+
+func (x *BandwidthUsageEntry) GetCountDownload() bool {
+	if x != nil {
+		return x.CountDownload
+	}
+	return false
+}
+
+type ReportBandwidthUsageRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*BandwidthUsageEntry `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ReportBandwidthUsageRequest) Reset() {
+	*x = ReportBandwidthUsageRequest{}
+	mi := &file_core_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportBandwidthUsageRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportBandwidthUsageRequest) ProtoMessage() {}
+
+func (x *ReportBandwidthUsageRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportBandwidthUsageRequest.ProtoReflect.Descriptor instead.
+func (*ReportBandwidthUsageRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *ReportBandwidthUsageRequest) GetEntries() []*BandwidthUsageEntry {
 	if x != nil {
 		return x.Entries
 	}
@@ -845,7 +1057,7 @@ type ReportUploadFailedRequest struct {
 
 func (x *ReportUploadFailedRequest) Reset() {
 	*x = ReportUploadFailedRequest{}
-	mi := &file_core_proto_msgTypes[11]
+	mi := &file_core_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -857,7 +1069,7 @@ func (x *ReportUploadFailedRequest) String() string {
 func (*ReportUploadFailedRequest) ProtoMessage() {}
 
 func (x *ReportUploadFailedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[11]
+	mi := &file_core_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -870,7 +1082,7 @@ func (x *ReportUploadFailedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportUploadFailedRequest.ProtoReflect.Descriptor instead.
 func (*ReportUploadFailedRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{11}
+	return file_core_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ReportUploadFailedRequest) GetFileId() string {
@@ -917,7 +1129,7 @@ type ReportDeleteSuccessRequest struct {
 
 func (x *ReportDeleteSuccessRequest) Reset() {
 	*x = ReportDeleteSuccessRequest{}
-	mi := &file_core_proto_msgTypes[12]
+	mi := &file_core_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -929,7 +1141,7 @@ func (x *ReportDeleteSuccessRequest) String() string {
 func (*ReportDeleteSuccessRequest) ProtoMessage() {}
 
 func (x *ReportDeleteSuccessRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[12]
+	mi := &file_core_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -942,7 +1154,7 @@ func (x *ReportDeleteSuccessRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportDeleteSuccessRequest.ProtoReflect.Descriptor instead.
 func (*ReportDeleteSuccessRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{12}
+	return file_core_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *ReportDeleteSuccessRequest) GetFileId() string {
@@ -962,7 +1174,7 @@ type ReportDeleteFailedRequest struct {
 
 func (x *ReportDeleteFailedRequest) Reset() {
 	*x = ReportDeleteFailedRequest{}
-	mi := &file_core_proto_msgTypes[13]
+	mi := &file_core_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -974,7 +1186,7 @@ func (x *ReportDeleteFailedRequest) String() string {
 func (*ReportDeleteFailedRequest) ProtoMessage() {}
 
 func (x *ReportDeleteFailedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[13]
+	mi := &file_core_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -987,7 +1199,7 @@ func (x *ReportDeleteFailedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportDeleteFailedRequest.ProtoReflect.Descriptor instead.
 func (*ReportDeleteFailedRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{13}
+	return file_core_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *ReportDeleteFailedRequest) GetFileId() string {
@@ -1014,7 +1226,7 @@ type ReportFileCorruptedRequest struct {
 
 func (x *ReportFileCorruptedRequest) Reset() {
 	*x = ReportFileCorruptedRequest{}
-	mi := &file_core_proto_msgTypes[14]
+	mi := &file_core_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1026,7 +1238,7 @@ func (x *ReportFileCorruptedRequest) String() string {
 func (*ReportFileCorruptedRequest) ProtoMessage() {}
 
 func (x *ReportFileCorruptedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[14]
+	mi := &file_core_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1039,7 +1251,7 @@ func (x *ReportFileCorruptedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportFileCorruptedRequest.ProtoReflect.Descriptor instead.
 func (*ReportFileCorruptedRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{14}
+	return file_core_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *ReportFileCorruptedRequest) GetFileId() string {
@@ -1067,7 +1279,7 @@ type ZipPart struct {
 
 func (x *ZipPart) Reset() {
 	*x = ZipPart{}
-	mi := &file_core_proto_msgTypes[15]
+	mi := &file_core_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1079,7 +1291,7 @@ func (x *ZipPart) String() string {
 func (*ZipPart) ProtoMessage() {}
 
 func (x *ZipPart) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[15]
+	mi := &file_core_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1092,7 +1304,7 @@ func (x *ZipPart) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ZipPart.ProtoReflect.Descriptor instead.
 func (*ZipPart) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{15}
+	return file_core_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *ZipPart) GetKey() string {
@@ -1128,7 +1340,7 @@ type ReportZipReadyRequest struct {
 
 func (x *ReportZipReadyRequest) Reset() {
 	*x = ReportZipReadyRequest{}
-	mi := &file_core_proto_msgTypes[16]
+	mi := &file_core_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1140,7 +1352,7 @@ func (x *ReportZipReadyRequest) String() string {
 func (*ReportZipReadyRequest) ProtoMessage() {}
 
 func (x *ReportZipReadyRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[16]
+	mi := &file_core_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1153,7 +1365,7 @@ func (x *ReportZipReadyRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportZipReadyRequest.ProtoReflect.Descriptor instead.
 func (*ReportZipReadyRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{16}
+	return file_core_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *ReportZipReadyRequest) GetJobId() string {
@@ -1194,7 +1406,7 @@ type ReportZipFailedRequest struct {
 
 func (x *ReportZipFailedRequest) Reset() {
 	*x = ReportZipFailedRequest{}
-	mi := &file_core_proto_msgTypes[17]
+	mi := &file_core_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1206,7 +1418,7 @@ func (x *ReportZipFailedRequest) String() string {
 func (*ReportZipFailedRequest) ProtoMessage() {}
 
 func (x *ReportZipFailedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[17]
+	mi := &file_core_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1219,7 +1431,7 @@ func (x *ReportZipFailedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportZipFailedRequest.ProtoReflect.Descriptor instead.
 func (*ReportZipFailedRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{17}
+	return file_core_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ReportZipFailedRequest) GetJobId() string {
@@ -1236,6 +1448,206 @@ func (x *ReportZipFailedRequest) GetReason() string {
 	return ""
 }
 
+type CollectZipEntriesRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CollectZipEntriesRequest) Reset() {
+	*x = CollectZipEntriesRequest{}
+	mi := &file_core_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CollectZipEntriesRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollectZipEntriesRequest) ProtoMessage() {}
+
+func (x *CollectZipEntriesRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollectZipEntriesRequest.ProtoReflect.Descriptor instead.
+func (*CollectZipEntriesRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *CollectZipEntriesRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+type ZipEntry struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FileRecordId  string                 `protobuf:"bytes,1,opt,name=file_record_id,json=fileRecordId,proto3" json:"file_record_id,omitempty"`
+	RelativePath  string                 `protobuf:"bytes,2,opt,name=relative_path,json=relativePath,proto3" json:"relative_path,omitempty"`
+	Size          int64                  `protobuf:"varint,3,opt,name=size,proto3" json:"size,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ZipEntry) Reset() {
+	*x = ZipEntry{}
+	mi := &file_core_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ZipEntry) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ZipEntry) ProtoMessage() {}
+
+func (x *ZipEntry) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ZipEntry.ProtoReflect.Descriptor instead.
+func (*ZipEntry) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *ZipEntry) GetFileRecordId() string {
+	if x != nil {
+		return x.FileRecordId
+	}
+	return ""
+}
+
+func (x *ZipEntry) GetRelativePath() string {
+	if x != nil {
+		return x.RelativePath
+	}
+	return ""
+}
+
+func (x *ZipEntry) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+type CollectZipEntriesResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Entries       []*ZipEntry            `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CollectZipEntriesResponse) Reset() {
+	*x = CollectZipEntriesResponse{}
+	mi := &file_core_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CollectZipEntriesResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CollectZipEntriesResponse) ProtoMessage() {}
+
+func (x *CollectZipEntriesResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CollectZipEntriesResponse.ProtoReflect.Descriptor instead.
+func (*CollectZipEntriesResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *CollectZipEntriesResponse) GetEntries() []*ZipEntry {
+	if x != nil {
+		return x.Entries
+	}
+	return nil
+}
+
+type ReportZipProgressRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	JobId          string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	ProcessedFiles int32                  `protobuf:"varint,2,opt,name=processed_files,json=processedFiles,proto3" json:"processed_files,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ReportZipProgressRequest) Reset() {
+	*x = ReportZipProgressRequest{}
+	mi := &file_core_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportZipProgressRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportZipProgressRequest) ProtoMessage() {}
+
+func (x *ReportZipProgressRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportZipProgressRequest.ProtoReflect.Descriptor instead.
+func (*ReportZipProgressRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *ReportZipProgressRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+func (x *ReportZipProgressRequest) GetProcessedFiles() int32 {
+	if x != nil {
+		return x.ProcessedFiles
+	}
+	return 0
+}
+
 type ReportBotUnauthorizedRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BotId         int64                  `protobuf:"varint,1,opt,name=bot_id,json=botId,proto3" json:"bot_id,omitempty"`
@@ -1245,7 +1657,7 @@ type ReportBotUnauthorizedRequest struct {
 
 func (x *ReportBotUnauthorizedRequest) Reset() {
 	*x = ReportBotUnauthorizedRequest{}
-	mi := &file_core_proto_msgTypes[18]
+	mi := &file_core_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1257,7 +1669,7 @@ func (x *ReportBotUnauthorizedRequest) String() string {
 func (*ReportBotUnauthorizedRequest) ProtoMessage() {}
 
 func (x *ReportBotUnauthorizedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[18]
+	mi := &file_core_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1270,7 +1682,7 @@ func (x *ReportBotUnauthorizedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportBotUnauthorizedRequest.ProtoReflect.Descriptor instead.
 func (*ReportBotUnauthorizedRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{18}
+	return file_core_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *ReportBotUnauthorizedRequest) GetBotId() int64 {
@@ -1289,7 +1701,7 @@ type ReportEmergencyCleanupRequest struct {
 
 func (x *ReportEmergencyCleanupRequest) Reset() {
 	*x = ReportEmergencyCleanupRequest{}
-	mi := &file_core_proto_msgTypes[19]
+	mi := &file_core_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1301,7 +1713,7 @@ func (x *ReportEmergencyCleanupRequest) String() string {
 func (*ReportEmergencyCleanupRequest) ProtoMessage() {}
 
 func (x *ReportEmergencyCleanupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[19]
+	mi := &file_core_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1314,7 +1726,7 @@ func (x *ReportEmergencyCleanupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportEmergencyCleanupRequest.ProtoReflect.Descriptor instead.
 func (*ReportEmergencyCleanupRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{19}
+	return file_core_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ReportEmergencyCleanupRequest) GetFileIds() []string {
@@ -1335,7 +1747,7 @@ type DiskSpaceResponse struct {
 
 func (x *DiskSpaceResponse) Reset() {
 	*x = DiskSpaceResponse{}
-	mi := &file_core_proto_msgTypes[20]
+	mi := &file_core_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1347,7 +1759,7 @@ func (x *DiskSpaceResponse) String() string {
 func (*DiskSpaceResponse) ProtoMessage() {}
 
 func (x *DiskSpaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[20]
+	mi := &file_core_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1360,7 +1772,7 @@ func (x *DiskSpaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskSpaceResponse.ProtoReflect.Descriptor instead.
 func (*DiskSpaceResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{20}
+	return file_core_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *DiskSpaceResponse) GetFreeBytes() int64 {
@@ -1395,7 +1807,7 @@ type ReportCronStatsRequest struct {
 
 func (x *ReportCronStatsRequest) Reset() {
 	*x = ReportCronStatsRequest{}
-	mi := &file_core_proto_msgTypes[21]
+	mi := &file_core_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1407,7 +1819,7 @@ func (x *ReportCronStatsRequest) String() string {
 func (*ReportCronStatsRequest) ProtoMessage() {}
 
 func (x *ReportCronStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[21]
+	mi := &file_core_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1420,7 +1832,7 @@ func (x *ReportCronStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportCronStatsRequest.ProtoReflect.Descriptor instead.
 func (*ReportCronStatsRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{21}
+	return file_core_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *ReportCronStatsRequest) GetCronName() string {
@@ -1454,7 +1866,7 @@ type VerifyFolderShareRequest struct {
 
 func (x *VerifyFolderShareRequest) Reset() {
 	*x = VerifyFolderShareRequest{}
-	mi := &file_core_proto_msgTypes[22]
+	mi := &file_core_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1466,7 +1878,7 @@ func (x *VerifyFolderShareRequest) String() string {
 func (*VerifyFolderShareRequest) ProtoMessage() {}
 
 func (x *VerifyFolderShareRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[22]
+	mi := &file_core_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1479,7 +1891,7 @@ func (x *VerifyFolderShareRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyFolderShareRequest.ProtoReflect.Descriptor instead.
 func (*VerifyFolderShareRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{22}
+	return file_core_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *VerifyFolderShareRequest) GetShareToken() string {
@@ -1505,7 +1917,7 @@ type VerifyFolderShareResponse struct {
 
 func (x *VerifyFolderShareResponse) Reset() {
 	*x = VerifyFolderShareResponse{}
-	mi := &file_core_proto_msgTypes[23]
+	mi := &file_core_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1517,7 +1929,7 @@ func (x *VerifyFolderShareResponse) String() string {
 func (*VerifyFolderShareResponse) ProtoMessage() {}
 
 func (x *VerifyFolderShareResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[23]
+	mi := &file_core_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1530,7 +1942,7 @@ func (x *VerifyFolderShareResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyFolderShareResponse.ProtoReflect.Descriptor instead.
 func (*VerifyFolderShareResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{23}
+	return file_core_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *VerifyFolderShareResponse) GetIsValid() bool {
@@ -1563,7 +1975,15 @@ const file_core_proto_rawDesc = "" +
 	"\x19ReportChunkResultsRequest\x12+\n" +
 	"\aresults\x18\x01 \x03(\v2\x11.core.ChunkResultR\aresults\"8\n" +
 	"\x1aReportChunkResultsResponse\x12\x1a\n" +
-	"\baccepted\x18\x01 \x01(\x05R\baccepted\"1\n" +
+	"\baccepted\x18\x01 \x01(\x05R\baccepted\"\xf2\x01\n" +
+	"\x19ReportFileCompleteRequest\x12\x17\n" +
+	"\afile_id\x18\x01 \x01(\tR\x06fileId\x12(\n" +
+	"\x10telegram_file_id\x18\x02 \x01(\tR\x0etelegramFileId\x12.\n" +
+	"\x13telegram_message_id\x18\x03 \x01(\x05R\x11telegramMessageId\x12\x15\n" +
+	"\x06bot_id\x18\x04 \x01(\x03R\x05botId\x12#\n" +
+	"\rencryption_iv\x18\x05 \x01(\tR\fencryptionIv\x12\x12\n" +
+	"\x04size\x18\x06 \x01(\x03R\x04size\x12\x12\n" +
+	"\x04etag\x18\a \x01(\tR\x04etag\"1\n" +
 	"\x16GetFileMetadataRequest\x12\x17\n" +
 	"\afile_id\x18\x01 \x01(\tR\x06fileId\"\xee\x01\n" +
 	"\rChunkMetadata\x12\x1f\n" +
@@ -1574,7 +1994,7 @@ const file_core_proto_rawDesc = "" +
 	"\x13telegram_message_id\x18\x04 \x01(\x05R\x11telegramMessageId\x12\x15\n" +
 	"\x06bot_id\x18\x05 \x01(\x03R\x05botId\x12#\n" +
 	"\rencryption_iv\x18\x06 \x01(\tR\fencryptionIv\x12\x12\n" +
-	"\x04etag\x18\a \x01(\tR\x04etag\"\xe3\x05\n" +
+	"\x04etag\x18\a \x01(\tR\x04etag\"\x8d\x06\n" +
 	"\fFileMetadata\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x12\x12\n" +
@@ -1600,14 +2020,22 @@ const file_core_proto_rawDesc = "" +
 	"\x12download_limit_24h\x18( \x01(\x05R\x10downloadLimit24h\x12#\n" +
 	"\rdownloads_24h\x18) \x01(\x05R\fdownloads24h\x12.\n" +
 	"\x13bandwidth_limit_24h\x18* \x01(\x03R\x11bandwidthLimit24h\x12,\n" +
-	"\x12bandwidth_used_24h\x18+ \x01(\x03R\x10bandwidthUsed24h\".\n" +
+	"\x12bandwidth_used_24h\x18+ \x01(\x03R\x10bandwidthUsed24h\x12(\n" +
+	"\x10temp_storage_key\x182 \x01(\tR\x0etempStorageKey\".\n" +
 	"\x11BatchCheckRequest\x12\x19\n" +
 	"\bfile_ids\x18\x01 \x03(\tR\afileIds\"V\n" +
 	"\x10ChunkStatusEntry\x12\x17\n" +
 	"\afile_id\x18\x01 \x01(\tR\x06fileId\x12)\n" +
 	"\x06status\x18\x02 \x01(\x0e2\x11.core.ChunkStatusR\x06status\"F\n" +
 	"\x12BatchCheckResponse\x120\n" +
-	"\aentries\x18\x01 \x03(\v2\x16.core.ChunkStatusEntryR\aentries\"\xa3\x01\n" +
+	"\aentries\x18\x01 \x03(\v2\x16.core.ChunkStatusEntryR\aentries\"\x91\x01\n" +
+	"\x13BandwidthUsageEntry\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x17\n" +
+	"\afile_id\x18\x02 \x01(\tR\x06fileId\x12!\n" +
+	"\factual_bytes\x18\x03 \x01(\x03R\vactualBytes\x12%\n" +
+	"\x0ecount_download\x18\x04 \x01(\bR\rcountDownload\"R\n" +
+	"\x1bReportBandwidthUsageRequest\x123\n" +
+	"\aentries\x18\x01 \x03(\v2\x19.core.BandwidthUsageEntryR\aentries\"\xa3\x01\n" +
 	"\x19ReportUploadFailedRequest\x12\x17\n" +
 	"\afile_id\x18\x01 \x01(\tR\x06fileId\x12\x1f\n" +
 	"\vchunk_index\x18\x02 \x01(\x05R\n" +
@@ -1635,7 +2063,18 @@ const file_core_proto_rawDesc = "" +
 	"\tstreaming\x18\x04 \x01(\bR\tstreaming\"G\n" +
 	"\x16ReportZipFailedRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12\x16\n" +
-	"\x06reason\x18\x02 \x01(\tR\x06reason\"5\n" +
+	"\x06reason\x18\x02 \x01(\tR\x06reason\"1\n" +
+	"\x18CollectZipEntriesRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"i\n" +
+	"\bZipEntry\x12$\n" +
+	"\x0efile_record_id\x18\x01 \x01(\tR\ffileRecordId\x12#\n" +
+	"\rrelative_path\x18\x02 \x01(\tR\frelativePath\x12\x12\n" +
+	"\x04size\x18\x03 \x01(\x03R\x04size\"E\n" +
+	"\x19CollectZipEntriesResponse\x12(\n" +
+	"\aentries\x18\x01 \x03(\v2\x0e.core.ZipEntryR\aentries\"Z\n" +
+	"\x18ReportZipProgressRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12'\n" +
+	"\x0fprocessed_files\x18\x02 \x01(\x05R\x0eprocessedFiles\"5\n" +
 	"\x1cReportBotUnauthorizedRequest\x12\x15\n" +
 	"\x06bot_id\x18\x01 \x01(\x03R\x05botId\":\n" +
 	"\x1dReportEmergencyCleanupRequest\x12\x19\n" +
@@ -1662,11 +2101,16 @@ const file_core_proto_rawDesc = "" +
 	"\x14CHUNK_STATUS_PENDING\x10\x01\x12\x19\n" +
 	"\x15CHUNK_STATUS_COMPLETE\x10\x02\x12\x17\n" +
 	"\x13CHUNK_STATUS_FAILED\x10\x03\x12\x1a\n" +
-	"\x16CHUNK_STATUS_NOT_FOUND\x10\x042\x88\b\n" +
+	"\x16CHUNK_STATUS_NOT_FOUND\x10\x042\xac\n" +
+	"\n" +
 	"\vCoreService\x12W\n" +
-	"\x12ReportChunkResults\x12\x1f.core.ReportChunkResultsRequest\x1a .core.ReportChunkResultsResponse\x12C\n" +
-	"\x0fGetFileMetadata\x12\x1c.core.GetFileMetadataRequest\x1a\x12.core.FileMetadata\x12J\n" +
-	"\x15BatchCheckChunkStatus\x12\x17.core.BatchCheckRequest\x1a\x18.core.BatchCheckResponse\x12B\n" +
+	"\x12ReportChunkResults\x12\x1f.core.ReportChunkResultsRequest\x1a .core.ReportChunkResultsResponse\x12B\n" +
+	"\x12ReportFileComplete\x12\x1f.core.ReportFileCompleteRequest\x1a\v.core.Empty\x12C\n" +
+	"\x0fGetFileMetadata\x12\x1c.core.GetFileMetadataRequest\x1a\x12.core.FileMetadata\x12T\n" +
+	"\x11CollectZipEntries\x12\x1e.core.CollectZipEntriesRequest\x1a\x1f.core.CollectZipEntriesResponse\x12@\n" +
+	"\x11ReportZipProgress\x12\x1e.core.ReportZipProgressRequest\x1a\v.core.Empty\x12J\n" +
+	"\x15BatchCheckChunkStatus\x12\x17.core.BatchCheckRequest\x1a\x18.core.BatchCheckResponse\x12F\n" +
+	"\x14ReportBandwidthUsage\x12!.core.ReportBandwidthUsageRequest\x1a\v.core.Empty\x12B\n" +
 	"\x12ReportUploadFailed\x12\x1f.core.ReportUploadFailedRequest\x1a\v.core.Empty\x12D\n" +
 	"\x13ReportDeleteSuccess\x12 .core.ReportDeleteSuccessRequest\x1a\v.core.Empty\x12B\n" +
 	"\x12ReportDeleteFailed\x12\x1f.core.ReportDeleteFailedRequest\x1a\v.core.Empty\x12D\n" +
@@ -1694,7 +2138,7 @@ func file_core_proto_rawDescGZIP() []byte {
 }
 
 var file_core_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 24)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
 var file_core_proto_goTypes = []any{
 	(ChunkStatus)(0),                      // 0: core.ChunkStatus
 	(*Empty)(nil),                         // 1: core.Empty
@@ -1702,67 +2146,84 @@ var file_core_proto_goTypes = []any{
 	(*ChunkResult)(nil),                   // 3: core.ChunkResult
 	(*ReportChunkResultsRequest)(nil),     // 4: core.ReportChunkResultsRequest
 	(*ReportChunkResultsResponse)(nil),    // 5: core.ReportChunkResultsResponse
-	(*GetFileMetadataRequest)(nil),        // 6: core.GetFileMetadataRequest
-	(*ChunkMetadata)(nil),                 // 7: core.ChunkMetadata
-	(*FileMetadata)(nil),                  // 8: core.FileMetadata
-	(*BatchCheckRequest)(nil),             // 9: core.BatchCheckRequest
-	(*ChunkStatusEntry)(nil),              // 10: core.ChunkStatusEntry
-	(*BatchCheckResponse)(nil),            // 11: core.BatchCheckResponse
-	(*ReportUploadFailedRequest)(nil),     // 12: core.ReportUploadFailedRequest
-	(*ReportDeleteSuccessRequest)(nil),    // 13: core.ReportDeleteSuccessRequest
-	(*ReportDeleteFailedRequest)(nil),     // 14: core.ReportDeleteFailedRequest
-	(*ReportFileCorruptedRequest)(nil),    // 15: core.ReportFileCorruptedRequest
-	(*ZipPart)(nil),                       // 16: core.ZipPart
-	(*ReportZipReadyRequest)(nil),         // 17: core.ReportZipReadyRequest
-	(*ReportZipFailedRequest)(nil),        // 18: core.ReportZipFailedRequest
-	(*ReportBotUnauthorizedRequest)(nil),  // 19: core.ReportBotUnauthorizedRequest
-	(*ReportEmergencyCleanupRequest)(nil), // 20: core.ReportEmergencyCleanupRequest
-	(*DiskSpaceResponse)(nil),             // 21: core.DiskSpaceResponse
-	(*ReportCronStatsRequest)(nil),        // 22: core.ReportCronStatsRequest
-	(*VerifyFolderShareRequest)(nil),      // 23: core.VerifyFolderShareRequest
-	(*VerifyFolderShareResponse)(nil),     // 24: core.VerifyFolderShareResponse
+	(*ReportFileCompleteRequest)(nil),     // 6: core.ReportFileCompleteRequest
+	(*GetFileMetadataRequest)(nil),        // 7: core.GetFileMetadataRequest
+	(*ChunkMetadata)(nil),                 // 8: core.ChunkMetadata
+	(*FileMetadata)(nil),                  // 9: core.FileMetadata
+	(*BatchCheckRequest)(nil),             // 10: core.BatchCheckRequest
+	(*ChunkStatusEntry)(nil),              // 11: core.ChunkStatusEntry
+	(*BatchCheckResponse)(nil),            // 12: core.BatchCheckResponse
+	(*BandwidthUsageEntry)(nil),           // 13: core.BandwidthUsageEntry
+	(*ReportBandwidthUsageRequest)(nil),   // 14: core.ReportBandwidthUsageRequest
+	(*ReportUploadFailedRequest)(nil),     // 15: core.ReportUploadFailedRequest
+	(*ReportDeleteSuccessRequest)(nil),    // 16: core.ReportDeleteSuccessRequest
+	(*ReportDeleteFailedRequest)(nil),     // 17: core.ReportDeleteFailedRequest
+	(*ReportFileCorruptedRequest)(nil),    // 18: core.ReportFileCorruptedRequest
+	(*ZipPart)(nil),                       // 19: core.ZipPart
+	(*ReportZipReadyRequest)(nil),         // 20: core.ReportZipReadyRequest
+	(*ReportZipFailedRequest)(nil),        // 21: core.ReportZipFailedRequest
+	(*CollectZipEntriesRequest)(nil),      // 22: core.CollectZipEntriesRequest
+	(*ZipEntry)(nil),                      // 23: core.ZipEntry
+	(*CollectZipEntriesResponse)(nil),     // 24: core.CollectZipEntriesResponse
+	(*ReportZipProgressRequest)(nil),      // 25: core.ReportZipProgressRequest
+	(*ReportBotUnauthorizedRequest)(nil),  // 26: core.ReportBotUnauthorizedRequest
+	(*ReportEmergencyCleanupRequest)(nil), // 27: core.ReportEmergencyCleanupRequest
+	(*DiskSpaceResponse)(nil),             // 28: core.DiskSpaceResponse
+	(*ReportCronStatsRequest)(nil),        // 29: core.ReportCronStatsRequest
+	(*VerifyFolderShareRequest)(nil),      // 30: core.VerifyFolderShareRequest
+	(*VerifyFolderShareResponse)(nil),     // 31: core.VerifyFolderShareResponse
 }
 var file_core_proto_depIdxs = []int32{
 	3,  // 0: core.ReportChunkResultsRequest.results:type_name -> core.ChunkResult
-	7,  // 1: core.FileMetadata.chunks:type_name -> core.ChunkMetadata
+	8,  // 1: core.FileMetadata.chunks:type_name -> core.ChunkMetadata
 	0,  // 2: core.ChunkStatusEntry.status:type_name -> core.ChunkStatus
-	10, // 3: core.BatchCheckResponse.entries:type_name -> core.ChunkStatusEntry
-	16, // 4: core.ReportZipReadyRequest.parts:type_name -> core.ZipPart
-	4,  // 5: core.CoreService.ReportChunkResults:input_type -> core.ReportChunkResultsRequest
-	6,  // 6: core.CoreService.GetFileMetadata:input_type -> core.GetFileMetadataRequest
-	9,  // 7: core.CoreService.BatchCheckChunkStatus:input_type -> core.BatchCheckRequest
-	12, // 8: core.CoreService.ReportUploadFailed:input_type -> core.ReportUploadFailedRequest
-	13, // 9: core.CoreService.ReportDeleteSuccess:input_type -> core.ReportDeleteSuccessRequest
-	14, // 10: core.CoreService.ReportDeleteFailed:input_type -> core.ReportDeleteFailedRequest
-	15, // 11: core.CoreService.ReportFileCorrupted:input_type -> core.ReportFileCorruptedRequest
-	17, // 12: core.CoreService.ReportZipReady:input_type -> core.ReportZipReadyRequest
-	18, // 13: core.CoreService.ReportZipFailed:input_type -> core.ReportZipFailedRequest
-	19, // 14: core.CoreService.ReportBotUnauthorized:input_type -> core.ReportBotUnauthorizedRequest
-	20, // 15: core.CoreService.ReportEmergencyCleanup:input_type -> core.ReportEmergencyCleanupRequest
-	1,  // 16: core.CoreService.CheckDiskSpace:input_type -> core.Empty
-	22, // 17: core.CoreService.ReportCronStats:input_type -> core.ReportCronStatsRequest
-	23, // 18: core.CoreService.VerifyFolderShare:input_type -> core.VerifyFolderShareRequest
-	1,  // 19: core.CoreService.Ping:input_type -> core.Empty
-	5,  // 20: core.CoreService.ReportChunkResults:output_type -> core.ReportChunkResultsResponse
-	8,  // 21: core.CoreService.GetFileMetadata:output_type -> core.FileMetadata
-	11, // 22: core.CoreService.BatchCheckChunkStatus:output_type -> core.BatchCheckResponse
-	1,  // 23: core.CoreService.ReportUploadFailed:output_type -> core.Empty
-	1,  // 24: core.CoreService.ReportDeleteSuccess:output_type -> core.Empty
-	1,  // 25: core.CoreService.ReportDeleteFailed:output_type -> core.Empty
-	1,  // 26: core.CoreService.ReportFileCorrupted:output_type -> core.Empty
-	1,  // 27: core.CoreService.ReportZipReady:output_type -> core.Empty
-	1,  // 28: core.CoreService.ReportZipFailed:output_type -> core.Empty
-	1,  // 29: core.CoreService.ReportBotUnauthorized:output_type -> core.Empty
-	1,  // 30: core.CoreService.ReportEmergencyCleanup:output_type -> core.Empty
-	21, // 31: core.CoreService.CheckDiskSpace:output_type -> core.DiskSpaceResponse
-	1,  // 32: core.CoreService.ReportCronStats:output_type -> core.Empty
-	24, // 33: core.CoreService.VerifyFolderShare:output_type -> core.VerifyFolderShareResponse
-	2,  // 34: core.CoreService.Ping:output_type -> core.Pong
-	20, // [20:35] is the sub-list for method output_type
-	5,  // [5:20] is the sub-list for method input_type
-	5,  // [5:5] is the sub-list for extension type_name
-	5,  // [5:5] is the sub-list for extension extendee
-	0,  // [0:5] is the sub-list for field type_name
+	11, // 3: core.BatchCheckResponse.entries:type_name -> core.ChunkStatusEntry
+	13, // 4: core.ReportBandwidthUsageRequest.entries:type_name -> core.BandwidthUsageEntry
+	19, // 5: core.ReportZipReadyRequest.parts:type_name -> core.ZipPart
+	23, // 6: core.CollectZipEntriesResponse.entries:type_name -> core.ZipEntry
+	4,  // 7: core.CoreService.ReportChunkResults:input_type -> core.ReportChunkResultsRequest
+	6,  // 8: core.CoreService.ReportFileComplete:input_type -> core.ReportFileCompleteRequest
+	7,  // 9: core.CoreService.GetFileMetadata:input_type -> core.GetFileMetadataRequest
+	22, // 10: core.CoreService.CollectZipEntries:input_type -> core.CollectZipEntriesRequest
+	25, // 11: core.CoreService.ReportZipProgress:input_type -> core.ReportZipProgressRequest
+	10, // 12: core.CoreService.BatchCheckChunkStatus:input_type -> core.BatchCheckRequest
+	14, // 13: core.CoreService.ReportBandwidthUsage:input_type -> core.ReportBandwidthUsageRequest
+	15, // 14: core.CoreService.ReportUploadFailed:input_type -> core.ReportUploadFailedRequest
+	16, // 15: core.CoreService.ReportDeleteSuccess:input_type -> core.ReportDeleteSuccessRequest
+	17, // 16: core.CoreService.ReportDeleteFailed:input_type -> core.ReportDeleteFailedRequest
+	18, // 17: core.CoreService.ReportFileCorrupted:input_type -> core.ReportFileCorruptedRequest
+	20, // 18: core.CoreService.ReportZipReady:input_type -> core.ReportZipReadyRequest
+	21, // 19: core.CoreService.ReportZipFailed:input_type -> core.ReportZipFailedRequest
+	26, // 20: core.CoreService.ReportBotUnauthorized:input_type -> core.ReportBotUnauthorizedRequest
+	27, // 21: core.CoreService.ReportEmergencyCleanup:input_type -> core.ReportEmergencyCleanupRequest
+	1,  // 22: core.CoreService.CheckDiskSpace:input_type -> core.Empty
+	29, // 23: core.CoreService.ReportCronStats:input_type -> core.ReportCronStatsRequest
+	30, // 24: core.CoreService.VerifyFolderShare:input_type -> core.VerifyFolderShareRequest
+	1,  // 25: core.CoreService.Ping:input_type -> core.Empty
+	5,  // 26: core.CoreService.ReportChunkResults:output_type -> core.ReportChunkResultsResponse
+	1,  // 27: core.CoreService.ReportFileComplete:output_type -> core.Empty
+	9,  // 28: core.CoreService.GetFileMetadata:output_type -> core.FileMetadata
+	24, // 29: core.CoreService.CollectZipEntries:output_type -> core.CollectZipEntriesResponse
+	1,  // 30: core.CoreService.ReportZipProgress:output_type -> core.Empty
+	12, // 31: core.CoreService.BatchCheckChunkStatus:output_type -> core.BatchCheckResponse
+	1,  // 32: core.CoreService.ReportBandwidthUsage:output_type -> core.Empty
+	1,  // 33: core.CoreService.ReportUploadFailed:output_type -> core.Empty
+	1,  // 34: core.CoreService.ReportDeleteSuccess:output_type -> core.Empty
+	1,  // 35: core.CoreService.ReportDeleteFailed:output_type -> core.Empty
+	1,  // 36: core.CoreService.ReportFileCorrupted:output_type -> core.Empty
+	1,  // 37: core.CoreService.ReportZipReady:output_type -> core.Empty
+	1,  // 38: core.CoreService.ReportZipFailed:output_type -> core.Empty
+	1,  // 39: core.CoreService.ReportBotUnauthorized:output_type -> core.Empty
+	1,  // 40: core.CoreService.ReportEmergencyCleanup:output_type -> core.Empty
+	28, // 41: core.CoreService.CheckDiskSpace:output_type -> core.DiskSpaceResponse
+	1,  // 42: core.CoreService.ReportCronStats:output_type -> core.Empty
+	31, // 43: core.CoreService.VerifyFolderShare:output_type -> core.VerifyFolderShareResponse
+	2,  // 44: core.CoreService.Ping:output_type -> core.Pong
+	26, // [26:45] is the sub-list for method output_type
+	7,  // [7:26] is the sub-list for method input_type
+	7,  // [7:7] is the sub-list for extension type_name
+	7,  // [7:7] is the sub-list for extension extendee
+	0,  // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_core_proto_init() }
@@ -1776,7 +2237,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   24,
+			NumMessages:   31,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

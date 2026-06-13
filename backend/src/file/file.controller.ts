@@ -15,6 +15,7 @@ import {
   Body,
   Head,
   HttpCode,
+  HttpException,
   HttpStatus,
   UploadedFile,
   UnauthorizedException,
@@ -52,8 +53,14 @@ const multerOptions = {
   limits: { fileSize: MAX_CHUNK_SIZE + 1024 * 1024 },
 };
 
+// When 'go', the Go transfer service owns ALL binary ingestion (encrypt +
+// Telegram upload). NestJS only does metadata/quota. Set to 'nest' to restore
+// the legacy in-process direct-upload path.
+const uploadIoOwnerIsGo = (): boolean =>
+  (process.env.UPLOAD_IO_OWNER || 'go') === 'go';
+
 @SkipThrottle()
-@Controller('files')
+@Controller(['files', 'transfer'])
 export class FileController {
   private readonly logger = new Logger(FileController.name);
 
@@ -123,7 +130,32 @@ export class FileController {
         this.logger.warn(
           `Failed to buffer file "${file.originalname}" (${file.size} bytes) for user ${req.user.userId}, falling back to direct upload. Error: ${err instanceof Error ? err.message : String(err)}`,
         );
+        if (uploadIoOwnerIsGo()) {
+          // Do NOT fall back to in-process Telegram upload — Go owns I/O.
+          // Surface a retryable error; the buffer/handoff will recover.
+          throw new HttpException(
+            {
+              error: 'upload_unavailable',
+              message: 'Upload temporarily unavailable, please retry',
+              retryAfter: 5,
+            },
+            HttpStatus.SERVICE_UNAVAILABLE,
+          );
+        }
       }
+    } else if (uploadIoOwnerIsGo()) {
+      // File too large for the buffer and Go owns I/O. The multipart body is
+      // already in memory here, so this legacy endpoint cannot stream it to Go.
+      // Clients must use the chunked flow (init → chunk → complete), which the
+      // frontend now always does. Reject to avoid an in-process Telegram upload.
+      throw new HttpException(
+        {
+          error: 'use_chunked_upload',
+          message:
+            'File exceeds buffer size; use the chunked upload flow (upload/init).',
+        },
+        HttpStatus.PAYLOAD_TOO_LARGE,
+      );
     }
 
     const result = await this.uploadSessionService.uploadFile(

@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"errors"
 	"context"
 	"log/slog"
 	"sync"
@@ -16,7 +17,10 @@ type ChunkJob struct {
 	TempStorageKey string
 	UserID         string
 	Attempt        int
+	IsChunked      bool
 }
+
+var ErrBufferFull = errors.New("upload buffer is full")
 
 type WorkerPool struct {
 	jobs         chan ChunkJob
@@ -27,7 +31,8 @@ type WorkerPool struct {
 	cancel       context.CancelFunc
 	wg           sync.WaitGroup
 	activeJobs   atomic.Int32
-	
+	workerCount  int
+
 	// Tracking active file uploads for synchronous confirmation
 	fileJobsMu   sync.Mutex
 	fileJobs     map[string]int32 // Count of active jobs per file
@@ -43,6 +48,7 @@ func NewWorkerPool(size int, processor *UploadWorker, logger *slog.Logger) *Work
 		ctx:          ctx,
 		cancel:       cancel,
 		fileJobs:     make(map[string]int32),
+		workerCount:  size,
 	}
 
 	// Start delayed queue manager
@@ -58,12 +64,24 @@ func NewWorkerPool(size int, processor *UploadWorker, logger *slog.Logger) *Work
 	return pool
 }
 
-func (p *WorkerPool) AddJob(job ChunkJob) {
+func (p *WorkerPool) AddJob(job ChunkJob) error {
+	if len(p.jobs) >= 900 {
+		return ErrBufferFull
+	}
+
 	p.fileJobsMu.Lock()
 	p.fileJobs[job.FileID]++
 	p.fileJobsMu.Unlock()
-	
-	p.jobs <- job
+
+	select {
+	case p.jobs <- job:
+		return nil
+	default:
+		p.fileJobsMu.Lock()
+		p.fileJobs[job.FileID]--
+		p.fileJobsMu.Unlock()
+		return ErrBufferFull
+	}
 }
 
 func (p *WorkerPool) worker(id int) {
@@ -84,7 +102,13 @@ func (p *WorkerPool) worker(id int) {
 				if job.Attempt < 5 {
 					p.logger.Warn("Upload failed, scheduling retry", "chunkId", job.ID, "attempt", job.Attempt+1, "error", err)
 					job.Attempt++
-					p.delayedQueue <- job
+					select {
+					case p.delayedQueue <- job:
+					default:
+						p.logger.Error("Delayed queue full, discarding retry", "chunkId", job.ID)
+						p.processor.ReportFailure(job.FileID, job.ChunkIndex, "delayed_queue_full")
+						p.decrementFileJob(job.FileID)
+					}
 				} else {
 					p.logger.Error("Upload permanently failed", "chunkId", job.ID, "error", err)
 					p.processor.ReportFailure(job.FileID, job.ChunkIndex, err.Error())
@@ -149,10 +173,14 @@ func (p *WorkerPool) manageDelayedQueue() {
 		case <-ticker.C:
 			now := time.Now()
 			var remaining []delayedItem
-			
+
 			for _, item := range delayed {
 				if now.After(item.at) {
-					p.jobs <- item.job
+					select {
+					case p.jobs <- item.job:
+					default:
+						remaining = append(remaining, item)
+					}
 				} else {
 					remaining = append(remaining, item)
 				}
@@ -188,4 +216,24 @@ func (p *WorkerPool) WaitForCompletion(timeout time.Duration) {
 	case <-time.After(timeout):
 		p.logger.Warn("Graceful shutdown timeout, forcing exit", "incompleteJobs", p.activeJobs.Load())
 	}
+}
+
+func (p *WorkerPool) Size() int {
+	return p.workerCount
+}
+
+func (p *WorkerPool) GetJobs() chan ChunkJob {
+	return p.jobs
+}
+
+func (p *WorkerPool) ActiveCount() int32 {
+	return p.activeJobs.Load()
+}
+
+func (p *WorkerPool) PendingCount() int {
+	return len(p.jobs)
+}
+
+func (p *WorkerPool) DelayedCount() int {
+	return len(p.delayedQueue)
 }

@@ -1,7 +1,11 @@
 package telegram
 
 import (
+	"context"
+	"fmt"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 )
@@ -13,6 +17,17 @@ type BandwidthLock struct {
 	EstimatedSize int64
 	RequiresReset bool
 	CountDownload bool
+}
+
+type BandwidthReport struct {
+	UserID        string
+	FileID        string
+	ActualBytes   int64
+	CountDownload bool
+}
+
+type BandwidthReporter interface {
+	ReportBandwidth(report *BandwidthReport)
 }
 
 func resolveUserId(c echo.Context) string {
@@ -33,11 +48,45 @@ func resolveUserId(c echo.Context) string {
 	return ""
 }
 
+func userQuotaKey(userID string) string {
+	return fmt.Sprintf("user:%s:quota", userID)
+}
+
+func (d *Downloader) checkUserBandwidth(ctx context.Context, userID string, estimatedSize int64) (bool, error) {
+	key := userQuotaKey(userID)
+
+	vals, err := d.RedisClient.HMGet(ctx, key, "dailyBandwidthUsed", "dailyBandwidthLimit").Result()
+	if err != nil || vals[0] == nil {
+		return true, nil // cache miss — allow, not blocking
+	}
+
+	used, _ := strconv.ParseInt(vals[0].(string), 10, 64)
+	limit := int64(0)
+	if vals[1] != nil {
+		limit, _ = strconv.ParseInt(vals[1].(string), 10, 64)
+	}
+
+	if limit > 0 && used+estimatedSize > limit {
+		return false, nil
+	}
+
+	// Optimistic lock — increment
+	d.RedisClient.HIncrBy(ctx, key, "dailyBandwidthUsed", estimatedSize)
+	d.RedisClient.Expire(ctx, key, 1*time.Hour)
+
+	return true, nil
+}
+
 func (d *Downloader) CheckAndLockBandwidth(c echo.Context, fileID string, fileSize int64, estimatedSize int64, hasRangeHeader bool) (*BandwidthLock, error) {
-	// Bypassed local database-level bandwidth checking in Go transfer service,
-	// as user bandwidth checking is fully handled on the NestJS Core API gateway.
 	userID := resolveUserId(c)
 	ip := c.RealIP()
+
+	if userID != "" && d.bandwidthEnabled {
+		ok, _ := d.checkUserBandwidth(c.Request().Context(), userID, estimatedSize)
+		if !ok {
+			return nil, fmt.Errorf("BANDWIDTH_LIMIT")
+		}
+	}
 
 	return &BandwidthLock{
 		FileID:        fileID,
@@ -50,5 +99,22 @@ func (d *Downloader) CheckAndLockBandwidth(c echo.Context, fileID string, fileSi
 }
 
 func (d *Downloader) RefundAndReconcile(lock *BandwidthLock, actualBytes int64) {
-	// No-op
+	if lock.UserID == "" {
+		return
+	}
+
+	ctx := context.Background()
+	refund := lock.EstimatedSize - actualBytes
+	if refund > 0 {
+		d.RedisClient.HIncrBy(ctx, userQuotaKey(lock.UserID), "dailyBandwidthUsed", -refund)
+	}
+
+	if d.batchReporter != nil {
+		d.batchReporter.ReportBandwidth(&BandwidthReport{
+			UserID:        lock.UserID,
+			FileID:        lock.FileID,
+			ActualBytes:   actualBytes,
+			CountDownload: lock.CountDownload,
+		})
+	}
 }

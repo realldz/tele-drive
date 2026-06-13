@@ -34,6 +34,27 @@ func (s *TransferServer) Ping(ctx context.Context, req *pb.TransferPingRequest) 
 	return &pb.TransferPingResponse{Timestamp: time.Now().UnixMilli()}, nil
 }
 
+func (s *TransferServer) EnqueueBufferedUpload(ctx context.Context, req *pb.EnqueueBufferedUploadRequest) (*pb.EnqueueBufferedUploadResponse, error) {
+	job := queue.ChunkJob{
+		ID:             req.FileId,
+		FileID:         req.FileId,
+		ChunkIndex:     int(req.ChunkIndex),
+		Size:           int(req.Size),
+		TempStorageKey: req.TempStorageKey,
+		UserID:         req.UserId,
+		Attempt:        0,
+		IsChunked:      req.IsChunk,
+	}
+
+	if err := s.workerPool.AddJob(job); err != nil {
+		s.logger.Warn("Rejected buffered upload enqueue", "fileId", req.FileId, "isChunk", req.IsChunk, "error", err)
+		return &pb.EnqueueBufferedUploadResponse{Accepted: false, Reason: err.Error()}, nil
+	}
+
+	s.logger.Info("Enqueued buffered upload", "fileId", req.FileId, "isChunk", req.IsChunk, "chunkIndex", req.ChunkIndex)
+	return &pb.EnqueueBufferedUploadResponse{Accepted: true}, nil
+}
+
 func (s *TransferServer) FlushAndConfirm(ctx context.Context, req *pb.FlushAndConfirmRequest) (*pb.FlushAndConfirmResponse, error) {
 	s.logger.Info("FlushAndConfirm called", "fileId", req.FileId)
 	

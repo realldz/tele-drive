@@ -6,8 +6,12 @@ option go_package = "github.com/realldz/tele-drive/backend-transfer-go/internal/
 
 service CoreService {
   rpc ReportChunkResults(ReportChunkResultsRequest) returns (ReportChunkResultsResponse);
+  rpc ReportFileComplete(ReportFileCompleteRequest) returns (Empty);
   rpc GetFileMetadata(GetFileMetadataRequest) returns (FileMetadata);
+  rpc CollectZipEntries(CollectZipEntriesRequest) returns (CollectZipEntriesResponse);
+  rpc ReportZipProgress(ReportZipProgressRequest) returns (Empty);
   rpc BatchCheckChunkStatus(BatchCheckRequest) returns (BatchCheckResponse);
+  rpc ReportBandwidthUsage(ReportBandwidthUsageRequest) returns (Empty);
   rpc ReportUploadFailed(ReportUploadFailedRequest) returns (Empty);
   rpc ReportDeleteSuccess(ReportDeleteSuccessRequest) returns (Empty);
   rpc ReportDeleteFailed(ReportDeleteFailedRequest) returns (Empty);
@@ -48,6 +52,18 @@ message ReportChunkResultsRequest {
 
 message ReportChunkResultsResponse {
   int32 accepted = 1;
+}
+
+// --- File Complete (record-level, non-chunked) ---
+
+message ReportFileCompleteRequest {
+  string file_id = 1;
+  string telegram_file_id = 2;
+  int32 telegram_message_id = 3;
+  int64 bot_id = 4;
+  string encryption_iv = 5;
+  int64 size = 6;
+  string etag = 7;
 }
 
 // --- File Metadata ---
@@ -92,6 +108,8 @@ message FileMetadata {
   int32 downloads_24h = 41;
   int64 bandwidth_limit_24h = 42;
   int64 bandwidth_used_24h = 43;
+
+  string temp_storage_key = 50;
 }
 
 // --- Batch Check ---
@@ -115,6 +133,19 @@ message ChunkStatusEntry {
 
 message BatchCheckResponse {
   repeated ChunkStatusEntry entries = 1;
+}
+
+// --- Bandwidth ---
+
+message BandwidthUsageEntry {
+  string user_id = 1;
+  string file_id = 2;
+  int64 actual_bytes = 3;
+  bool count_download = 4;
+}
+
+message ReportBandwidthUsageRequest {
+  repeated BandwidthUsageEntry entries = 1;
 }
 
 // --- Upload Failure ---
@@ -161,6 +192,27 @@ message ReportZipReadyRequest {
 message ReportZipFailedRequest {
   string job_id = 1;
   string reason = 2;
+}
+
+// --- ZIP collection & progress (Go-owned zip assembly) ---
+
+message CollectZipEntriesRequest {
+  string job_id = 1;
+}
+
+message ZipEntry {
+  string file_record_id = 1;
+  string relative_path = 2;
+  int64 size = 3;
+}
+
+message CollectZipEntriesResponse {
+  repeated ZipEntry entries = 1;
+}
+
+message ReportZipProgressRequest {
+  string job_id = 1;
+  int32 processed_files = 2;
 }
 
 // --- Bot ---

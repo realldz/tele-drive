@@ -8,7 +8,7 @@ async function bootstrap() {
   const app = await bootstrapNestApp(CoreServerModule, {
     appName: 'Core API',
     port: process.env.CORE_PORT ?? process.env.PORT ?? 3001,
-    enableS3RawBodyRouting: false,
+    enableS3RawBodyRouting: true,
   });
 
   const logger = new Logger('Bootstrap');
@@ -24,6 +24,12 @@ async function bootstrap() {
         keepaliveTimeoutMs: 10000,
         keepalivePermitWithoutCalls: 1,
         http2MaxPingsWithoutData: 0,
+      },
+      loader: {
+        longs: String,
+        enums: String,
+        defaults: true,
+        oneofs: true,
       },
       maxReceiveMessageLength: 10 * 1024 * 1024,
       maxSendMessageLength: 10 * 1024 * 1024,

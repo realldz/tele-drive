@@ -62,6 +62,27 @@ export class CacheService {
     }
   }
 
+  async syncUserBandwidth(
+    userId: string,
+    data: {
+      dailyBandwidthUsed: bigint;
+      dailyBandwidthLimit: bigint | null;
+      lastBandwidthReset: Date;
+    },
+  ): Promise<void> {
+    const key = `user:${userId}:quota`;
+    try {
+      await this.redis.hset(key, {
+        dailyBandwidthUsed: data.dailyBandwidthUsed.toString(),
+        dailyBandwidthLimit: (data.dailyBandwidthLimit ?? 0n).toString(),
+        lastBandwidthReset: data.lastBandwidthReset.toISOString(),
+      });
+      await this.redis.expire(key, 3600);
+    } catch (err) {
+      this.logger.warn(`Failed to sync bandwidth cache for ${userId}`, err);
+    }
+  }
+
   async getFileMetadata(fileId: string): Promise<Record<string, any> | null> {
     try {
       const data = await this.redis.get(`file:${fileId}`);

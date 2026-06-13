@@ -90,6 +90,17 @@ func (h *FileHandler) UploadChunkWithToken(c echo.Context) error {
 		}
 	}
 
+	// Large chunk / unknown size: stream straight to Telegram (no RAM/disk buffer).
+	contentLength := c.Request().ContentLength
+	if contentLength > h.maxChunkSize {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"message": fmt.Sprintf("Chunk size exceeds maximum allowed size (%d bytes)", h.maxChunkSize),
+		})
+	}
+	if contentLength <= 0 || contentLength > h.maxBufferFileSize {
+		return h.streamToTelegram(c, fileID, chunkIndex, contentLength, meta)
+	}
+
 	// Read raw binary body
 	body, err := io.ReadAll(c.Request().Body)
 	if err != nil {
@@ -115,7 +126,7 @@ func (h *FileHandler) UploadChunkWithToken(c echo.Context) error {
 	}
 
 	// Enqueue to internal worker pool
-	h.workerPool.AddJob(queue.ChunkJob{
+	if err := h.workerPool.AddJob(queue.ChunkJob{
 		ID:             generateUUID(),
 		FileID:         fileID,
 		ChunkIndex:     chunkIndex,
@@ -123,7 +134,13 @@ func (h *FileHandler) UploadChunkWithToken(c echo.Context) error {
 		TempStorageKey: storageKey,
 		UserID:         userID,
 		Attempt:        0,
-	})
+		IsChunked:      true,
+	}); err != nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{
+			"error":   "upload_buffer_full",
+			"message": "Upload buffer is temporarily full, please retry",
+		})
+	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":     "buffered",
@@ -202,6 +219,17 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 		}
 	}
 
+	// Large chunk / unknown size: stream straight to Telegram (no RAM/disk buffer).
+	contentLength := c.Request().ContentLength
+	if contentLength > h.maxChunkSize {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"message": fmt.Sprintf("Chunk size exceeds maximum allowed size (%d bytes)", h.maxChunkSize),
+		})
+	}
+	if contentLength <= 0 || contentLength > h.maxBufferFileSize {
+		return h.streamToTelegram(c, fileID, chunkIndex, contentLength, meta)
+	}
+
 	// Read raw binary body (no multipart)
 	body, err := io.ReadAll(c.Request().Body)
 	if err != nil {
@@ -228,7 +256,7 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 	}
 
 	// Enqueue to internal worker pool instead of DB + BullMQ
-	h.workerPool.AddJob(queue.ChunkJob{
+	if err := h.workerPool.AddJob(queue.ChunkJob{
 		ID:             generateUUID(),
 		FileID:         fileID,
 		ChunkIndex:     chunkIndex,
@@ -236,7 +264,13 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 		TempStorageKey: storageKey,
 		UserID:         userID,
 		Attempt:        0,
-	})
+		IsChunked:      true,
+	}); err != nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{
+			"error":   "upload_buffer_full",
+			"message": "Upload buffer is temporarily full, please retry",
+		})
+	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":     "buffered",

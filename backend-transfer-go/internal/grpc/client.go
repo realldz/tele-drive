@@ -59,6 +59,13 @@ func (c *CoreClient) ReportChunkResults(ctx context.Context, results []*pb.Chunk
 	return resp.Accepted, nil
 }
 
+func (c *CoreClient) ReportFileComplete(ctx context.Context, req *pb.ReportFileCompleteRequest) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, err := c.client.ReportFileComplete(ctx, req)
+	return err
+}
+
 func (c *CoreClient) GetFileMetadata(ctx context.Context, fileID string) (*pb.FileMetadata, error) {
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
@@ -79,6 +86,13 @@ func (c *CoreClient) ReportUploadFailed(ctx context.Context, req *pb.ReportUploa
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 	_, err := c.client.ReportUploadFailed(ctx, req)
+	return err
+}
+
+func (c *CoreClient) ReportBandwidthUsage(ctx context.Context, entries []*pb.BandwidthUsageEntry) error {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_, err := c.client.ReportBandwidthUsage(ctx, &pb.ReportBandwidthUsageRequest{Entries: entries})
 	return err
 }
 
@@ -117,6 +131,23 @@ func (c *CoreClient) ReportZipFailed(ctx context.Context, jobID string, reason s
 	return err
 }
 
+func (c *CoreClient) CollectZipEntries(ctx context.Context, jobID string) ([]*pb.ZipEntry, error) {
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	resp, err := c.client.CollectZipEntries(ctx, &pb.CollectZipEntriesRequest{JobId: jobID})
+	if err != nil {
+		return nil, err
+	}
+	return resp.Entries, nil
+}
+
+func (c *CoreClient) ReportZipProgress(ctx context.Context, jobID string, processedFiles int32) error {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, err := c.client.ReportZipProgress(ctx, &pb.ReportZipProgressRequest{JobId: jobID, ProcessedFiles: processedFiles})
+	return err
+}
+
 func (c *CoreClient) ReportEmergencyCleanup(ctx context.Context, fileIDs []string) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
@@ -137,4 +168,9 @@ func (c *CoreClient) VerifyFolderShare(ctx context.Context, shareToken string, f
 		ShareToken: shareToken,
 		FileId:     fileID,
 	})
+}
+
+func (c *CoreClient) IsConnected() bool {
+	state := c.conn.GetState()
+	return state.String() == "READY" || state.String() == "IDLE"
 }

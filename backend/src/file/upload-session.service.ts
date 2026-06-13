@@ -25,6 +25,11 @@ import {
 import { UploadBufferService } from './upload-buffer.service';
 import { GrpcTransferClient } from '../grpc/grpc-transfer.client';
 
+// When 'go', the Go transfer service owns all binary ingestion. The in-process
+// direct-upload fallbacks here are disabled. Set to 'nest' to restore them.
+const uploadIoOwnerIsGo = (): boolean =>
+  (process.env.UPLOAD_IO_OWNER || 'go') === 'go';
+
 @Injectable()
 export class UploadSessionService {
   private readonly logger = new Logger(UploadSessionService.name);
@@ -543,6 +548,24 @@ export class UploadSessionService {
                 });
                 resolve(chunk);
               } catch (bufferErr: any) {
+                if (uploadIoOwnerIsGo()) {
+                  // Go owns I/O — do not fall back to in-process Telegram upload.
+                  this.logger.warn(
+                    `Failed to buffer chunk ${chunkIndex + 1} for file ${fileId}: ${bufferErr.message}`,
+                  );
+                  reject(
+                    new HttpException(
+                      {
+                        error: 'upload_buffer_full',
+                        message:
+                          'Upload buffer is temporarily full, please retry',
+                        retryAfter: 5,
+                      },
+                      HttpStatus.SERVICE_UNAVAILABLE,
+                    ),
+                  );
+                  return;
+                }
                 this.logger.warn(
                   `Failed to buffer chunk ${chunkIndex + 1} for file ${fileId}, falling back to direct upload: ${bufferErr.message}`,
                 );
@@ -553,6 +576,24 @@ export class UploadSessionService {
             }
           });
           stream.on('error', (err) => reject(err));
+          return;
+        }
+
+        if (uploadIoOwnerIsGo()) {
+          // Cannot buffer and Go owns I/O. The chunk endpoint is routed to Go by
+          // nginx, so this NestJS path should not normally be reached. Reject
+          // rather than perform an in-process Telegram upload.
+          stream.resume();
+          reject(
+            new HttpException(
+              {
+                error: 'upload_unavailable',
+                message: 'Upload temporarily unavailable, please retry',
+                retryAfter: 5,
+              },
+              HttpStatus.SERVICE_UNAVAILABLE,
+            ),
+          );
           return;
         }
 

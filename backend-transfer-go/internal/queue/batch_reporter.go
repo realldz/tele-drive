@@ -7,12 +7,14 @@ import (
 	"time"
 
 	pb "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto"
+	"github.com/realldz/tele-drive/backend-transfer-go/internal/telegram"
 )
 
 type BatchReporter struct {
 	client      CoreClient
 	logger      *slog.Logger
 	buffer      []*pb.ChunkResult
+	bwBuffer    []*pb.BandwidthUsageEntry
 	mu          sync.Mutex
 	flushTicker *time.Ticker
 	batchSize   int
@@ -24,6 +26,7 @@ func NewBatchReporter(client CoreClient, logger *slog.Logger, interval time.Dura
 		client:      client,
 		logger:      logger,
 		buffer:      make([]*pb.ChunkResult, 0, batchSize),
+		bwBuffer:    make([]*pb.BandwidthUsageEntry, 0),
 		flushTicker: time.NewTicker(interval),
 		batchSize:   batchSize,
 		done:        make(chan struct{}),
@@ -37,7 +40,9 @@ func (br *BatchReporter) startLoop() {
 		select {
 		case <-br.flushTicker.C:
 			br.Flush()
+			br.flushBandwidth()
 		case <-br.done:
+			br.flushBandwidth()
 			return
 		}
 	}
@@ -92,4 +97,38 @@ func (br *BatchReporter) Flush() {
 // FlushForFile ensures all chunks for a specific file are flushed immediately
 func (br *BatchReporter) FlushForFile(fileID string) {
 	br.Flush()
+}
+
+func (br *BatchReporter) ReportBandwidth(report *telegram.BandwidthReport) {
+	br.mu.Lock()
+	br.bwBuffer = append(br.bwBuffer, &pb.BandwidthUsageEntry{
+		UserId:        report.UserID,
+		FileId:        report.FileID,
+		ActualBytes:   report.ActualBytes,
+		CountDownload: report.CountDownload,
+	})
+	br.mu.Unlock()
+}
+
+func (br *BatchReporter) flushBandwidth() {
+	br.mu.Lock()
+	if len(br.bwBuffer) == 0 {
+		br.mu.Unlock()
+		return
+	}
+	bwBatch := make([]*pb.BandwidthUsageEntry, len(br.bwBuffer))
+	copy(bwBatch, br.bwBuffer)
+	br.bwBuffer = br.bwBuffer[:0]
+	br.mu.Unlock()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := br.client.ReportBandwidthUsage(ctx, bwBatch); err != nil {
+		br.logger.Error("Failed to report bandwidth usage, buffering for retry", "error", err)
+		br.mu.Lock()
+		br.bwBuffer = append(bwBatch, br.bwBuffer...)
+		br.mu.Unlock()
+	} else {
+		br.logger.Debug("Flushed bandwidth reports via gRPC", "count", len(bwBatch))
+	}
 }

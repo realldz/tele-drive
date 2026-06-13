@@ -69,6 +69,16 @@ func (s *TempStorage) WriteBytes(key string, data []byte) error {
 	return os.WriteFile(filePath, data, 0644)
 }
 
+// Create opens a writable file for the given key, creating parent dirs.
+// The caller is responsible for closing the returned file.
+func (s *TempStorage) Create(key string) (*os.File, error) {
+	filePath := filepath.Join(s.baseDir, key)
+	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
+		return nil, err
+	}
+	return os.Create(filePath)
+}
+
 func (s *TempStorage) Read(key string) (io.ReadCloser, error) {
 	filePath := filepath.Join(s.baseDir, key)
 	return os.Open(filePath)

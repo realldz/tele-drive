@@ -54,6 +54,8 @@ type Downloader struct {
 	RedisClient    *redis.Client
 	httpClient     *http.Client
 	logger         *slog.Logger
+	bandwidthEnabled bool
+	batchReporter    BandwidthReporter
 }
 
 func NewDownloader(
@@ -62,13 +64,17 @@ func NewDownloader(
 	tempStorage *storage.TempStorage,
 	redisClient *redis.Client,
 	logger *slog.Logger,
+	bandwidthEnabled bool,
+	batchReporter BandwidthReporter,
 ) *Downloader {
 	return &Downloader{
-		telegramClient: telegramClient,
-		cryptoEngine:   cryptoEngine,
-		tempStorage:    tempStorage,
-		RedisClient:    redisClient,
-		logger:         logger,
+		telegramClient:   telegramClient,
+		cryptoEngine:     cryptoEngine,
+		tempStorage:      tempStorage,
+		RedisClient:      redisClient,
+		logger:           logger,
+		bandwidthEnabled: bandwidthEnabled,
+		batchReporter:    batchReporter,
 		httpClient: &http.Client{
 			Timeout: 10 * time.Minute,
 		},
@@ -91,13 +97,19 @@ func (d *Downloader) GetDownloadInfo(meta *pb.FileMetadata) (*DownloadInfo, erro
 	}
 
 	if meta.Status == "buffered" {
+		// NestJS stores buffered single files at a random-UUID key; prefer the
+		// real key carried in metadata, fall back to the legacy convention.
+		tempKey := meta.TempStorageKey
+		if tempKey == "" {
+			tempKey = fmt.Sprintf("buf/%s.tmp", meta.Id)
+		}
 		return &DownloadInfo{
 			ID:             meta.Id,
 			Filename:       meta.Filename,
 			Size:           meta.Size,
 			MimeType:       meta.MimeType,
 			IsBuffered:     true,
-			TempStorageKey: fmt.Sprintf("buf/%s.tmp", meta.Id),
+			TempStorageKey: tempKey,
 			IsChunked:      false,
 		}, nil
 	}
@@ -232,7 +244,8 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 	res.Header().Set("Content-Type", info.MimeType)
 
 	if disposition == "attachment" {
-		res.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, url.QueryEscape(info.Filename)))
+		quoted := strings.NewReplacer("\\", "\\\\", "\"", "\\\"").Replace(info.Filename)
+		res.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"; filename*=UTF-8''%s`, quoted, url.PathEscape(info.Filename)))
 	} else {
 		res.Header().Set("Content-Disposition", "inline")
 	}
@@ -487,4 +500,24 @@ func minInt64(a, b int64) int64 {
 		return a
 	}
 	return b
+}
+
+// StreamFullFile writes the entire decrypted contents of a file to w.
+// Used by the ZIP worker to assemble archives. Handles buffered, single,
+// and chunked files (with per-chunk decryption).
+func (d *Downloader) StreamFullFile(ctx context.Context, w io.Writer, info *DownloadInfo) error {
+	if info.IsBuffered {
+		reader, err := d.tempStorage.Read(info.TempStorageKey)
+		if err != nil {
+			return err
+		}
+		defer reader.Close()
+		_, err = io.Copy(w, reader)
+		return err
+	}
+
+	if !info.IsChunked {
+		return d.streamSingle(ctx, w, info, 0, info.Size-1)
+	}
+	return d.streamChunked(ctx, w, info, 0, info.Size-1)
 }

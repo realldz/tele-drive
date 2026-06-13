@@ -18,6 +18,8 @@ import { Queue } from 'bullmq';
 import { DOWNLOAD_ZIP_QUEUE, DownloadZipJobData } from '../queue';
 import { FolderService } from '../folder/folder.service';
 import { Response } from 'express';
+import Redis from 'ioredis';
+import { REDIS_CLIENT } from '../redis';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -57,8 +59,51 @@ export class DownloadZipService {
     private readonly folderService: FolderService,
     @InjectQueue(DOWNLOAD_ZIP_QUEUE) private readonly zipQueue: Queue,
     @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {
     this.baseDir = process.env.UPLOAD_BUFFER_DIR || './.upload-buffer';
+  }
+
+  private zipOwnerIsGo(): boolean {
+    return (process.env.ZIP_OWNER || 'go') === 'go';
+  }
+
+  /**
+   * Dispatch a ZIP job either to the Go transfer service (via Redis event)
+   * or to the local BullMQ worker (legacy path).
+   */
+  private async dispatchZipJob(
+    jobId: string,
+    userId: string,
+    shareToken: string | null,
+  ): Promise<void> {
+    if (this.zipOwnerIsGo()) {
+      await this.redis.publish(
+        'file:events',
+        JSON.stringify({
+          type: 'CREATE_ZIP',
+          payload: { jobId },
+        }),
+      );
+      this.logger.debug(`Published CREATE_ZIP event for job ${jobId}`);
+      return;
+    }
+
+    await this.zipQueue.add(
+      'create-zip',
+      {
+        jobId,
+        userId,
+        shareToken,
+      } satisfies DownloadZipJobData,
+      {
+        jobId: `zip-${jobId}`,
+        attempts: 2,
+        backoff: { type: 'exponential', delay: 10000 },
+        removeOnComplete: true,
+        removeOnFail: 50,
+      },
+    );
   }
 
   async createJob(
@@ -160,22 +205,8 @@ export class DownloadZipService {
       },
     });
 
-    // Enqueue BullMQ job
-    await this.zipQueue.add(
-      'create-zip',
-      {
-        jobId: job.id,
-        userId,
-        shareToken: null,
-      } satisfies DownloadZipJobData,
-      {
-        jobId: `zip-${job.id}`,
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 10000 },
-        removeOnComplete: true,
-        removeOnFail: 50,
-      },
-    );
+    // Dispatch to Go transfer service (Redis event) or legacy BullMQ worker
+    await this.dispatchZipJob(job.id, userId, null);
 
     return { jobId: job.id, status: 'pending' };
   }
@@ -291,22 +322,8 @@ export class DownloadZipService {
       },
     });
 
-    // Enqueue
-    await this.zipQueue.add(
-      'create-zip',
-      {
-        jobId: job.id,
-        userId: rootFolder.userId,
-        shareToken,
-      } satisfies DownloadZipJobData,
-      {
-        jobId: `zip-${job.id}`,
-        attempts: 2,
-        backoff: { type: 'exponential', delay: 10000 },
-        removeOnComplete: true,
-        removeOnFail: 50,
-      },
-    );
+    // Dispatch to Go transfer service (Redis event) or legacy BullMQ worker
+    await this.dispatchZipJob(job.id, rootFolder.userId, shareToken);
 
     return { jobId: job.id, status: 'pending' };
   }
@@ -392,6 +409,153 @@ export class DownloadZipService {
 
   hasActiveStreams(jobId: string): boolean {
     return (this.activeStreams.get(jobId) || 0) > 0;
+  }
+
+  /**
+   * Resolve a download job into a flat list of file entries (with archive-relative
+   * paths). Used by the Go transfer service via gRPC CollectZipEntries so that Go
+   * stays DB-free while NestJS owns folder recursion / access logic.
+   */
+  async collectEntries(
+    jobId: string,
+  ): Promise<
+    Array<{ fileRecordId: string; relativePath: string; size: string }>
+  > {
+    const job = await this.prisma.downloadJob.findUnique({
+      where: { id: jobId },
+    });
+    if (!job) throw new NotFoundException('Job not found');
+
+    const fileIds = (job.fileIds as string[]) || [];
+    const folderIds = (job.folderIds as string[]) || [];
+    const entries: Array<{
+      fileRecordId: string;
+      relativePath: string;
+      size: bigint;
+    }> = [];
+
+    if (fileIds.length > 0) {
+      const files = await this.prisma.fileRecord.findMany({
+        where: { id: { in: fileIds }, deletedAt: null, status: 'complete' },
+        select: { id: true, filename: true, size: true },
+      });
+      for (const f of files) {
+        entries.push({
+          fileRecordId: f.id,
+          relativePath: f.filename,
+          size: f.size,
+        });
+      }
+    }
+
+    for (const folderId of folderIds) {
+      const folder = await this.prisma.folder.findUnique({
+        where: { id: folderId },
+        select: { name: true, userId: true },
+      });
+      if (!folder) continue;
+      await this.collectFolderEntriesRecursive(
+        folderId,
+        folder.name,
+        folder.userId,
+        entries,
+      );
+    }
+
+    // Persist totals so progress reporting has a denominator
+    const totalSize = entries.reduce((sum, e) => sum + e.size, 0n);
+    await this.prisma.downloadJob.update({
+      where: { id: jobId },
+      data: { totalFiles: entries.length, totalSize, status: 'zipping' },
+    });
+
+    return entries.map((e) => ({
+      fileRecordId: e.fileRecordId,
+      relativePath: e.relativePath,
+      size: String(e.size),
+    }));
+  }
+
+  private async collectFolderEntriesRecursive(
+    folderId: string,
+    currentPath: string,
+    userId: string,
+    entries: Array<{
+      fileRecordId: string;
+      relativePath: string;
+      size: bigint;
+    }>,
+  ): Promise<void> {
+    const files = await this.prisma.fileRecord.findMany({
+      where: { folderId, userId, deletedAt: null, status: 'complete' },
+      select: { id: true, filename: true, size: true },
+    });
+    for (const f of files) {
+      entries.push({
+        fileRecordId: f.id,
+        relativePath: `${currentPath}/${f.filename}`,
+        size: f.size,
+      });
+    }
+
+    const subfolders = await this.prisma.folder.findMany({
+      where: { parentId: folderId, deletedAt: null },
+      select: { id: true, name: true, userId: true },
+    });
+    for (const sub of subfolders) {
+      await this.collectFolderEntriesRecursive(
+        sub.id,
+        `${currentPath}/${sub.name}`,
+        userId,
+        entries,
+      );
+    }
+  }
+
+  /** Record incremental progress reported by the Go ZIP worker. */
+  async reportProgress(jobId: string, processedFiles: number): Promise<void> {
+    await this.prisma.downloadJob
+      .update({
+        where: { id: jobId },
+        data: { processedFiles },
+      })
+      .catch(() => {});
+  }
+
+  /** Mark a ZIP job ready with its assembled parts (reported by Go). */
+  async markReady(
+    jobId: string,
+    parts: Array<{ key: string; size: number | string; index: number }>,
+    totalSize: number | string,
+  ): Promise<void> {
+    const ZIP_EXPIRY_MS = 30 * 60 * 1000;
+    await this.prisma.downloadJob.update({
+      where: { id: jobId },
+      data: {
+        status: 'ready',
+        zipParts: parts.map((p) => ({
+          key: p.key,
+          size: String(p.size),
+          index: p.index,
+        })),
+        totalSize: BigInt(totalSize),
+        expiresAt: new Date(Date.now() + ZIP_EXPIRY_MS),
+      },
+    });
+  }
+
+  /** Mark a ZIP job failed (reported by Go) and clean up any partial parts. */
+  async markFailed(jobId: string, reason: string): Promise<void> {
+    const dirPath = path.join(this.baseDir, 'zip', jobId);
+    await fs.promises
+      .rm(dirPath, { recursive: true, force: true })
+      .catch(() => {});
+    await this.prisma.downloadJob
+      .update({
+        where: { id: jobId },
+        data: { status: 'failed', errorMessage: reason },
+      })
+      .catch(() => {});
   }
 
   private async calculateSizeAndCount(

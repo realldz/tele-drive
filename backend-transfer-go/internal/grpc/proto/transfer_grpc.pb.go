@@ -19,8 +19,9 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	TransferService_FlushAndConfirm_FullMethodName = "/transfer.TransferService/FlushAndConfirm"
-	TransferService_Ping_FullMethodName            = "/transfer.TransferService/Ping"
+	TransferService_FlushAndConfirm_FullMethodName       = "/transfer.TransferService/FlushAndConfirm"
+	TransferService_EnqueueBufferedUpload_FullMethodName = "/transfer.TransferService/EnqueueBufferedUpload"
+	TransferService_Ping_FullMethodName                  = "/transfer.TransferService/Ping"
 )
 
 // TransferServiceClient is the client API for TransferService service.
@@ -28,6 +29,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type TransferServiceClient interface {
 	FlushAndConfirm(ctx context.Context, in *FlushAndConfirmRequest, opts ...grpc.CallOption) (*FlushAndConfirmResponse, error)
+	EnqueueBufferedUpload(ctx context.Context, in *EnqueueBufferedUploadRequest, opts ...grpc.CallOption) (*EnqueueBufferedUploadResponse, error)
 	Ping(ctx context.Context, in *TransferPingRequest, opts ...grpc.CallOption) (*TransferPingResponse, error)
 }
 
@@ -49,6 +51,16 @@ func (c *transferServiceClient) FlushAndConfirm(ctx context.Context, in *FlushAn
 	return out, nil
 }
 
+func (c *transferServiceClient) EnqueueBufferedUpload(ctx context.Context, in *EnqueueBufferedUploadRequest, opts ...grpc.CallOption) (*EnqueueBufferedUploadResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(EnqueueBufferedUploadResponse)
+	err := c.cc.Invoke(ctx, TransferService_EnqueueBufferedUpload_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *transferServiceClient) Ping(ctx context.Context, in *TransferPingRequest, opts ...grpc.CallOption) (*TransferPingResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(TransferPingResponse)
@@ -64,6 +76,7 @@ func (c *transferServiceClient) Ping(ctx context.Context, in *TransferPingReques
 // for forward compatibility.
 type TransferServiceServer interface {
 	FlushAndConfirm(context.Context, *FlushAndConfirmRequest) (*FlushAndConfirmResponse, error)
+	EnqueueBufferedUpload(context.Context, *EnqueueBufferedUploadRequest) (*EnqueueBufferedUploadResponse, error)
 	Ping(context.Context, *TransferPingRequest) (*TransferPingResponse, error)
 	mustEmbedUnimplementedTransferServiceServer()
 }
@@ -77,6 +90,9 @@ type UnimplementedTransferServiceServer struct{}
 
 func (UnimplementedTransferServiceServer) FlushAndConfirm(context.Context, *FlushAndConfirmRequest) (*FlushAndConfirmResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method FlushAndConfirm not implemented")
+}
+func (UnimplementedTransferServiceServer) EnqueueBufferedUpload(context.Context, *EnqueueBufferedUploadRequest) (*EnqueueBufferedUploadResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method EnqueueBufferedUpload not implemented")
 }
 func (UnimplementedTransferServiceServer) Ping(context.Context, *TransferPingRequest) (*TransferPingResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method Ping not implemented")
@@ -120,6 +136,24 @@ func _TransferService_FlushAndConfirm_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TransferService_EnqueueBufferedUpload_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EnqueueBufferedUploadRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TransferServiceServer).EnqueueBufferedUpload(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TransferService_EnqueueBufferedUpload_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TransferServiceServer).EnqueueBufferedUpload(ctx, req.(*EnqueueBufferedUploadRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TransferService_Ping_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(TransferPingRequest)
 	if err := dec(in); err != nil {
@@ -148,6 +182,10 @@ var TransferService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "FlushAndConfirm",
 			Handler:    _TransferService_FlushAndConfirm_Handler,
+		},
+		{
+			MethodName: "EnqueueBufferedUpload",
+			Handler:    _TransferService_EnqueueBufferedUpload_Handler,
 		},
 		{
 			MethodName: "Ping",
