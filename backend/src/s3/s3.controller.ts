@@ -425,6 +425,11 @@ export class S3Controller {
     }
 
     // --- PutObject (default) ---
+    // When Go owns the data plane, single-shot PutObject (incl. zero-byte folder
+    // markers) is served directly by the Go transfer service via nginx routing.
+    // This NestJS path is only reachable if nginx misroutes — fail loudly.
+    if (this.rejectIfGoOwnsDataPlane(res, 'PutObject', bucket, key)) return;
+
     if (process.env.ENABLE_S3_PUT_REDIRECT === 'true') {
       return this.redirectPutObject(userId, bucket, key, req, res);
     }
@@ -567,6 +572,9 @@ export class S3Controller {
     );
     const key = this.getObjectKey(bucket, params, req);
 
+    // Go owns HeadObject when S3_DATA_PLANE_OWNER=go (served via nginx → Go).
+    if (this.rejectIfGoOwnsDataPlane(res, 'HeadObject', bucket, key)) return;
+
     this.logger.log(`S3 HeadObject: s3://${bucket}/${key} (userId: ${userId})`);
     this.setRequestId(res);
 
@@ -643,6 +651,9 @@ export class S3Controller {
     }
 
     // --- GetObject (HTTP 307 Redirect) ---
+    // Go owns GetObject when S3_DATA_PLANE_OWNER=go (served via nginx → Go).
+    if (this.rejectIfGoOwnsDataPlane(res, 'GetObject', bucket, key)) return;
+
     this.logger.log(`S3 GetObject: s3://${bucket}/${key} (userId: ${userId})`);
     try {
       this.logger.debug(`S3 GetObject: ${userId}, ${bucket}, ${key}`);
@@ -1153,6 +1164,48 @@ export class S3Controller {
       stream.on('end', () => resolve(Buffer.concat(chunks)));
       stream.on('error', reject);
     });
+  }
+
+  /**
+   * True when the Go transfer service owns the S3 data plane (GetObject /
+   * PutObject / HeadObject body I/O). Controlled by S3_DATA_PLANE_OWNER:
+   *   - "go"   → nginx routes these ops to Go; NestJS should never see them.
+   *   - "nest" → NestJS serves them itself (legacy 307 / direct path).
+   * Default "nest" so a deploy without the env var keeps the working path.
+   * When "go", these handlers are unreachable behind nginx (Phase 8); the guard
+   * here is a loud safety net that flags a routing misconfig instead of silently
+   * issuing a broken 307.
+   */
+  private goOwnsDataPlane(): boolean {
+    return (process.env.S3_DATA_PLANE_OWNER || 'nest').toLowerCase() === 'go';
+  }
+
+  /**
+   * Reject a data-plane request that reached NestJS while Go owns the data plane
+   * — means nginx routing is broken. Returns true if it handled (rejected) the
+   * request, so callers `if (this.rejectIfGoOwnsDataPlane(...)) return;`.
+   */
+  private rejectIfGoOwnsDataPlane(
+    res: Response,
+    op: string,
+    bucket: string,
+    key: string,
+  ): boolean {
+    if (!this.goOwnsDataPlane()) return false;
+    this.logger.error(
+      `S3 ${op} reached NestJS while S3_DATA_PLANE_OWNER=go — nginx routing broken. s3://${bucket}/${key}`,
+    );
+    this.setRequestId(res);
+    res
+      .status(500)
+      .setHeader('Content-Type', 'application/xml')
+      .send(
+        this.s3Service.buildErrorXml(
+          'InternalError',
+          'S3 routing misconfigured.',
+        ),
+      );
+    return true;
   }
 
   /** Add x-amz-request-id to every response for aws-cli compatibility. */

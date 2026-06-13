@@ -95,8 +95,12 @@ services:
       # Go owns ALL binary ingestion (encrypt + Telegram upload). NestJS only does
       # metadata/quota and disables every in-process direct-upload path.
       UPLOAD_IO_OWNER: "go"
-      # Route S3 PutObject / UploadPart binary to Go via 307 redirect.
-      ENABLE_S3_PUT_REDIRECT: "true"
+      # Go owns the S3 data plane (GetObject/PutObject/HeadObject). nginx routes
+      # these ops straight to the Go transfer service (no 307 redirect). NestJS
+      # keeps only the control plane (bucket ops, multipart orchestration, copy,
+      # delete, ListParts). Set to "nest" to instantly roll back to the legacy
+      # 307/direct path (also revert nginx routing).
+      S3_DATA_PLANE_OWNER: "go"
       GO_TRANSFER_GRPC_URL: backend-transfer:50051
       GRPC_PORT: "50051"
       S3_DOMAIN: ${S3_DOMAIN:-s3.example.com}
