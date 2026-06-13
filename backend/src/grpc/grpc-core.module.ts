@@ -6,9 +6,16 @@ import { FolderModule } from '../folder/folder.module';
 import { DownloadZipModule } from '../download-zip/download-zip.module';
 import { S3AuthService } from '../s3/s3-auth.service';
 import { S3Service } from '../s3/s3.service';
+import { CryptoModule } from '../crypto/crypto.module';
 
 @Module({
-  imports: [PrismaModule, FolderModule, GrpcTransferModule, DownloadZipModule],
+  imports: [
+    PrismaModule,
+    FolderModule,
+    GrpcTransferModule,
+    DownloadZipModule,
+    CryptoModule,
+  ],
   controllers: [GrpcCoreController],
   // S3AuthService + S3Service are provided here (not via S3Module import) so the
   // gRPC handlers can decrypt secrets and resolve bucket/key → FileRecord without

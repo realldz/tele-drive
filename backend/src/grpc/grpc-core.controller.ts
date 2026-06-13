@@ -6,6 +6,7 @@ import { BandwidthLockService } from '../common/bandwidth-lock.service';
 import { DownloadZipService } from '../download-zip/download-zip.service';
 import { S3AuthService } from '../s3/s3-auth.service';
 import { S3Service } from '../s3/s3.service';
+import { CryptoService } from '../crypto/crypto.service';
 import { randomUUID } from 'crypto';
 
 @Controller()
@@ -19,6 +20,7 @@ export class GrpcCoreController {
     private readonly downloadZipService: DownloadZipService,
     private readonly s3AuthService: S3AuthService,
     private readonly s3Service: S3Service,
+    private readonly cryptoService: CryptoService,
   ) {}
 
   @GrpcMethod('CoreService', 'Ping')
@@ -263,6 +265,155 @@ export class GrpcCoreController {
         lastModified: '',
       };
     }
+  }
+
+  // Provision an S3 PutObject before Go ingests the body. Mirrors the legacy
+  // redirectPutObject: zero-byte key → folder marker (fileId empty signals Go to
+  // skip ingest); else create an 'uploading' FileRecord with encryption keyed
+  // upfront so Go encrypts the stream (Go has no MASTER_SECRET). Go reports back
+  // via ReportS3PutComplete once the body lands on Telegram.
+  @GrpcMethod('CoreService', 'PrepareS3Put')
+  async prepareS3Put(data: {
+    userId: string;
+    bucket: string;
+    key: string;
+    mimeType: string;
+    contentLength: number;
+  }) {
+    // Zero-byte object → folder marker. Resolve/create the folder chain and
+    // return an empty fileId so Go responds 200 without uploading anything.
+    if (!data.contentLength || data.contentLength === 0) {
+      const folderKey = data.key.endsWith('/') ? data.key : `${data.key}/`;
+      const folderId = await this.s3Service.resolveKeyAsFolder(
+        data.userId,
+        data.bucket,
+        folderKey,
+      );
+      this.logger.log(
+        `gRPC PrepareS3Put folder marker: userId=${data.userId} bucket=${data.bucket} key=${folderKey}`,
+      );
+      return { fileId: '', folderId, encryptedKey: '', isEncrypted: false };
+    }
+
+    const filename = data.key.split('/').pop() || data.key;
+    const { folderId } = await this.s3Service.resolveKey(
+      data.userId,
+      data.bucket,
+      data.key,
+      true,
+    );
+
+    const encryptedKey = this.cryptoService.encryptKey(
+      this.cryptoService.generateFileKey(),
+    );
+    const fileRecord = await this.prisma.fileRecord.create({
+      data: {
+        filename,
+        size: BigInt(data.contentLength),
+        mimeType: data.mimeType || 'application/octet-stream',
+        status: 'uploading',
+        isEncrypted: true,
+        encryptionAlgo: 'aes-256-ctr',
+        encryptedKey,
+        folderId: folderId || null,
+        userId: data.userId,
+      },
+    });
+
+    this.logger.log(
+      `gRPC PrepareS3Put: userId=${data.userId} bucket=${data.bucket} key=${data.key} fileId=${fileRecord.id} (${data.contentLength} bytes)`,
+    );
+    return {
+      fileId: fileRecord.id,
+      folderId: folderId || '',
+      encryptedKey,
+      isEncrypted: true,
+    };
+  }
+
+  // Finalize an S3 PutObject after Go uploads the (encrypted) body to Telegram.
+  // Marks the record complete, increments quota, and soft-deletes prior versions
+  // of the same (folderId, filename) — overwrite-to-trash AFTER success, matching
+  // the legacy doPutObject semantics so a failed upload never destroys old data.
+  @GrpcMethod('CoreService', 'ReportS3PutComplete')
+  async reportS3PutComplete(data: {
+    fileId: string;
+    telegramFileId: string;
+    telegramMessageId: number;
+    botId: number;
+    encryptionIv: string;
+    size: number;
+    etag: string;
+    isChunked: boolean;
+    totalChunks: number;
+  }) {
+    const record = await this.prisma.fileRecord.findUnique({
+      where: { id: data.fileId },
+    });
+    if (!record) {
+      this.logger.warn(
+        `gRPC ReportS3PutComplete: file record ${data.fileId} not found`,
+      );
+      return {};
+    }
+    if (record.status === 'complete') {
+      this.logger.debug(
+        `gRPC ReportS3PutComplete: file ${data.fileId} already complete, skipping`,
+      );
+      return {};
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.fileRecord.update({
+        where: { id: data.fileId },
+        data: {
+          status: 'complete',
+          telegramFileId: data.telegramFileId,
+          telegramMessageId: data.telegramMessageId,
+          botId: BigInt(data.botId),
+          isEncrypted: true,
+          encryptionAlgo: 'aes-256-ctr',
+          encryptionIv: data.encryptionIv,
+          etag: data.etag || record.etag,
+          isChunked: data.isChunked,
+          totalChunks: data.totalChunks,
+          tempStorageKey: null,
+        },
+      });
+
+      // Overwrite: soft-delete older complete versions of the same key.
+      if (record.filename) {
+        const stale = await tx.fileRecord.findMany({
+          where: {
+            userId: record.userId,
+            folderId: record.folderId,
+            filename: record.filename,
+            id: { not: record.id },
+            deletedAt: null,
+          },
+          select: { id: true },
+        });
+        if (stale.length > 0) {
+          await tx.fileRecord.updateMany({
+            where: { id: { in: stale.map((f) => f.id) } },
+            data: { deletedAt: new Date() },
+          });
+          this.logger.log(
+            `gRPC ReportS3PutComplete overwrite: moved ${stale.length} prior version(s) to trash for fileId=${data.fileId}`,
+          );
+        }
+      }
+
+      await tx.user.update({
+        where: { id: record.userId },
+        data: { usedSpace: { increment: BigInt(data.size) } },
+      });
+    });
+
+    this.logger.log(
+      `gRPC ReportS3PutComplete: "${record.filename}" finalized (${data.size} bytes, fileId: ${data.fileId})`,
+    );
+    return {};
   }
 
   @GrpcMethod('CoreService', 'VerifyFolderShare')
