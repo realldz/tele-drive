@@ -33,9 +33,10 @@ func (h *FileHandler) s3HostFilter(next echo.HandlerFunc) echo.HandlerFunc {
 // object data plane. Control-plane ops (bucket CRUD, ListObjects, multipart
 // orchestration) still go to NestJS via nginx routing (Phase 8).
 //
-// GET (Phase 5) and PUT (Phase 6) are wired here; HEAD (Phase 7) follows.
+// GET (Phase 5), PUT (Phase 6), and HEAD (Phase 7) are wired here.
 func (h *FileHandler) RegisterS3Routes(e *echo.Echo) {
 	s3 := e.Group("", h.s3HostFilter)
 	s3.GET("/:bucket/*", h.S3GetObject)
+	s3.HEAD("/:bucket/*", h.S3HeadObject)
 	s3.PUT("/:bucket/*", h.S3PutObject)
 }

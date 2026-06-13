@@ -25,6 +25,22 @@ func s3ErrorXML(c echo.Context, status int, code, message string) error {
 	return c.String(status, xml)
 }
 
+// s3AuthErrorStatus maps a SigV4 verification sentinel to its HTTP status code.
+// Used by HEAD, which cannot carry an XML body — clients infer the S3 code from
+// the status alone. Mirrors the status side of s3AuthErrorToXML.
+func s3AuthErrorStatus(err error) int {
+	switch {
+	case errors.Is(err, s3auth.ErrMalformed):
+		return http.StatusBadRequest
+	case errors.Is(err, s3auth.ErrCredentialNotFound), errors.Is(err, s3auth.ErrCredentialInactive),
+		errors.Is(err, s3auth.ErrSignatureMismatch), errors.Is(err, s3auth.ErrSkewTooLarge),
+		errors.Is(err, s3auth.ErrExpired):
+		return http.StatusForbidden
+	default:
+		return http.StatusForbidden
+	}
+}
+
 // s3AuthErrorToXML maps a SigV4 verification sentinel to its S3 wire response.
 func s3AuthErrorToXML(c echo.Context, err error) error {
 	switch {
