@@ -15,6 +15,7 @@ import (
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/grpc"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/middleware"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/queue"
+	"github.com/realldz/tele-drive/backend-transfer-go/internal/s3auth"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/storage"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/telegram"
 	"github.com/redis/go-redis/v9"
@@ -33,6 +34,13 @@ type FileHandler struct {
 	maxChunkSize      int64
 	maxBufferFileSize int64
 
+	// s3Domain gates the S3 data-plane routes — requests are only treated as
+	// S3 API calls when Host matches (set via S3_DOMAIN). Empty disables the filter.
+	s3Domain string
+	// s3Verifier validates AWS SigV4 on S3 data-plane requests (GET/HEAD/PUT),
+	// resolving credentials Redis-first with gRPC fallback (Phase 3).
+	s3Verifier *s3auth.Verifier
+
 	mu            sync.Mutex
 	activeUploads map[string]int
 }
@@ -49,7 +57,14 @@ func NewFileHandler(
 	jwtSecret string,
 	maxChunkSize int64,
 	maxBufferFileSize int64,
+	s3Domain string,
 ) *FileHandler {
+	// Redis-first credential lookup with gRPC fallback (Phase 3), wrapped by the
+	// SigV4 verifier (Phase 2). Built here so the verifier shares the handler's
+	// redis + gRPC clients without extra wiring in main.go.
+	credResolver := s3auth.NewCredentialResolver(redisClient, grpcClient, logger)
+	s3Verifier := s3auth.New(credResolver, logger)
+
 	return &FileHandler{
 		grpcClient:        grpcClient,
 		redisClient:       redisClient,
@@ -62,6 +77,8 @@ func NewFileHandler(
 		jwtSecret:         jwtSecret,
 		maxChunkSize:      maxChunkSize,
 		maxBufferFileSize: maxBufferFileSize,
+		s3Domain:          s3Domain,
+		s3Verifier:        s3Verifier,
 		activeUploads:     make(map[string]int),
 	}
 }

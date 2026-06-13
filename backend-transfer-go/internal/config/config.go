@@ -29,6 +29,7 @@ type Config struct {
 	UploadBufferDir          string
 	NestJSGrpcURL            string
 	GrpcPort                 int
+	S3Domain                 string
 }
 
 func Load() *Config {
@@ -113,6 +114,7 @@ func Load() *Config {
 		UploadBufferDir:         getEnv("UPLOAD_BUFFER_DIR", ".upload-buffer"),
 		NestJSGrpcURL:           getEnv("NESTJS_GRPC_URL", "localhost:50051"),
 		GrpcPort:                grpcPort,
+		S3Domain:                getEnv("S3_DOMAIN", "s3.example.com"),
 	}
 }
 

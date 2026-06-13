@@ -5,6 +5,7 @@ import { FolderService } from '../folder/folder.service';
 import { BandwidthLockService } from '../common/bandwidth-lock.service';
 import { DownloadZipService } from '../download-zip/download-zip.service';
 import { S3AuthService } from '../s3/s3-auth.service';
+import { S3Service } from '../s3/s3.service';
 import { randomUUID } from 'crypto';
 
 @Controller()
@@ -17,6 +18,7 @@ export class GrpcCoreController {
     private readonly bandwidthLockService: BandwidthLockService,
     private readonly downloadZipService: DownloadZipService,
     private readonly s3AuthService: S3AuthService,
+    private readonly s3Service: S3Service,
   ) {}
 
   @GrpcMethod('CoreService', 'Ping')
@@ -223,6 +225,44 @@ export class GrpcCoreController {
       userId: cred.userId,
       secretAccessKey,
     };
+  }
+
+  // Resolve (bucket, key) → FileRecord for Go's S3 GET/HEAD data plane.
+  // Reuses S3Service.findObject so bucket→folder + key→path resolution stays
+  // in one place. Returns found=false (NOT a gRPC error) for unknown keys so
+  // Go can emit a NoSuchKey XML without info leak.
+  @GrpcMethod('CoreService', 'ResolveS3Object')
+  async resolveS3Object(data: { userId: string; bucket: string; key: string }) {
+    try {
+      const file = await this.s3Service.findObject(
+        data.userId,
+        data.bucket,
+        data.key,
+      );
+      this.logger.debug(
+        `gRPC ResolveS3Object hit: userId=${data.userId} bucket=${data.bucket} key=${data.key} fileId=${file.id}`,
+      );
+      return {
+        found: true,
+        fileId: file.id,
+        mimeType: file.mimeType,
+        size: Number(file.size),
+        etag: file.etag || `"${file.id}"`,
+        lastModified: file.updatedAt.toUTCString(),
+      };
+    } catch {
+      this.logger.debug(
+        `gRPC ResolveS3Object miss: userId=${data.userId} bucket=${data.bucket} key=${data.key}`,
+      );
+      return {
+        found: false,
+        fileId: '',
+        mimeType: '',
+        size: 0,
+        etag: '',
+        lastModified: '',
+      };
+    }
   }
 
   @GrpcMethod('CoreService', 'VerifyFolderShare')

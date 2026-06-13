@@ -191,8 +191,11 @@ func main() {
 		cfg.JWTSecret,
 		cfg.MaxChunkSize,
 		cfg.MaxBufferFileSize,
+		cfg.S3Domain,
 	)
 	fileHandler.RegisterRoutes(e)
+	// S3 data-plane routes (GET object) — mounted at root, gated by S3 host filter.
+	fileHandler.RegisterS3Routes(e)
 
 	// Graceful shutdown listener
 	quit := make(chan os.Signal, 1)
