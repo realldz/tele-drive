@@ -38,6 +38,10 @@ const (
 	CoreService_ReportCronStats_FullMethodName        = "/core.CoreService/ReportCronStats"
 	CoreService_VerifyFolderShare_FullMethodName      = "/core.CoreService/VerifyFolderShare"
 	CoreService_Ping_FullMethodName                   = "/core.CoreService/Ping"
+	CoreService_GetS3Credential_FullMethodName        = "/core.CoreService/GetS3Credential"
+	CoreService_ResolveS3Object_FullMethodName        = "/core.CoreService/ResolveS3Object"
+	CoreService_PrepareS3Put_FullMethodName           = "/core.CoreService/PrepareS3Put"
+	CoreService_ReportS3PutComplete_FullMethodName    = "/core.CoreService/ReportS3PutComplete"
 )
 
 // CoreServiceClient is the client API for CoreService service.
@@ -63,6 +67,11 @@ type CoreServiceClient interface {
 	ReportCronStats(ctx context.Context, in *ReportCronStatsRequest, opts ...grpc.CallOption) (*Empty, error)
 	VerifyFolderShare(ctx context.Context, in *VerifyFolderShareRequest, opts ...grpc.CallOption) (*VerifyFolderShareResponse, error)
 	Ping(ctx context.Context, in *Empty, opts ...grpc.CallOption) (*Pong, error)
+	// S3 data-plane support (Phase D — Go-owned SigV4 + body I/O)
+	GetS3Credential(ctx context.Context, in *GetS3CredentialRequest, opts ...grpc.CallOption) (*GetS3CredentialResponse, error)
+	ResolveS3Object(ctx context.Context, in *ResolveS3ObjectRequest, opts ...grpc.CallOption) (*ResolveS3ObjectResponse, error)
+	PrepareS3Put(ctx context.Context, in *PrepareS3PutRequest, opts ...grpc.CallOption) (*PrepareS3PutResponse, error)
+	ReportS3PutComplete(ctx context.Context, in *ReportS3PutCompleteRequest, opts ...grpc.CallOption) (*Empty, error)
 }
 
 type coreServiceClient struct {
@@ -263,6 +272,46 @@ func (c *coreServiceClient) Ping(ctx context.Context, in *Empty, opts ...grpc.Ca
 	return out, nil
 }
 
+func (c *coreServiceClient) GetS3Credential(ctx context.Context, in *GetS3CredentialRequest, opts ...grpc.CallOption) (*GetS3CredentialResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetS3CredentialResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetS3Credential_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ResolveS3Object(ctx context.Context, in *ResolveS3ObjectRequest, opts ...grpc.CallOption) (*ResolveS3ObjectResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ResolveS3ObjectResponse)
+	err := c.cc.Invoke(ctx, CoreService_ResolveS3Object_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) PrepareS3Put(ctx context.Context, in *PrepareS3PutRequest, opts ...grpc.CallOption) (*PrepareS3PutResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PrepareS3PutResponse)
+	err := c.cc.Invoke(ctx, CoreService_PrepareS3Put_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ReportS3PutComplete(ctx context.Context, in *ReportS3PutCompleteRequest, opts ...grpc.CallOption) (*Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Empty)
+	err := c.cc.Invoke(ctx, CoreService_ReportS3PutComplete_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // CoreServiceServer is the server API for CoreService service.
 // All implementations must embed UnimplementedCoreServiceServer
 // for forward compatibility.
@@ -286,6 +335,11 @@ type CoreServiceServer interface {
 	ReportCronStats(context.Context, *ReportCronStatsRequest) (*Empty, error)
 	VerifyFolderShare(context.Context, *VerifyFolderShareRequest) (*VerifyFolderShareResponse, error)
 	Ping(context.Context, *Empty) (*Pong, error)
+	// S3 data-plane support (Phase D — Go-owned SigV4 + body I/O)
+	GetS3Credential(context.Context, *GetS3CredentialRequest) (*GetS3CredentialResponse, error)
+	ResolveS3Object(context.Context, *ResolveS3ObjectRequest) (*ResolveS3ObjectResponse, error)
+	PrepareS3Put(context.Context, *PrepareS3PutRequest) (*PrepareS3PutResponse, error)
+	ReportS3PutComplete(context.Context, *ReportS3PutCompleteRequest) (*Empty, error)
 	mustEmbedUnimplementedCoreServiceServer()
 }
 
@@ -352,6 +406,18 @@ func (UnimplementedCoreServiceServer) VerifyFolderShare(context.Context, *Verify
 }
 func (UnimplementedCoreServiceServer) Ping(context.Context, *Empty) (*Pong, error) {
 	return nil, status.Error(codes.Unimplemented, "method Ping not implemented")
+}
+func (UnimplementedCoreServiceServer) GetS3Credential(context.Context, *GetS3CredentialRequest) (*GetS3CredentialResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetS3Credential not implemented")
+}
+func (UnimplementedCoreServiceServer) ResolveS3Object(context.Context, *ResolveS3ObjectRequest) (*ResolveS3ObjectResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResolveS3Object not implemented")
+}
+func (UnimplementedCoreServiceServer) PrepareS3Put(context.Context, *PrepareS3PutRequest) (*PrepareS3PutResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PrepareS3Put not implemented")
+}
+func (UnimplementedCoreServiceServer) ReportS3PutComplete(context.Context, *ReportS3PutCompleteRequest) (*Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportS3PutComplete not implemented")
 }
 func (UnimplementedCoreServiceServer) mustEmbedUnimplementedCoreServiceServer() {}
 func (UnimplementedCoreServiceServer) testEmbeddedByValue()                     {}
@@ -716,6 +782,78 @@ func _CoreService_Ping_Handler(srv interface{}, ctx context.Context, dec func(in
 	return interceptor(ctx, in, info, handler)
 }
 
+func _CoreService_GetS3Credential_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetS3CredentialRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetS3Credential(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetS3Credential_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetS3Credential(ctx, req.(*GetS3CredentialRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ResolveS3Object_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ResolveS3ObjectRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ResolveS3Object(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ResolveS3Object_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ResolveS3Object(ctx, req.(*ResolveS3ObjectRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_PrepareS3Put_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PrepareS3PutRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).PrepareS3Put(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_PrepareS3Put_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).PrepareS3Put(ctx, req.(*PrepareS3PutRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ReportS3PutComplete_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportS3PutCompleteRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ReportS3PutComplete(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ReportS3PutComplete_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ReportS3PutComplete(ctx, req.(*ReportS3PutCompleteRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // CoreService_ServiceDesc is the grpc.ServiceDesc for CoreService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -798,6 +936,22 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "Ping",
 			Handler:    _CoreService_Ping_Handler,
+		},
+		{
+			MethodName: "GetS3Credential",
+			Handler:    _CoreService_GetS3Credential_Handler,
+		},
+		{
+			MethodName: "ResolveS3Object",
+			Handler:    _CoreService_ResolveS3Object_Handler,
+		},
+		{
+			MethodName: "PrepareS3Put",
+			Handler:    _CoreService_PrepareS3Put_Handler,
+		},
+		{
+			MethodName: "ReportS3PutComplete",
+			Handler:    _CoreService_ReportS3PutComplete_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

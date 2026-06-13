@@ -1952,6 +1952,514 @@ func (x *VerifyFolderShareResponse) GetIsValid() bool {
 	return false
 }
 
+type GetS3CredentialRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AccessKeyId   string                 `protobuf:"bytes,1,opt,name=access_key_id,json=accessKeyId,proto3" json:"access_key_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetS3CredentialRequest) Reset() {
+	*x = GetS3CredentialRequest{}
+	mi := &file_core_proto_msgTypes[31]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetS3CredentialRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetS3CredentialRequest) ProtoMessage() {}
+
+func (x *GetS3CredentialRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[31]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetS3CredentialRequest.ProtoReflect.Descriptor instead.
+func (*GetS3CredentialRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{31}
+}
+
+func (x *GetS3CredentialRequest) GetAccessKeyId() string {
+	if x != nil {
+		return x.AccessKeyId
+	}
+	return ""
+}
+
+type GetS3CredentialResponse struct {
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Found           bool                   `protobuf:"varint,1,opt,name=found,proto3" json:"found,omitempty"`
+	IsActive        bool                   `protobuf:"varint,2,opt,name=is_active,json=isActive,proto3" json:"is_active,omitempty"`
+	UserId          string                 `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	SecretAccessKey string                 `protobuf:"bytes,4,opt,name=secret_access_key,json=secretAccessKey,proto3" json:"secret_access_key,omitempty"` // plaintext after NestJS decrypts
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *GetS3CredentialResponse) Reset() {
+	*x = GetS3CredentialResponse{}
+	mi := &file_core_proto_msgTypes[32]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetS3CredentialResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetS3CredentialResponse) ProtoMessage() {}
+
+func (x *GetS3CredentialResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[32]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetS3CredentialResponse.ProtoReflect.Descriptor instead.
+func (*GetS3CredentialResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{32}
+}
+
+func (x *GetS3CredentialResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *GetS3CredentialResponse) GetIsActive() bool {
+	if x != nil {
+		return x.IsActive
+	}
+	return false
+}
+
+func (x *GetS3CredentialResponse) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *GetS3CredentialResponse) GetSecretAccessKey() string {
+	if x != nil {
+		return x.SecretAccessKey
+	}
+	return ""
+}
+
+type ResolveS3ObjectRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Bucket        string                 `protobuf:"bytes,2,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	Key           string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveS3ObjectRequest) Reset() {
+	*x = ResolveS3ObjectRequest{}
+	mi := &file_core_proto_msgTypes[33]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveS3ObjectRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveS3ObjectRequest) ProtoMessage() {}
+
+func (x *ResolveS3ObjectRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[33]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveS3ObjectRequest.ProtoReflect.Descriptor instead.
+func (*ResolveS3ObjectRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{33}
+}
+
+func (x *ResolveS3ObjectRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *ResolveS3ObjectRequest) GetBucket() string {
+	if x != nil {
+		return x.Bucket
+	}
+	return ""
+}
+
+func (x *ResolveS3ObjectRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+type ResolveS3ObjectResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Found         bool                   `protobuf:"varint,1,opt,name=found,proto3" json:"found,omitempty"`
+	FileId        string                 `protobuf:"bytes,2,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
+	MimeType      string                 `protobuf:"bytes,3,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
+	Size          int64                  `protobuf:"varint,4,opt,name=size,proto3" json:"size,omitempty"`
+	Etag          string                 `protobuf:"bytes,5,opt,name=etag,proto3" json:"etag,omitempty"`
+	LastModified  string                 `protobuf:"bytes,6,opt,name=last_modified,json=lastModified,proto3" json:"last_modified,omitempty"` // ISO8601
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ResolveS3ObjectResponse) Reset() {
+	*x = ResolveS3ObjectResponse{}
+	mi := &file_core_proto_msgTypes[34]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ResolveS3ObjectResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ResolveS3ObjectResponse) ProtoMessage() {}
+
+func (x *ResolveS3ObjectResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[34]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ResolveS3ObjectResponse.ProtoReflect.Descriptor instead.
+func (*ResolveS3ObjectResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{34}
+}
+
+func (x *ResolveS3ObjectResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *ResolveS3ObjectResponse) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
+func (x *ResolveS3ObjectResponse) GetMimeType() string {
+	if x != nil {
+		return x.MimeType
+	}
+	return ""
+}
+
+func (x *ResolveS3ObjectResponse) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *ResolveS3ObjectResponse) GetEtag() string {
+	if x != nil {
+		return x.Etag
+	}
+	return ""
+}
+
+func (x *ResolveS3ObjectResponse) GetLastModified() string {
+	if x != nil {
+		return x.LastModified
+	}
+	return ""
+}
+
+type PrepareS3PutRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	UserId        string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
+	Bucket        string                 `protobuf:"bytes,2,opt,name=bucket,proto3" json:"bucket,omitempty"`
+	Key           string                 `protobuf:"bytes,3,opt,name=key,proto3" json:"key,omitempty"`
+	MimeType      string                 `protobuf:"bytes,4,opt,name=mime_type,json=mimeType,proto3" json:"mime_type,omitempty"`
+	ContentLength int64                  `protobuf:"varint,5,opt,name=content_length,json=contentLength,proto3" json:"content_length,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareS3PutRequest) Reset() {
+	*x = PrepareS3PutRequest{}
+	mi := &file_core_proto_msgTypes[35]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareS3PutRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareS3PutRequest) ProtoMessage() {}
+
+func (x *PrepareS3PutRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[35]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareS3PutRequest.ProtoReflect.Descriptor instead.
+func (*PrepareS3PutRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{35}
+}
+
+func (x *PrepareS3PutRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *PrepareS3PutRequest) GetBucket() string {
+	if x != nil {
+		return x.Bucket
+	}
+	return ""
+}
+
+func (x *PrepareS3PutRequest) GetKey() string {
+	if x != nil {
+		return x.Key
+	}
+	return ""
+}
+
+func (x *PrepareS3PutRequest) GetMimeType() string {
+	if x != nil {
+		return x.MimeType
+	}
+	return ""
+}
+
+func (x *PrepareS3PutRequest) GetContentLength() int64 {
+	if x != nil {
+		return x.ContentLength
+	}
+	return 0
+}
+
+type PrepareS3PutResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	FileId        string                 `protobuf:"bytes,1,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
+	FolderId      string                 `protobuf:"bytes,2,opt,name=folder_id,json=folderId,proto3" json:"folder_id,omitempty"`
+	EncryptedKey  string                 `protobuf:"bytes,3,opt,name=encrypted_key,json=encryptedKey,proto3" json:"encrypted_key,omitempty"` // base64; Go decrypts via MASTER_SECRET-derived KEK
+	IsEncrypted   bool                   `protobuf:"varint,4,opt,name=is_encrypted,json=isEncrypted,proto3" json:"is_encrypted,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *PrepareS3PutResponse) Reset() {
+	*x = PrepareS3PutResponse{}
+	mi := &file_core_proto_msgTypes[36]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *PrepareS3PutResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*PrepareS3PutResponse) ProtoMessage() {}
+
+func (x *PrepareS3PutResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[36]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use PrepareS3PutResponse.ProtoReflect.Descriptor instead.
+func (*PrepareS3PutResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{36}
+}
+
+func (x *PrepareS3PutResponse) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
+func (x *PrepareS3PutResponse) GetFolderId() string {
+	if x != nil {
+		return x.FolderId
+	}
+	return ""
+}
+
+func (x *PrepareS3PutResponse) GetEncryptedKey() string {
+	if x != nil {
+		return x.EncryptedKey
+	}
+	return ""
+}
+
+func (x *PrepareS3PutResponse) GetIsEncrypted() bool {
+	if x != nil {
+		return x.IsEncrypted
+	}
+	return false
+}
+
+type ReportS3PutCompleteRequest struct {
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	FileId            string                 `protobuf:"bytes,1,opt,name=file_id,json=fileId,proto3" json:"file_id,omitempty"`
+	TelegramFileId    string                 `protobuf:"bytes,2,opt,name=telegram_file_id,json=telegramFileId,proto3" json:"telegram_file_id,omitempty"`
+	TelegramMessageId int32                  `protobuf:"varint,3,opt,name=telegram_message_id,json=telegramMessageId,proto3" json:"telegram_message_id,omitempty"`
+	BotId             int64                  `protobuf:"varint,4,opt,name=bot_id,json=botId,proto3" json:"bot_id,omitempty"`
+	EncryptionIv      string                 `protobuf:"bytes,5,opt,name=encryption_iv,json=encryptionIv,proto3" json:"encryption_iv,omitempty"`
+	Size              int64                  `protobuf:"varint,6,opt,name=size,proto3" json:"size,omitempty"`
+	Etag              string                 `protobuf:"bytes,7,opt,name=etag,proto3" json:"etag,omitempty"`
+	IsChunked         bool                   `protobuf:"varint,8,opt,name=is_chunked,json=isChunked,proto3" json:"is_chunked,omitempty"`
+	TotalChunks       int32                  `protobuf:"varint,9,opt,name=total_chunks,json=totalChunks,proto3" json:"total_chunks,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *ReportS3PutCompleteRequest) Reset() {
+	*x = ReportS3PutCompleteRequest{}
+	mi := &file_core_proto_msgTypes[37]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ReportS3PutCompleteRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ReportS3PutCompleteRequest) ProtoMessage() {}
+
+func (x *ReportS3PutCompleteRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[37]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ReportS3PutCompleteRequest.ProtoReflect.Descriptor instead.
+func (*ReportS3PutCompleteRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{37}
+}
+
+func (x *ReportS3PutCompleteRequest) GetFileId() string {
+	if x != nil {
+		return x.FileId
+	}
+	return ""
+}
+
+func (x *ReportS3PutCompleteRequest) GetTelegramFileId() string {
+	if x != nil {
+		return x.TelegramFileId
+	}
+	return ""
+}
+
+func (x *ReportS3PutCompleteRequest) GetTelegramMessageId() int32 {
+	if x != nil {
+		return x.TelegramMessageId
+	}
+	return 0
+}
+
+func (x *ReportS3PutCompleteRequest) GetBotId() int64 {
+	if x != nil {
+		return x.BotId
+	}
+	return 0
+}
+
+func (x *ReportS3PutCompleteRequest) GetEncryptionIv() string {
+	if x != nil {
+		return x.EncryptionIv
+	}
+	return ""
+}
+
+func (x *ReportS3PutCompleteRequest) GetSize() int64 {
+	if x != nil {
+		return x.Size
+	}
+	return 0
+}
+
+func (x *ReportS3PutCompleteRequest) GetEtag() string {
+	if x != nil {
+		return x.Etag
+	}
+	return ""
+}
+
+func (x *ReportS3PutCompleteRequest) GetIsChunked() bool {
+	if x != nil {
+		return x.IsChunked
+	}
+	return false
+}
+
+func (x *ReportS3PutCompleteRequest) GetTotalChunks() int32 {
+	if x != nil {
+		return x.TotalChunks
+	}
+	return 0
+}
+
 var File_core_proto protoreflect.FileDescriptor
 
 const file_core_proto_rawDesc = "" +
@@ -2095,14 +2603,53 @@ const file_core_proto_rawDesc = "" +
 	"shareToken\x12\x17\n" +
 	"\afile_id\x18\x02 \x01(\tR\x06fileId\"6\n" +
 	"\x19VerifyFolderShareResponse\x12\x19\n" +
-	"\bis_valid\x18\x01 \x01(\bR\aisValid*\x91\x01\n" +
+	"\bis_valid\x18\x01 \x01(\bR\aisValid\"<\n" +
+	"\x16GetS3CredentialRequest\x12\"\n" +
+	"\raccess_key_id\x18\x01 \x01(\tR\vaccessKeyId\"\x91\x01\n" +
+	"\x17GetS3CredentialResponse\x12\x14\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\x12\x1b\n" +
+	"\tis_active\x18\x02 \x01(\bR\bisActive\x12\x17\n" +
+	"\auser_id\x18\x03 \x01(\tR\x06userId\x12*\n" +
+	"\x11secret_access_key\x18\x04 \x01(\tR\x0fsecretAccessKey\"[\n" +
+	"\x16ResolveS3ObjectRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x16\n" +
+	"\x06bucket\x18\x02 \x01(\tR\x06bucket\x12\x10\n" +
+	"\x03key\x18\x03 \x01(\tR\x03key\"\xb2\x01\n" +
+	"\x17ResolveS3ObjectResponse\x12\x14\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\x12\x17\n" +
+	"\afile_id\x18\x02 \x01(\tR\x06fileId\x12\x1b\n" +
+	"\tmime_type\x18\x03 \x01(\tR\bmimeType\x12\x12\n" +
+	"\x04size\x18\x04 \x01(\x03R\x04size\x12\x12\n" +
+	"\x04etag\x18\x05 \x01(\tR\x04etag\x12#\n" +
+	"\rlast_modified\x18\x06 \x01(\tR\flastModified\"\x9c\x01\n" +
+	"\x13PrepareS3PutRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x16\n" +
+	"\x06bucket\x18\x02 \x01(\tR\x06bucket\x12\x10\n" +
+	"\x03key\x18\x03 \x01(\tR\x03key\x12\x1b\n" +
+	"\tmime_type\x18\x04 \x01(\tR\bmimeType\x12%\n" +
+	"\x0econtent_length\x18\x05 \x01(\x03R\rcontentLength\"\x94\x01\n" +
+	"\x14PrepareS3PutResponse\x12\x17\n" +
+	"\afile_id\x18\x01 \x01(\tR\x06fileId\x12\x1b\n" +
+	"\tfolder_id\x18\x02 \x01(\tR\bfolderId\x12#\n" +
+	"\rencrypted_key\x18\x03 \x01(\tR\fencryptedKey\x12!\n" +
+	"\fis_encrypted\x18\x04 \x01(\bR\visEncrypted\"\xb5\x02\n" +
+	"\x1aReportS3PutCompleteRequest\x12\x17\n" +
+	"\afile_id\x18\x01 \x01(\tR\x06fileId\x12(\n" +
+	"\x10telegram_file_id\x18\x02 \x01(\tR\x0etelegramFileId\x12.\n" +
+	"\x13telegram_message_id\x18\x03 \x01(\x05R\x11telegramMessageId\x12\x15\n" +
+	"\x06bot_id\x18\x04 \x01(\x03R\x05botId\x12#\n" +
+	"\rencryption_iv\x18\x05 \x01(\tR\fencryptionIv\x12\x12\n" +
+	"\x04size\x18\x06 \x01(\x03R\x04size\x12\x12\n" +
+	"\x04etag\x18\a \x01(\tR\x04etag\x12\x1d\n" +
+	"\n" +
+	"is_chunked\x18\b \x01(\bR\tisChunked\x12!\n" +
+	"\ftotal_chunks\x18\t \x01(\x05R\vtotalChunks*\x91\x01\n" +
 	"\vChunkStatus\x12\x18\n" +
 	"\x14CHUNK_STATUS_UNKNOWN\x10\x00\x12\x18\n" +
 	"\x14CHUNK_STATUS_PENDING\x10\x01\x12\x19\n" +
 	"\x15CHUNK_STATUS_COMPLETE\x10\x02\x12\x17\n" +
 	"\x13CHUNK_STATUS_FAILED\x10\x03\x12\x1a\n" +
-	"\x16CHUNK_STATUS_NOT_FOUND\x10\x042\xac\n" +
-	"\n" +
+	"\x16CHUNK_STATUS_NOT_FOUND\x10\x042\xd9\f\n" +
 	"\vCoreService\x12W\n" +
 	"\x12ReportChunkResults\x12\x1f.core.ReportChunkResultsRequest\x1a .core.ReportChunkResultsResponse\x12B\n" +
 	"\x12ReportFileComplete\x12\x1f.core.ReportFileCompleteRequest\x1a\v.core.Empty\x12C\n" +
@@ -2123,7 +2670,11 @@ const file_core_proto_rawDesc = "" +
 	"\x0fReportCronStats\x12\x1c.core.ReportCronStatsRequest\x1a\v.core.Empty\x12T\n" +
 	"\x11VerifyFolderShare\x12\x1e.core.VerifyFolderShareRequest\x1a\x1f.core.VerifyFolderShareResponse\x12\x1f\n" +
 	"\x04Ping\x12\v.core.Empty\x1a\n" +
-	".core.PongBGZEgithub.com/realldz/tele-drive/backend-transfer-go/internal/grpc/protob\x06proto3"
+	".core.Pong\x12N\n" +
+	"\x0fGetS3Credential\x12\x1c.core.GetS3CredentialRequest\x1a\x1d.core.GetS3CredentialResponse\x12N\n" +
+	"\x0fResolveS3Object\x12\x1c.core.ResolveS3ObjectRequest\x1a\x1d.core.ResolveS3ObjectResponse\x12E\n" +
+	"\fPrepareS3Put\x12\x19.core.PrepareS3PutRequest\x1a\x1a.core.PrepareS3PutResponse\x12D\n" +
+	"\x13ReportS3PutComplete\x12 .core.ReportS3PutCompleteRequest\x1a\v.core.EmptyBGZEgithub.com/realldz/tele-drive/backend-transfer-go/internal/grpc/protob\x06proto3"
 
 var (
 	file_core_proto_rawDescOnce sync.Once
@@ -2138,7 +2689,7 @@ func file_core_proto_rawDescGZIP() []byte {
 }
 
 var file_core_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 31)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 38)
 var file_core_proto_goTypes = []any{
 	(ChunkStatus)(0),                      // 0: core.ChunkStatus
 	(*Empty)(nil),                         // 1: core.Empty
@@ -2172,6 +2723,13 @@ var file_core_proto_goTypes = []any{
 	(*ReportCronStatsRequest)(nil),        // 29: core.ReportCronStatsRequest
 	(*VerifyFolderShareRequest)(nil),      // 30: core.VerifyFolderShareRequest
 	(*VerifyFolderShareResponse)(nil),     // 31: core.VerifyFolderShareResponse
+	(*GetS3CredentialRequest)(nil),        // 32: core.GetS3CredentialRequest
+	(*GetS3CredentialResponse)(nil),       // 33: core.GetS3CredentialResponse
+	(*ResolveS3ObjectRequest)(nil),        // 34: core.ResolveS3ObjectRequest
+	(*ResolveS3ObjectResponse)(nil),       // 35: core.ResolveS3ObjectResponse
+	(*PrepareS3PutRequest)(nil),           // 36: core.PrepareS3PutRequest
+	(*PrepareS3PutResponse)(nil),          // 37: core.PrepareS3PutResponse
+	(*ReportS3PutCompleteRequest)(nil),    // 38: core.ReportS3PutCompleteRequest
 }
 var file_core_proto_depIdxs = []int32{
 	3,  // 0: core.ReportChunkResultsRequest.results:type_name -> core.ChunkResult
@@ -2200,27 +2758,35 @@ var file_core_proto_depIdxs = []int32{
 	29, // 23: core.CoreService.ReportCronStats:input_type -> core.ReportCronStatsRequest
 	30, // 24: core.CoreService.VerifyFolderShare:input_type -> core.VerifyFolderShareRequest
 	1,  // 25: core.CoreService.Ping:input_type -> core.Empty
-	5,  // 26: core.CoreService.ReportChunkResults:output_type -> core.ReportChunkResultsResponse
-	1,  // 27: core.CoreService.ReportFileComplete:output_type -> core.Empty
-	9,  // 28: core.CoreService.GetFileMetadata:output_type -> core.FileMetadata
-	24, // 29: core.CoreService.CollectZipEntries:output_type -> core.CollectZipEntriesResponse
-	1,  // 30: core.CoreService.ReportZipProgress:output_type -> core.Empty
-	12, // 31: core.CoreService.BatchCheckChunkStatus:output_type -> core.BatchCheckResponse
-	1,  // 32: core.CoreService.ReportBandwidthUsage:output_type -> core.Empty
-	1,  // 33: core.CoreService.ReportUploadFailed:output_type -> core.Empty
-	1,  // 34: core.CoreService.ReportDeleteSuccess:output_type -> core.Empty
-	1,  // 35: core.CoreService.ReportDeleteFailed:output_type -> core.Empty
-	1,  // 36: core.CoreService.ReportFileCorrupted:output_type -> core.Empty
-	1,  // 37: core.CoreService.ReportZipReady:output_type -> core.Empty
-	1,  // 38: core.CoreService.ReportZipFailed:output_type -> core.Empty
-	1,  // 39: core.CoreService.ReportBotUnauthorized:output_type -> core.Empty
-	1,  // 40: core.CoreService.ReportEmergencyCleanup:output_type -> core.Empty
-	28, // 41: core.CoreService.CheckDiskSpace:output_type -> core.DiskSpaceResponse
-	1,  // 42: core.CoreService.ReportCronStats:output_type -> core.Empty
-	31, // 43: core.CoreService.VerifyFolderShare:output_type -> core.VerifyFolderShareResponse
-	2,  // 44: core.CoreService.Ping:output_type -> core.Pong
-	26, // [26:45] is the sub-list for method output_type
-	7,  // [7:26] is the sub-list for method input_type
+	32, // 26: core.CoreService.GetS3Credential:input_type -> core.GetS3CredentialRequest
+	34, // 27: core.CoreService.ResolveS3Object:input_type -> core.ResolveS3ObjectRequest
+	36, // 28: core.CoreService.PrepareS3Put:input_type -> core.PrepareS3PutRequest
+	38, // 29: core.CoreService.ReportS3PutComplete:input_type -> core.ReportS3PutCompleteRequest
+	5,  // 30: core.CoreService.ReportChunkResults:output_type -> core.ReportChunkResultsResponse
+	1,  // 31: core.CoreService.ReportFileComplete:output_type -> core.Empty
+	9,  // 32: core.CoreService.GetFileMetadata:output_type -> core.FileMetadata
+	24, // 33: core.CoreService.CollectZipEntries:output_type -> core.CollectZipEntriesResponse
+	1,  // 34: core.CoreService.ReportZipProgress:output_type -> core.Empty
+	12, // 35: core.CoreService.BatchCheckChunkStatus:output_type -> core.BatchCheckResponse
+	1,  // 36: core.CoreService.ReportBandwidthUsage:output_type -> core.Empty
+	1,  // 37: core.CoreService.ReportUploadFailed:output_type -> core.Empty
+	1,  // 38: core.CoreService.ReportDeleteSuccess:output_type -> core.Empty
+	1,  // 39: core.CoreService.ReportDeleteFailed:output_type -> core.Empty
+	1,  // 40: core.CoreService.ReportFileCorrupted:output_type -> core.Empty
+	1,  // 41: core.CoreService.ReportZipReady:output_type -> core.Empty
+	1,  // 42: core.CoreService.ReportZipFailed:output_type -> core.Empty
+	1,  // 43: core.CoreService.ReportBotUnauthorized:output_type -> core.Empty
+	1,  // 44: core.CoreService.ReportEmergencyCleanup:output_type -> core.Empty
+	28, // 45: core.CoreService.CheckDiskSpace:output_type -> core.DiskSpaceResponse
+	1,  // 46: core.CoreService.ReportCronStats:output_type -> core.Empty
+	31, // 47: core.CoreService.VerifyFolderShare:output_type -> core.VerifyFolderShareResponse
+	2,  // 48: core.CoreService.Ping:output_type -> core.Pong
+	33, // 49: core.CoreService.GetS3Credential:output_type -> core.GetS3CredentialResponse
+	35, // 50: core.CoreService.ResolveS3Object:output_type -> core.ResolveS3ObjectResponse
+	37, // 51: core.CoreService.PrepareS3Put:output_type -> core.PrepareS3PutResponse
+	1,  // 52: core.CoreService.ReportS3PutComplete:output_type -> core.Empty
+	30, // [30:53] is the sub-list for method output_type
+	7,  // [7:30] is the sub-list for method input_type
 	7,  // [7:7] is the sub-list for extension type_name
 	7,  // [7:7] is the sub-list for extension extendee
 	0,  // [0:7] is the sub-list for field type_name
@@ -2237,7 +2803,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   31,
+			NumMessages:   38,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

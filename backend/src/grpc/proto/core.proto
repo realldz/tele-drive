@@ -24,6 +24,12 @@ service CoreService {
   rpc ReportCronStats(ReportCronStatsRequest) returns (Empty);
   rpc VerifyFolderShare(VerifyFolderShareRequest) returns (VerifyFolderShareResponse);
   rpc Ping(Empty) returns (Pong);
+
+  // S3 data-plane support (Phase D — Go-owned SigV4 + body I/O)
+  rpc GetS3Credential(GetS3CredentialRequest) returns (GetS3CredentialResponse);
+  rpc ResolveS3Object(ResolveS3ObjectRequest) returns (ResolveS3ObjectResponse);
+  rpc PrepareS3Put(PrepareS3PutRequest) returns (PrepareS3PutResponse);
+  rpc ReportS3PutComplete(ReportS3PutCompleteRequest) returns (Empty);
 }
 
 message Empty {}
@@ -252,5 +258,66 @@ message VerifyFolderShareRequest {
 
 message VerifyFolderShareResponse {
   bool is_valid = 1;
+}
+
+// --- S3 Credential lookup (Pattern 2 fallback when Redis miss) ---
+
+message GetS3CredentialRequest {
+  string access_key_id = 1;
+}
+
+message GetS3CredentialResponse {
+  bool found = 1;
+  bool is_active = 2;
+  string user_id = 3;
+  string secret_access_key = 4; // plaintext after NestJS decrypts
+}
+
+// --- S3 object resolution for GET/HEAD ---
+
+message ResolveS3ObjectRequest {
+  string user_id = 1;
+  string bucket = 2;
+  string key = 3;
+}
+
+message ResolveS3ObjectResponse {
+  bool found = 1;
+  string file_id = 2;
+  string mime_type = 3;
+  int64 size = 4;
+  string etag = 5;
+  string last_modified = 6; // ISO8601
+}
+
+// --- S3 PUT placeholder creation (returns fileId so Go can ingest) ---
+
+message PrepareS3PutRequest {
+  string user_id = 1;
+  string bucket = 2;
+  string key = 3;
+  string mime_type = 4;
+  int64 content_length = 5;
+}
+
+message PrepareS3PutResponse {
+  string file_id = 1;
+  string folder_id = 2;
+  string encrypted_key = 3; // base64; Go decrypts via MASTER_SECRET-derived KEK
+  bool is_encrypted = 4;
+}
+
+// --- S3 PUT completion (overwrite-friendly) ---
+
+message ReportS3PutCompleteRequest {
+  string file_id = 1;
+  string telegram_file_id = 2;
+  int32 telegram_message_id = 3;
+  int64 bot_id = 4;
+  string encryption_iv = 5;
+  int64 size = 6;
+  string etag = 7;
+  bool is_chunked = 8;
+  int32 total_chunks = 9;
 }
 
