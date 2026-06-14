@@ -8,6 +8,7 @@ import { useAppSelector, useAppDispatch } from '@/lib/store';
 import { loadUploadConfig } from '@/lib/upload-config-slice';
 import { UPLOAD_SMALL_FILE_BATCH } from '@/lib/constants';
 import { useChunkedUpload } from './use-chunked-upload';
+import { resumeInitAfterConflict } from './upload-conflict-gate';
 import type { ConflictResolution, QueueItem, UploadContextValue } from './upload-types';
 
 const UploadContext = createContext<UploadContextValue | undefined>(undefined);
@@ -55,6 +56,13 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     if (processingRef.current) return;
     processingRef.current = true;
 
+    // Clear any stale conflict pause left over from a prior session. Safe here:
+    // a parked init keeps processQueue inside its batch await, so re-entry means
+    // no init is currently blocked on the gate.
+    if (!queueRef.current.some(i => i.status === 'error' && i.errorMessage === 'conflict')) {
+      resumeInitAfterConflict();
+    }
+
     const processItem = async (item: QueueItem) => {
       updateItem(item.id, { status: 'uploading' });
       try {
@@ -91,6 +99,15 @@ export function UploadProvider({ children }: { children: ReactNode }) {
 
     try {
       while (true) {
+        // Pause while a conflict awaits the user's decision. Otherwise the loop
+        // keeps pulling the next batch and fires init for every remaining file
+        // of a conflicting folder — spamming the API with 409s before the user
+        // has resolved anything.
+        const hasUnresolvedConflict = queueRef.current.some(
+          item => item.status === 'error' && item.errorMessage === 'conflict',
+        );
+        if (hasUnresolvedConflict) break;
+
         const pending = queueRef.current.filter(item => item.status === 'pending');
         if (pending.length === 0) break;
 
@@ -173,6 +190,10 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       abortControllersRef.current.get(id)?.forEach(ctrl => ctrl.abort());
       if (item.serverFileId) abortUpload(item.serverFileId).catch(() => { });
     }
+    // Unblock any init parked on the conflict gate so it can drain instead of
+    // hanging the batch forever. Serialization re-pauses on the next 409, so
+    // this never reopens the burst for still-unresolved conflicts.
+    resumeInitAfterConflict();
     updateItem(id, { status: 'cancelled' });
   }, [updateItem]);
 
@@ -194,6 +215,9 @@ export function UploadProvider({ children }: { children: ReactNode }) {
   }, [updateItem]);
 
   const resolveConflict = useCallback(async (id: string, action: ConflictResolution) => {
+    // The user has decided — let gated init calls proceed again (the next file
+    // carries its conflictAction so it won't 409 a second time).
+    resumeInitAfterConflict();
     if (action === 'skip') {
       updateItem(id, { status: 'cancelled', errorMessage: 'Skipped (conflict)' });
       return;

@@ -10,6 +10,10 @@ export const UPLOAD_RETRY_AFTER_429_S = 5;
 export const UPLOAD_RETRY_AFTER_503_S = 10;
 export const UPLOAD_SMALL_FILE_BATCH = 5;
 export const UPLOAD_POLL_INTERVAL_MS = 3000;
+// Minimum spacing between the START of consecutive upload requests (init,
+// chunk, complete). Smooths small-file bursts to avoid 429 / server load;
+// large-file chunks are unaffected since their upload duration >> this interval.
+export const UPLOAD_MIN_REQUEST_INTERVAL_MS = 500;
 
 // Download
 export const DOWNLOAD_CLEANUP_DELAY_MS = 2000;

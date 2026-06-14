@@ -8,6 +8,8 @@ import {
   UPLOAD_RETRY_AFTER_429_S,
   UPLOAD_RETRY_AFTER_503_S,
 } from '@/lib/constants';
+import { acquireUploadSlot } from './upload-request-pacer';
+import { runGatedInit, pauseInitForConflict } from './upload-conflict-gate';
 import type { QueueItem } from './upload-types';
 
 interface UseChunkedUploadArgs {
@@ -34,12 +36,25 @@ export function useChunkedUpload({
       ? `/transfer/upload/init?onConflict=${item.conflictAction}`
       : `/transfer/upload/init`;
 
-    const initRes = await api.post(initUrl, {
-      filename: item.file.name,
-      size: item.file.size,
-      mimeType: item.file.type || 'application/octet-stream',
-      totalChunks,
-      folderId: item.targetFolderId || undefined,
+    // init is serialized and gated: the first 409 pauses every queued init
+    // until the user resolves the conflict, so a conflicting folder no longer
+    // spams the API with one init per file before the user can respond.
+    const initRes = await runGatedInit(async () => {
+      await acquireUploadSlot();
+      try {
+        return await api.post(initUrl, {
+          filename: item.file.name,
+          size: item.file.size,
+          mimeType: item.file.type || 'application/octet-stream',
+          totalChunks,
+          folderId: item.targetFolderId || undefined,
+        });
+      } catch (err) {
+        if (axios.isAxiosError(err) && err.response?.status === 409) {
+          pauseInitForConflict();
+        }
+        throw err;
+      }
     });
 
     const serverFileId = initRes.data.id;
@@ -78,6 +93,7 @@ export function useChunkedUpload({
 
       for (let attempt = 0; ; attempt++) {
         try {
+          await acquireUploadSlot();
           await api.post(
             `/transfer/upload/${serverFileId}/chunk/${chunkIndex}`,
             chunkBlob,
@@ -145,6 +161,7 @@ export function useChunkedUpload({
       throw new Error('Upload cancelled');
     }
 
+    await acquireUploadSlot();
     await api.post(`/transfer/upload/${serverFileId}/complete`);
   }, [maxChunkSize, concurrency, updateItem, queueRef, abortControllersRef]);
 }

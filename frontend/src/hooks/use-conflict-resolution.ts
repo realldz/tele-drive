@@ -50,6 +50,12 @@ export function useConflictResolution({
   useEffect(() => {
     const conflictItem = queue.find(item => item.errorMessage === 'conflict');
     if (conflictItem && !pendingConflict) {
+      // If the user already chose "apply to all", auto-resolve every subsequent
+      // upload conflict with that action instead of re-opening the modal.
+      if (applyToAllRef.current) {
+        void resolveConflict(conflictItem.id, applyToAllRef.current);
+        return;
+      }
       const fileInfo = conflictItem.conflictInfo;
       if (fileInfo) {
         // eslint-disable-next-line react-hooks/set-state-in-effect -- syncing from the upload queue (external provider state)
@@ -69,7 +75,7 @@ export function useConflictResolution({
         });
       }
     }
-  }, [queue, pendingConflict]);
+  }, [queue, pendingConflict, applyToAllRef, resolveConflict]);
 
   /** Build a move-conflict descriptor from an error + the items involved. */
   const buildMoveConflict = useCallback((
