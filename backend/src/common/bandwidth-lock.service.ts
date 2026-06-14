@@ -180,11 +180,20 @@ export class BandwidthLockService {
   }
 
   /**
-   * Read-only quota snapshot for the Go data plane (cache-aside seed).
-   * Resolves all three tiers — user/guest daily + per-file — applying the 24h
-   * reset VIRTUALLY (does NOT write DB; the Go side owns the Redis lock and the
-   * cron/lock path owns the real reset write). Returns current usage so Go can
-   * seed `user:{id}:quota` / `guest:{ip}:quota` and enforce locally.
+   * Quota snapshot for the Go data plane (cache-aside seed). Resolves all three
+   * tiers — user/guest daily + per-file — and PERSISTS the 24h reset when a
+   * window has elapsed.
+   *
+   * Why it writes (it used to be virtual): under BANDWIDTH_OWNER=go this is the
+   * only path that runs per download (the NestJS interceptor short-circuits, and
+   * no cron resets daily bandwidth). If the reset were applied only virtually,
+   * `lastBandwidthReset` would stay frozen, every request would recompute
+   * requiresReset=true against a moving `now`, and Go's windowRolledOver() would
+   * wipe the Redis counter on every request — so daily usage never accumulates
+   * (symptom: a quota-exhausted user is still served any file smaller than the
+   * whole limit). Persisting the reset once per window gives Go a STABLE
+   * lastReset, so the Redis counter accumulates until the next real 24h boundary.
+   * Writes are best-effort (a failed reset just retries next request).
    */
   async getQuotaSnapshot(
     userId: string,
@@ -223,6 +232,20 @@ export class BandwidthLockService {
         dailyUsed = currentUsed;
         dailyLimit = limit;
         lastReset = requiresReset ? now : user.lastBandwidthReset;
+        // Persist the window roll-over so Go sees a stable lastReset (see method
+        // docstring). Best-effort: a failure just re-resets on the next request.
+        if (requiresReset) {
+          await this.prisma.user
+            .update({
+              where: { id: userId },
+              data: { dailyBandwidthUsed: 0n, lastBandwidthReset: now },
+            })
+            .catch((err) =>
+              this.logger.warn(
+                `Failed to persist daily bandwidth reset for user ${userId}: ${err}`,
+              ),
+            );
+        }
       }
     } else if (ip) {
       const setting = await this.prisma.systemSetting.findUnique({
@@ -242,6 +265,18 @@ export class BandwidthLockService {
         );
         dailyUsed = currentUsed;
         lastReset = requiresReset ? now : tracker.lastBandwidthReset;
+        if (requiresReset) {
+          await this.prisma.guestTracker
+            .update({
+              where: { ipAddress: ip },
+              data: { dailyBandwidthUsed: 0n, lastBandwidthReset: now },
+            })
+            .catch((err) =>
+              this.logger.warn(
+                `Failed to persist daily bandwidth reset for guest ${ip}: ${err}`,
+              ),
+            );
+        }
       }
     }
 
@@ -274,6 +309,23 @@ export class BandwidthLockService {
           bandwidthLimit24h: f.bandwidthLimit24h,
           lastDownloadReset: requiresReset ? now : f.lastDownloadReset,
         };
+        // Persist the per-file 24h reset once per real window. Without Go
+        // ownership the interceptor reset path is dead, so this snapshot is the
+        // only writer; leaving lastDownloadReset stale makes every later snapshot
+        // recompute requiresReset=true with a moving `now`, so the per-file
+        // counters never accumulate and the limit never bites.
+        if (requiresReset) {
+          this.prisma.fileRecord
+            .update({
+              where: { id: fileId },
+              data: { downloads24h: 0, bandwidthUsed24h: 0n, lastDownloadReset: now },
+            })
+            .catch((err) =>
+              this.logger.warn(
+                `Failed to persist per-file 24h reset for file ${fileId}: ${err}`,
+              ),
+            );
+        }
       }
     }
 
