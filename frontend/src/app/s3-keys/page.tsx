@@ -6,7 +6,7 @@ import { useRequireAuth } from '@/hooks/use-require-auth';
 import Sidebar from '@/components/sidebar';
 import { Key, Plus, Trash2, Terminal, Loader2, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { fetchS3Credentials, createS3Credential, deleteS3Credential, getApiErrorMessage, getS3Endpoints } from '@/lib/api';
+import { fetchS3Credentials, createS3Credential, deleteS3Credential, getApiErrorMessage, getS3Endpoint } from '@/lib/api';
 import { useAppSelector } from '@/lib/store';
 import S3NewCredentialPanel from './s3-new-credential-panel';
 import S3UsageGuide from './s3-usage-guide';
@@ -82,7 +82,10 @@ export default function S3KeysPage() {
     }
   }
 
-  const { path: endpointUrl, domain: s3Domain } = getS3Endpoints();
+  const s3Endpoint = getS3Endpoint();
+  // CLI snippets need a concrete endpoint; fall back to a placeholder so the
+  // examples stay illustrative when NEXT_PUBLIC_S3_DOMAIN is not configured.
+  const endpointUrl = s3Endpoint ?? 'https://<your-s3-domain>';
   const maxConcurrent = uploadConfig.maxConcurrentChunks;
   const recommendedChunk = uploadConfig.maxChunkSize;
   const recommendedChunkMB = Math.floor(recommendedChunk / (1024 * 1024));
@@ -119,15 +122,13 @@ export default function S3KeysPage() {
                 <p className="font-medium mb-1">{t('s3.infoBanner')}</p>
                 <p className="text-blue-700">{t('s3.infoDesc')}</p>
                 <ul className="mt-2 space-y-1">
-                  <li className="text-blue-700">
-                    <span className="text-blue-600">{t('s3.endpointPath')}</span>{' '}
-                    <code className="bg-blue-100 px-1 rounded font-mono">{endpointUrl}</code>
-                  </li>
-                  {s3Domain && (
+                  {s3Endpoint ? (
                     <li className="text-blue-700">
                       <span className="text-blue-600">{t('s3.endpointDomain')}</span>{' '}
-                      <code className="bg-blue-100 px-1 rounded font-mono">{s3Domain}</code>
+                      <code className="bg-blue-100 px-1 rounded font-mono">{s3Endpoint}</code>
                     </li>
+                  ) : (
+                    <li className="text-amber-700">{t('s3.endpointUnconfigured')}</li>
                   )}
                 </ul>
               </div>
@@ -237,7 +238,6 @@ export default function S3KeysPage() {
             <S3UsageGuide
               t={t}
               endpointUrl={endpointUrl}
-              s3Domain={s3Domain}
               maxConcurrent={maxConcurrent}
               recommendedChunk={recommendedChunk}
               recommendedChunkMB={recommendedChunkMB}

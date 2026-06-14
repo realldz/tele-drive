@@ -5,9 +5,10 @@ import { API_TIMEOUT_MS } from '@/lib/constants';
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
-// Optional dedicated S3 domain (e.g. s3.example.com) served by the nginx S3
-// server block. Baked at build time; empty when only the path-based endpoint
-// (`{origin}/s3`) is available.
+// Dedicated S3 domain (e.g. s3.example.com) served by the nginx S3 server
+// block. Baked at build time. This is the ONLY S3-compatible endpoint: the
+// app-domain `{origin}/s3` path was removed because SigV4 binds Host + URI and
+// cannot be routed to the Go data plane behind the app domain.
 export const S3_DOMAIN = process.env.NEXT_PUBLIC_S3_DOMAIN || '';
 
 export function getAbsoluteApiUrl(): string {
@@ -16,14 +17,11 @@ export function getAbsoluteApiUrl(): string {
   return `${window.location.origin}${API_URL}`;
 }
 
-// S3-compatible endpoints to surface on the keys page: the always-available
-// path-based endpoint, plus the dedicated domain when configured.
-export function getS3Endpoints(): { path: string; domain: string | null } {
-  const path = typeof window !== 'undefined' ? `${window.location.origin}/s3` : '/s3';
-  const domain = S3_DOMAIN
-    ? (/^https?:\/\//.test(S3_DOMAIN) ? S3_DOMAIN : `https://${S3_DOMAIN}`)
-    : null;
-  return { path, domain };
+// The S3-compatible endpoint to surface on the keys page: the dedicated S3
+// domain, or null when NEXT_PUBLIC_S3_DOMAIN is not configured.
+export function getS3Endpoint(): string | null {
+  if (!S3_DOMAIN) return null;
+  return /^https?:\/\//.test(S3_DOMAIN) ? S3_DOMAIN : `https://${S3_DOMAIN}`;
 }
 
 export const api: AxiosInstance = axios.create({
