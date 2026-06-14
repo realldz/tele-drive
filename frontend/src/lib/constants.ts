@@ -33,7 +33,7 @@ export const TOAST_LONG_MS = 5000;
 export const LOAD_MORE_ROOT_MARGIN = '200px';
 
 // HTTP client
-export const API_TIMEOUT_MS = 30000;
+export const API_TIMEOUT_MS = 90000;
 
 // Admin logs
 export const ADMIN_LOGS_DEFAULT_LIMIT = 100;
