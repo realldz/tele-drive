@@ -208,6 +208,15 @@ func (c *CoreClient) ReportZipFailed(ctx context.Context, jobID string, reason s
 	return err
 }
 
+// GetZipJob fetches serve-side info for a ZIP job (status, expiry, parts).
+// Go owns part streaming but has no DB, so it calls this to validate a part
+// download and build the attachment filename. Read-only on the NestJS side.
+func (c *CoreClient) GetZipJob(ctx context.Context, jobID string) (*pb.GetZipJobResponse, error) {
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	return c.client.GetZipJob(ctx, &pb.GetZipJobRequest{JobId: jobID})
+}
+
 func (c *CoreClient) CollectZipEntries(ctx context.Context, jobID string) ([]*pb.ZipEntry, error) {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()

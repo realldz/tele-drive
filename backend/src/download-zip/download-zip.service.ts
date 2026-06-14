@@ -11,17 +11,20 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { SettingsService } from '../settings/settings.service';
 import { BandwidthLockService } from '../common/bandwidth-lock.service';
-import { TEMP_STORAGE } from '../common/temp-storage';
-import type { TempStorage } from '../common/temp-storage/temp-storage.interface';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { DOWNLOAD_ZIP_QUEUE, DownloadZipJobData } from '../queue';
 import { FolderService } from '../folder/folder.service';
-import { Response } from 'express';
 import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis';
 import * as fs from 'fs';
 import * as path from 'path';
+
+// Redis key holding the live count of in-flight ZIP part streams for a job.
+// Go (which now owns part serving) INCRs on stream start and DECRs on end; the
+// NestJS cleanup cron reads it to avoid deleting parts mid-download. Keyed by
+// jobId. A TTL on the key (set by Go) bounds any leak if a DECR is ever missed.
+export const ZIP_STREAM_ACTIVE_PREFIX = 'zip:stream:active:';
 
 interface ZipPart {
   index: number;
@@ -49,7 +52,6 @@ export interface DownloadZipStatusResponse {
 @Injectable()
 export class DownloadZipService {
   private readonly logger = new Logger(DownloadZipService.name);
-  private readonly activeStreams = new Map<string, number>();
   private readonly baseDir: string;
 
   constructor(
@@ -58,7 +60,6 @@ export class DownloadZipService {
     private readonly bandwidthLockService: BandwidthLockService,
     private readonly folderService: FolderService,
     @InjectQueue(DOWNLOAD_ZIP_QUEUE) private readonly zipQueue: Queue,
-    @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {
     this.baseDir = process.env.UPLOAD_BUFFER_DIR || './.upload-buffer';
@@ -338,7 +339,7 @@ export class DownloadZipService {
     const parts = rawParts.map((p, i) => ({
       index: p.index ?? i,
       size: String(p.size),
-      downloadUrl: `/files/download-zip/${jobId}/file/${p.index ?? i}`,
+      downloadUrl: `/transfer/download-zip/${jobId}/file/${p.index ?? i}`,
     }));
 
     return {
@@ -353,62 +354,46 @@ export class DownloadZipService {
     };
   }
 
-  async serveZipPart(
-    jobId: string,
-    partIndex: number,
-    res: Response,
-  ): Promise<void> {
+  /**
+   * Serve-side job lookup for the Go data plane (gRPC GetZipJob). Go owns ZIP
+   * part streaming but has no DB, so it calls this to validate a part download
+   * (status/expiry) and to build the attachment filename. Returns found=false
+   * (not an exception) for an unknown job so Go can emit a clean 404.
+   */
+  async getServeInfo(jobId: string): Promise<{
+    found: boolean;
+    status: string;
+    createdAt: string;
+    expiresAt: string;
+    parts: Array<{ key: string; size: string; index: number }>;
+  }> {
     const job = await this.prisma.downloadJob.findUnique({
       where: { id: jobId },
     });
-    if (!job) throw new NotFoundException('Job not found');
-    if (job.status !== 'ready')
-      throw new BadRequestException('ZIP is not ready');
-    if (job.expiresAt && job.expiresAt < new Date()) {
-      throw new BadRequestException('Download link has expired');
+    if (!job) {
+      return { found: false, status: '', createdAt: '', expiresAt: '', parts: [] };
     }
 
-    const parts = (job.zipParts as unknown as ZipPart[]) || [];
-    const part = parts.find((p) => (p.index ?? 0) === partIndex);
-    if (!part) throw new NotFoundException('Part not found');
-
-    // Track active stream
-    this.activeStreams.set(jobId, (this.activeStreams.get(jobId) || 0) + 1);
-
-    const partCount = parts.length;
-    const d = job.createdAt;
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const timestamp = `${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
-
-    const ext =
-      partCount > 1
-        ? `_part${String(partIndex + 1).padStart(2, '0')}.zip`
-        : '.zip';
-    const filename = `download_${timestamp}${ext}`;
-
-    res.setHeader('Content-Type', 'application/zip');
-    res.setHeader('Content-Length', String(part.size));
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-
-    try {
-      const stream = await this.tempStorage.read(part.key);
-      stream.pipe(res);
-
-      await new Promise<void>((resolve, reject) => {
-        res.on('finish', resolve);
-        res.on('error', reject);
-        stream.on('error', reject);
-      });
-    } finally {
-      // Decrement active stream count
-      const count = (this.activeStreams.get(jobId) || 1) - 1;
-      if (count <= 0) this.activeStreams.delete(jobId);
-      else this.activeStreams.set(jobId, count);
-    }
+    const rawParts = (job.zipParts as unknown as ZipPart[]) || [];
+    return {
+      found: true,
+      status: job.status,
+      createdAt: job.createdAt.toISOString(),
+      expiresAt: job.expiresAt?.toISOString() || '',
+      parts: rawParts.map((p, i) => ({
+        key: p.key,
+        size: String(p.size),
+        index: p.index ?? i,
+      })),
+    };
   }
 
-  hasActiveStreams(jobId: string): boolean {
-    return (this.activeStreams.get(jobId) || 0) > 0;
+  // Go INCRs zip:stream:active:{jobId} on part-stream start and DECRs on end, so
+  // a non-zero (or still-existing) key means a download is in flight. The cron
+  // reads this to avoid deleting parts mid-download.
+  async hasActiveStreams(jobId: string): Promise<boolean> {
+    const raw = await this.redis.get(`${ZIP_STREAM_ACTIVE_PREFIX}${jobId}`);
+    return raw !== null && Number(raw) > 0;
   }
 
   /**

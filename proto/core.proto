@@ -11,6 +11,10 @@ service CoreService {
   rpc GetFileMetadata(GetFileMetadataRequest) returns (FileMetadata);
   rpc CollectZipEntries(CollectZipEntriesRequest) returns (CollectZipEntriesResponse);
   rpc ReportZipProgress(ReportZipProgressRequest) returns (Empty);
+  // Serve-side lookup for the Go data plane. Go owns ZIP part streaming but has
+  // no DB; it calls this to validate a part download (status/expiry) and to
+  // build the attachment filename (createdAt + part count). Read-only.
+  rpc GetZipJob(GetZipJobRequest) returns (GetZipJobResponse);
   rpc BatchCheckChunkStatus(BatchCheckRequest) returns (BatchCheckResponse);
   rpc ReportBandwidthUsage(ReportBandwidthUsageRequest) returns (Empty);
   rpc ReportUploadFailed(ReportUploadFailedRequest) returns (Empty);
@@ -256,6 +260,21 @@ message CollectZipEntriesResponse {
 message ReportZipProgressRequest {
   string job_id = 1;
   int32 processed_files = 2;
+}
+
+// Serve-side job lookup (Go-owned ZIP part streaming). Go validates the part
+// download and derives the attachment filename from these fields.
+
+message GetZipJobRequest {
+  string job_id = 1;
+}
+
+message GetZipJobResponse {
+  bool found = 1;
+  string status = 2;       // pending/collecting/zipping/ready/expired/failed
+  string created_at = 3;   // ISO8601 — used for the download_<timestamp> filename
+  string expires_at = 4;   // ISO8601; empty when unset
+  repeated ZipPart parts = 5;
 }
 
 // --- Bot ---

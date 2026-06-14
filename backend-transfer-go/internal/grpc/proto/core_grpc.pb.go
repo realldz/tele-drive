@@ -25,6 +25,7 @@ const (
 	CoreService_GetFileMetadata_FullMethodName        = "/core.CoreService/GetFileMetadata"
 	CoreService_CollectZipEntries_FullMethodName      = "/core.CoreService/CollectZipEntries"
 	CoreService_ReportZipProgress_FullMethodName      = "/core.CoreService/ReportZipProgress"
+	CoreService_GetZipJob_FullMethodName              = "/core.CoreService/GetZipJob"
 	CoreService_BatchCheckChunkStatus_FullMethodName  = "/core.CoreService/BatchCheckChunkStatus"
 	CoreService_ReportBandwidthUsage_FullMethodName   = "/core.CoreService/ReportBandwidthUsage"
 	CoreService_ReportUploadFailed_FullMethodName     = "/core.CoreService/ReportUploadFailed"
@@ -57,6 +58,10 @@ type CoreServiceClient interface {
 	GetFileMetadata(ctx context.Context, in *GetFileMetadataRequest, opts ...grpc.CallOption) (*FileMetadata, error)
 	CollectZipEntries(ctx context.Context, in *CollectZipEntriesRequest, opts ...grpc.CallOption) (*CollectZipEntriesResponse, error)
 	ReportZipProgress(ctx context.Context, in *ReportZipProgressRequest, opts ...grpc.CallOption) (*Empty, error)
+	// Serve-side lookup for the Go data plane. Go owns ZIP part streaming but has
+	// no DB; it calls this to validate a part download (status/expiry) and to
+	// build the attachment filename (createdAt + part count). Read-only.
+	GetZipJob(ctx context.Context, in *GetZipJobRequest, opts ...grpc.CallOption) (*GetZipJobResponse, error)
 	BatchCheckChunkStatus(ctx context.Context, in *BatchCheckRequest, opts ...grpc.CallOption) (*BatchCheckResponse, error)
 	ReportBandwidthUsage(ctx context.Context, in *ReportBandwidthUsageRequest, opts ...grpc.CallOption) (*Empty, error)
 	ReportUploadFailed(ctx context.Context, in *ReportUploadFailedRequest, opts ...grpc.CallOption) (*Empty, error)
@@ -150,6 +155,16 @@ func (c *coreServiceClient) ReportZipProgress(ctx context.Context, in *ReportZip
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(Empty)
 	err := c.cc.Invoke(ctx, CoreService_ReportZipProgress_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) GetZipJob(ctx context.Context, in *GetZipJobRequest, opts ...grpc.CallOption) (*GetZipJobResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GetZipJobResponse)
+	err := c.cc.Invoke(ctx, CoreService_GetZipJob_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -366,6 +381,10 @@ type CoreServiceServer interface {
 	GetFileMetadata(context.Context, *GetFileMetadataRequest) (*FileMetadata, error)
 	CollectZipEntries(context.Context, *CollectZipEntriesRequest) (*CollectZipEntriesResponse, error)
 	ReportZipProgress(context.Context, *ReportZipProgressRequest) (*Empty, error)
+	// Serve-side lookup for the Go data plane. Go owns ZIP part streaming but has
+	// no DB; it calls this to validate a part download (status/expiry) and to
+	// build the attachment filename (createdAt + part count). Read-only.
+	GetZipJob(context.Context, *GetZipJobRequest) (*GetZipJobResponse, error)
 	BatchCheckChunkStatus(context.Context, *BatchCheckRequest) (*BatchCheckResponse, error)
 	ReportBandwidthUsage(context.Context, *ReportBandwidthUsageRequest) (*Empty, error)
 	ReportUploadFailed(context.Context, *ReportUploadFailedRequest) (*Empty, error)
@@ -422,6 +441,9 @@ func (UnimplementedCoreServiceServer) CollectZipEntries(context.Context, *Collec
 }
 func (UnimplementedCoreServiceServer) ReportZipProgress(context.Context, *ReportZipProgressRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportZipProgress not implemented")
+}
+func (UnimplementedCoreServiceServer) GetZipJob(context.Context, *GetZipJobRequest) (*GetZipJobResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetZipJob not implemented")
 }
 func (UnimplementedCoreServiceServer) BatchCheckChunkStatus(context.Context, *BatchCheckRequest) (*BatchCheckResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method BatchCheckChunkStatus not implemented")
@@ -608,6 +630,24 @@ func _CoreService_ReportZipProgress_Handler(srv interface{}, ctx context.Context
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CoreServiceServer).ReportZipProgress(ctx, req.(*ReportZipProgressRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_GetZipJob_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetZipJobRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).GetZipJob(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_GetZipJob_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).GetZipJob(ctx, req.(*GetZipJobRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1002,6 +1042,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportZipProgress",
 			Handler:    _CoreService_ReportZipProgress_Handler,
+		},
+		{
+			MethodName: "GetZipJob",
+			Handler:    _CoreService_GetZipJob_Handler,
 		},
 		{
 			MethodName: "BatchCheckChunkStatus",

@@ -123,6 +123,11 @@ func (h *FileHandler) RegisterRoutes(e *echo.Echo) {
 	files.POST("/stream-cookie/guest", h.IssueGuestStreamCookie, optAuthMiddleware)
 	files.DELETE("/stream-cookie", h.ClearStreamCookie)
 
+	// ZIP part serving (Public). Create/status stay on NestJS (control plane);
+	// only the binary part stream is Go-owned. Path mirrors the downloadUrl built
+	// in NestJS getJobStatus: /transfer/download-zip/:id/file/:partIndex.
+	files.GET("/download-zip/:id/file/:partIndex", h.ServeZipPart)
+
 	// Stream/Download by token or cookie (Public)
 	files.POST("/share/:token/download-token", h.GenerateShareDownloadToken, optAuthMiddleware)
 	files.GET("/d/:token", h.DownloadBySigned)

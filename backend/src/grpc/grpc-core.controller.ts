@@ -735,6 +735,25 @@ export class GrpcCoreController {
     return {};
   }
 
+  // Serve-side lookup for the Go data plane (Go owns ZIP part streaming but has
+  // no DB). Returns found=false for unknown jobs so Go emits a clean 404 instead
+  // of a gRPC error. Parts carry the temp-storage key Go reads from disk.
+  @GrpcMethod('CoreService', 'GetZipJob')
+  async getZipJob(data: { jobId: string }) {
+    const info = await this.downloadZipService.getServeInfo(data.jobId);
+    return {
+      found: info.found,
+      status: info.status,
+      createdAt: info.createdAt,
+      expiresAt: info.expiresAt,
+      parts: info.parts.map((p) => ({
+        key: p.key,
+        size: Number(p.size),
+        index: p.index,
+      })),
+    };
+  }
+
   @GrpcMethod('CoreService', 'ReportZipReady')
   async reportZipReady(data: {
     jobId: string;

@@ -461,7 +461,7 @@ export class DownloadZipProcessor
     });
 
     for (const job of expired) {
-      if (this.downloadZipService.hasActiveStreams(job.id)) {
+      if (await this.downloadZipService.hasActiveStreams(job.id)) {
         this.logger.debug(`Skipping cleanup for ${job.id}: active streams`);
         continue;
       }

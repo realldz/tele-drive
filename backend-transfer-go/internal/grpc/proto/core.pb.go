@@ -1828,6 +1828,126 @@ func (x *ReportZipProgressRequest) GetProcessedFiles() int32 {
 	return 0
 }
 
+type GetZipJobRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	JobId         string                 `protobuf:"bytes,1,opt,name=job_id,json=jobId,proto3" json:"job_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetZipJobRequest) Reset() {
+	*x = GetZipJobRequest{}
+	mi := &file_core_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetZipJobRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetZipJobRequest) ProtoMessage() {}
+
+func (x *GetZipJobRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetZipJobRequest.ProtoReflect.Descriptor instead.
+func (*GetZipJobRequest) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{28}
+}
+
+func (x *GetZipJobRequest) GetJobId() string {
+	if x != nil {
+		return x.JobId
+	}
+	return ""
+}
+
+type GetZipJobResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Found         bool                   `protobuf:"varint,1,opt,name=found,proto3" json:"found,omitempty"`
+	Status        string                 `protobuf:"bytes,2,opt,name=status,proto3" json:"status,omitempty"`                        // pending/collecting/zipping/ready/expired/failed
+	CreatedAt     string                 `protobuf:"bytes,3,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"` // ISO8601 — used for the download_<timestamp> filename
+	ExpiresAt     string                 `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"` // ISO8601; empty when unset
+	Parts         []*ZipPart             `protobuf:"bytes,5,rep,name=parts,proto3" json:"parts,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetZipJobResponse) Reset() {
+	*x = GetZipJobResponse{}
+	mi := &file_core_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetZipJobResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetZipJobResponse) ProtoMessage() {}
+
+func (x *GetZipJobResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_core_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetZipJobResponse.ProtoReflect.Descriptor instead.
+func (*GetZipJobResponse) Descriptor() ([]byte, []int) {
+	return file_core_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *GetZipJobResponse) GetFound() bool {
+	if x != nil {
+		return x.Found
+	}
+	return false
+}
+
+func (x *GetZipJobResponse) GetStatus() string {
+	if x != nil {
+		return x.Status
+	}
+	return ""
+}
+
+func (x *GetZipJobResponse) GetCreatedAt() string {
+	if x != nil {
+		return x.CreatedAt
+	}
+	return ""
+}
+
+func (x *GetZipJobResponse) GetExpiresAt() string {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return ""
+}
+
+func (x *GetZipJobResponse) GetParts() []*ZipPart {
+	if x != nil {
+		return x.Parts
+	}
+	return nil
+}
+
 type ReportBotUnauthorizedRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	BotId         int64                  `protobuf:"varint,1,opt,name=bot_id,json=botId,proto3" json:"bot_id,omitempty"`
@@ -1837,7 +1957,7 @@ type ReportBotUnauthorizedRequest struct {
 
 func (x *ReportBotUnauthorizedRequest) Reset() {
 	*x = ReportBotUnauthorizedRequest{}
-	mi := &file_core_proto_msgTypes[28]
+	mi := &file_core_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1849,7 +1969,7 @@ func (x *ReportBotUnauthorizedRequest) String() string {
 func (*ReportBotUnauthorizedRequest) ProtoMessage() {}
 
 func (x *ReportBotUnauthorizedRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[28]
+	mi := &file_core_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1862,7 +1982,7 @@ func (x *ReportBotUnauthorizedRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportBotUnauthorizedRequest.ProtoReflect.Descriptor instead.
 func (*ReportBotUnauthorizedRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{28}
+	return file_core_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *ReportBotUnauthorizedRequest) GetBotId() int64 {
@@ -1881,7 +2001,7 @@ type ReportEmergencyCleanupRequest struct {
 
 func (x *ReportEmergencyCleanupRequest) Reset() {
 	*x = ReportEmergencyCleanupRequest{}
-	mi := &file_core_proto_msgTypes[29]
+	mi := &file_core_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1893,7 +2013,7 @@ func (x *ReportEmergencyCleanupRequest) String() string {
 func (*ReportEmergencyCleanupRequest) ProtoMessage() {}
 
 func (x *ReportEmergencyCleanupRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[29]
+	mi := &file_core_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1906,7 +2026,7 @@ func (x *ReportEmergencyCleanupRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportEmergencyCleanupRequest.ProtoReflect.Descriptor instead.
 func (*ReportEmergencyCleanupRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{29}
+	return file_core_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *ReportEmergencyCleanupRequest) GetFileIds() []string {
@@ -1927,7 +2047,7 @@ type DiskSpaceResponse struct {
 
 func (x *DiskSpaceResponse) Reset() {
 	*x = DiskSpaceResponse{}
-	mi := &file_core_proto_msgTypes[30]
+	mi := &file_core_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1939,7 +2059,7 @@ func (x *DiskSpaceResponse) String() string {
 func (*DiskSpaceResponse) ProtoMessage() {}
 
 func (x *DiskSpaceResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[30]
+	mi := &file_core_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1952,7 +2072,7 @@ func (x *DiskSpaceResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiskSpaceResponse.ProtoReflect.Descriptor instead.
 func (*DiskSpaceResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{30}
+	return file_core_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *DiskSpaceResponse) GetFreeBytes() int64 {
@@ -1987,7 +2107,7 @@ type ReportCronStatsRequest struct {
 
 func (x *ReportCronStatsRequest) Reset() {
 	*x = ReportCronStatsRequest{}
-	mi := &file_core_proto_msgTypes[31]
+	mi := &file_core_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1999,7 +2119,7 @@ func (x *ReportCronStatsRequest) String() string {
 func (*ReportCronStatsRequest) ProtoMessage() {}
 
 func (x *ReportCronStatsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[31]
+	mi := &file_core_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2012,7 +2132,7 @@ func (x *ReportCronStatsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportCronStatsRequest.ProtoReflect.Descriptor instead.
 func (*ReportCronStatsRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{31}
+	return file_core_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *ReportCronStatsRequest) GetCronName() string {
@@ -2046,7 +2166,7 @@ type VerifyFolderShareRequest struct {
 
 func (x *VerifyFolderShareRequest) Reset() {
 	*x = VerifyFolderShareRequest{}
-	mi := &file_core_proto_msgTypes[32]
+	mi := &file_core_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2058,7 +2178,7 @@ func (x *VerifyFolderShareRequest) String() string {
 func (*VerifyFolderShareRequest) ProtoMessage() {}
 
 func (x *VerifyFolderShareRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[32]
+	mi := &file_core_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2071,7 +2191,7 @@ func (x *VerifyFolderShareRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyFolderShareRequest.ProtoReflect.Descriptor instead.
 func (*VerifyFolderShareRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{32}
+	return file_core_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *VerifyFolderShareRequest) GetShareToken() string {
@@ -2097,7 +2217,7 @@ type VerifyFolderShareResponse struct {
 
 func (x *VerifyFolderShareResponse) Reset() {
 	*x = VerifyFolderShareResponse{}
-	mi := &file_core_proto_msgTypes[33]
+	mi := &file_core_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2109,7 +2229,7 @@ func (x *VerifyFolderShareResponse) String() string {
 func (*VerifyFolderShareResponse) ProtoMessage() {}
 
 func (x *VerifyFolderShareResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[33]
+	mi := &file_core_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2122,7 +2242,7 @@ func (x *VerifyFolderShareResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyFolderShareResponse.ProtoReflect.Descriptor instead.
 func (*VerifyFolderShareResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{33}
+	return file_core_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *VerifyFolderShareResponse) GetIsValid() bool {
@@ -2141,7 +2261,7 @@ type GetS3CredentialRequest struct {
 
 func (x *GetS3CredentialRequest) Reset() {
 	*x = GetS3CredentialRequest{}
-	mi := &file_core_proto_msgTypes[34]
+	mi := &file_core_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2153,7 +2273,7 @@ func (x *GetS3CredentialRequest) String() string {
 func (*GetS3CredentialRequest) ProtoMessage() {}
 
 func (x *GetS3CredentialRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[34]
+	mi := &file_core_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2166,7 +2286,7 @@ func (x *GetS3CredentialRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetS3CredentialRequest.ProtoReflect.Descriptor instead.
 func (*GetS3CredentialRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{34}
+	return file_core_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *GetS3CredentialRequest) GetAccessKeyId() string {
@@ -2188,7 +2308,7 @@ type GetS3CredentialResponse struct {
 
 func (x *GetS3CredentialResponse) Reset() {
 	*x = GetS3CredentialResponse{}
-	mi := &file_core_proto_msgTypes[35]
+	mi := &file_core_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2200,7 +2320,7 @@ func (x *GetS3CredentialResponse) String() string {
 func (*GetS3CredentialResponse) ProtoMessage() {}
 
 func (x *GetS3CredentialResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[35]
+	mi := &file_core_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2213,7 +2333,7 @@ func (x *GetS3CredentialResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetS3CredentialResponse.ProtoReflect.Descriptor instead.
 func (*GetS3CredentialResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{35}
+	return file_core_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *GetS3CredentialResponse) GetFound() bool {
@@ -2255,7 +2375,7 @@ type ResolveS3ObjectRequest struct {
 
 func (x *ResolveS3ObjectRequest) Reset() {
 	*x = ResolveS3ObjectRequest{}
-	mi := &file_core_proto_msgTypes[36]
+	mi := &file_core_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2267,7 +2387,7 @@ func (x *ResolveS3ObjectRequest) String() string {
 func (*ResolveS3ObjectRequest) ProtoMessage() {}
 
 func (x *ResolveS3ObjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[36]
+	mi := &file_core_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2280,7 +2400,7 @@ func (x *ResolveS3ObjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveS3ObjectRequest.ProtoReflect.Descriptor instead.
 func (*ResolveS3ObjectRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{36}
+	return file_core_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *ResolveS3ObjectRequest) GetUserId() string {
@@ -2318,7 +2438,7 @@ type ResolveS3ObjectResponse struct {
 
 func (x *ResolveS3ObjectResponse) Reset() {
 	*x = ResolveS3ObjectResponse{}
-	mi := &file_core_proto_msgTypes[37]
+	mi := &file_core_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2330,7 +2450,7 @@ func (x *ResolveS3ObjectResponse) String() string {
 func (*ResolveS3ObjectResponse) ProtoMessage() {}
 
 func (x *ResolveS3ObjectResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[37]
+	mi := &file_core_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2343,7 +2463,7 @@ func (x *ResolveS3ObjectResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResolveS3ObjectResponse.ProtoReflect.Descriptor instead.
 func (*ResolveS3ObjectResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{37}
+	return file_core_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *ResolveS3ObjectResponse) GetFound() bool {
@@ -2401,7 +2521,7 @@ type PrepareS3PutRequest struct {
 
 func (x *PrepareS3PutRequest) Reset() {
 	*x = PrepareS3PutRequest{}
-	mi := &file_core_proto_msgTypes[38]
+	mi := &file_core_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2413,7 +2533,7 @@ func (x *PrepareS3PutRequest) String() string {
 func (*PrepareS3PutRequest) ProtoMessage() {}
 
 func (x *PrepareS3PutRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[38]
+	mi := &file_core_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2426,7 +2546,7 @@ func (x *PrepareS3PutRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareS3PutRequest.ProtoReflect.Descriptor instead.
 func (*PrepareS3PutRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{38}
+	return file_core_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *PrepareS3PutRequest) GetUserId() string {
@@ -2476,7 +2596,7 @@ type PrepareS3PutResponse struct {
 
 func (x *PrepareS3PutResponse) Reset() {
 	*x = PrepareS3PutResponse{}
-	mi := &file_core_proto_msgTypes[39]
+	mi := &file_core_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2488,7 +2608,7 @@ func (x *PrepareS3PutResponse) String() string {
 func (*PrepareS3PutResponse) ProtoMessage() {}
 
 func (x *PrepareS3PutResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[39]
+	mi := &file_core_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2501,7 +2621,7 @@ func (x *PrepareS3PutResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PrepareS3PutResponse.ProtoReflect.Descriptor instead.
 func (*PrepareS3PutResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{39}
+	return file_core_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *PrepareS3PutResponse) GetFileId() string {
@@ -2549,7 +2669,7 @@ type ReportS3PutCompleteRequest struct {
 
 func (x *ReportS3PutCompleteRequest) Reset() {
 	*x = ReportS3PutCompleteRequest{}
-	mi := &file_core_proto_msgTypes[40]
+	mi := &file_core_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2561,7 +2681,7 @@ func (x *ReportS3PutCompleteRequest) String() string {
 func (*ReportS3PutCompleteRequest) ProtoMessage() {}
 
 func (x *ReportS3PutCompleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[40]
+	mi := &file_core_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2574,7 +2694,7 @@ func (x *ReportS3PutCompleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReportS3PutCompleteRequest.ProtoReflect.Descriptor instead.
 func (*ReportS3PutCompleteRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{40}
+	return file_core_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *ReportS3PutCompleteRequest) GetFileId() string {
@@ -2651,7 +2771,7 @@ type GetBandwidthQuotaRequest struct {
 
 func (x *GetBandwidthQuotaRequest) Reset() {
 	*x = GetBandwidthQuotaRequest{}
-	mi := &file_core_proto_msgTypes[41]
+	mi := &file_core_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2663,7 +2783,7 @@ func (x *GetBandwidthQuotaRequest) String() string {
 func (*GetBandwidthQuotaRequest) ProtoMessage() {}
 
 func (x *GetBandwidthQuotaRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[41]
+	mi := &file_core_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2676,7 +2796,7 @@ func (x *GetBandwidthQuotaRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBandwidthQuotaRequest.ProtoReflect.Descriptor instead.
 func (*GetBandwidthQuotaRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{41}
+	return file_core_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *GetBandwidthQuotaRequest) GetUserId() string {
@@ -2720,7 +2840,7 @@ type GetBandwidthQuotaResponse struct {
 
 func (x *GetBandwidthQuotaResponse) Reset() {
 	*x = GetBandwidthQuotaResponse{}
-	mi := &file_core_proto_msgTypes[42]
+	mi := &file_core_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2732,7 +2852,7 @@ func (x *GetBandwidthQuotaResponse) String() string {
 func (*GetBandwidthQuotaResponse) ProtoMessage() {}
 
 func (x *GetBandwidthQuotaResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[42]
+	mi := &file_core_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2745,7 +2865,7 @@ func (x *GetBandwidthQuotaResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetBandwidthQuotaResponse.ProtoReflect.Descriptor instead.
 func (*GetBandwidthQuotaResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{42}
+	return file_core_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *GetBandwidthQuotaResponse) GetDailyUsed() int64 {
@@ -2821,7 +2941,7 @@ type GetSystemSettingsRequest struct {
 
 func (x *GetSystemSettingsRequest) Reset() {
 	*x = GetSystemSettingsRequest{}
-	mi := &file_core_proto_msgTypes[43]
+	mi := &file_core_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2833,7 +2953,7 @@ func (x *GetSystemSettingsRequest) String() string {
 func (*GetSystemSettingsRequest) ProtoMessage() {}
 
 func (x *GetSystemSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[43]
+	mi := &file_core_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2846,7 +2966,7 @@ func (x *GetSystemSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSystemSettingsRequest.ProtoReflect.Descriptor instead.
 func (*GetSystemSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{43}
+	return file_core_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *GetSystemSettingsRequest) GetKeys() []string {
@@ -2867,7 +2987,7 @@ type GetSystemSettingsResponse struct {
 
 func (x *GetSystemSettingsResponse) Reset() {
 	*x = GetSystemSettingsResponse{}
-	mi := &file_core_proto_msgTypes[44]
+	mi := &file_core_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2879,7 +2999,7 @@ func (x *GetSystemSettingsResponse) String() string {
 func (*GetSystemSettingsResponse) ProtoMessage() {}
 
 func (x *GetSystemSettingsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_core_proto_msgTypes[44]
+	mi := &file_core_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2892,7 +3012,7 @@ func (x *GetSystemSettingsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetSystemSettingsResponse.ProtoReflect.Descriptor instead.
 func (*GetSystemSettingsResponse) Descriptor() ([]byte, []int) {
-	return file_core_proto_rawDescGZIP(), []int{44}
+	return file_core_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *GetSystemSettingsResponse) GetSettings() map[string]string {
@@ -3037,7 +3157,17 @@ const file_core_proto_rawDesc = "" +
 	"\aentries\x18\x01 \x03(\v2\x0e.core.ZipEntryR\aentries\"Z\n" +
 	"\x18ReportZipProgressRequest\x12\x15\n" +
 	"\x06job_id\x18\x01 \x01(\tR\x05jobId\x12'\n" +
-	"\x0fprocessed_files\x18\x02 \x01(\x05R\x0eprocessedFiles\"5\n" +
+	"\x0fprocessed_files\x18\x02 \x01(\x05R\x0eprocessedFiles\")\n" +
+	"\x10GetZipJobRequest\x12\x15\n" +
+	"\x06job_id\x18\x01 \x01(\tR\x05jobId\"\xa4\x01\n" +
+	"\x11GetZipJobResponse\x12\x14\n" +
+	"\x05found\x18\x01 \x01(\bR\x05found\x12\x16\n" +
+	"\x06status\x18\x02 \x01(\tR\x06status\x12\x1d\n" +
+	"\n" +
+	"created_at\x18\x03 \x01(\tR\tcreatedAt\x12\x1d\n" +
+	"\n" +
+	"expires_at\x18\x04 \x01(\tR\texpiresAt\x12#\n" +
+	"\x05parts\x18\x05 \x03(\v2\r.core.ZipPartR\x05parts\"5\n" +
 	"\x1cReportBotUnauthorizedRequest\x12\x15\n" +
 	"\x06bot_id\x18\x01 \x01(\x03R\x05botId\":\n" +
 	"\x1dReportEmergencyCleanupRequest\x12\x19\n" +
@@ -3129,14 +3259,15 @@ const file_core_proto_rawDesc = "" +
 	"\x14CHUNK_STATUS_PENDING\x10\x01\x12\x19\n" +
 	"\x15CHUNK_STATUS_COMPLETE\x10\x02\x12\x17\n" +
 	"\x13CHUNK_STATUS_FAILED\x10\x03\x12\x1a\n" +
-	"\x16CHUNK_STATUS_NOT_FOUND\x10\x042\xe1\x0e\n" +
+	"\x16CHUNK_STATUS_NOT_FOUND\x10\x042\x9f\x0f\n" +
 	"\vCoreService\x12W\n" +
 	"\x12ReportChunkResults\x12\x1f.core.ReportChunkResultsRequest\x1a .core.ReportChunkResultsResponse\x12Z\n" +
 	"\x13ReportChunkBuffered\x12 .core.ReportChunkBufferedRequest\x1a!.core.ReportChunkBufferedResponse\x12B\n" +
 	"\x12ReportFileComplete\x12\x1f.core.ReportFileCompleteRequest\x1a\v.core.Empty\x12C\n" +
 	"\x0fGetFileMetadata\x12\x1c.core.GetFileMetadataRequest\x1a\x12.core.FileMetadata\x12T\n" +
 	"\x11CollectZipEntries\x12\x1e.core.CollectZipEntriesRequest\x1a\x1f.core.CollectZipEntriesResponse\x12@\n" +
-	"\x11ReportZipProgress\x12\x1e.core.ReportZipProgressRequest\x1a\v.core.Empty\x12J\n" +
+	"\x11ReportZipProgress\x12\x1e.core.ReportZipProgressRequest\x1a\v.core.Empty\x12<\n" +
+	"\tGetZipJob\x12\x16.core.GetZipJobRequest\x1a\x17.core.GetZipJobResponse\x12J\n" +
 	"\x15BatchCheckChunkStatus\x12\x17.core.BatchCheckRequest\x1a\x18.core.BatchCheckResponse\x12F\n" +
 	"\x14ReportBandwidthUsage\x12!.core.ReportBandwidthUsageRequest\x1a\v.core.Empty\x12B\n" +
 	"\x12ReportUploadFailed\x12\x1f.core.ReportUploadFailedRequest\x1a\v.core.Empty\x12D\n" +
@@ -3172,7 +3303,7 @@ func file_core_proto_rawDescGZIP() []byte {
 }
 
 var file_core_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 46)
+var file_core_proto_msgTypes = make([]protoimpl.MessageInfo, 48)
 var file_core_proto_goTypes = []any{
 	(ChunkStatus)(0),                      // 0: core.ChunkStatus
 	(*Empty)(nil),                         // 1: core.Empty
@@ -3203,24 +3334,26 @@ var file_core_proto_goTypes = []any{
 	(*ZipEntry)(nil),                      // 26: core.ZipEntry
 	(*CollectZipEntriesResponse)(nil),     // 27: core.CollectZipEntriesResponse
 	(*ReportZipProgressRequest)(nil),      // 28: core.ReportZipProgressRequest
-	(*ReportBotUnauthorizedRequest)(nil),  // 29: core.ReportBotUnauthorizedRequest
-	(*ReportEmergencyCleanupRequest)(nil), // 30: core.ReportEmergencyCleanupRequest
-	(*DiskSpaceResponse)(nil),             // 31: core.DiskSpaceResponse
-	(*ReportCronStatsRequest)(nil),        // 32: core.ReportCronStatsRequest
-	(*VerifyFolderShareRequest)(nil),      // 33: core.VerifyFolderShareRequest
-	(*VerifyFolderShareResponse)(nil),     // 34: core.VerifyFolderShareResponse
-	(*GetS3CredentialRequest)(nil),        // 35: core.GetS3CredentialRequest
-	(*GetS3CredentialResponse)(nil),       // 36: core.GetS3CredentialResponse
-	(*ResolveS3ObjectRequest)(nil),        // 37: core.ResolveS3ObjectRequest
-	(*ResolveS3ObjectResponse)(nil),       // 38: core.ResolveS3ObjectResponse
-	(*PrepareS3PutRequest)(nil),           // 39: core.PrepareS3PutRequest
-	(*PrepareS3PutResponse)(nil),          // 40: core.PrepareS3PutResponse
-	(*ReportS3PutCompleteRequest)(nil),    // 41: core.ReportS3PutCompleteRequest
-	(*GetBandwidthQuotaRequest)(nil),      // 42: core.GetBandwidthQuotaRequest
-	(*GetBandwidthQuotaResponse)(nil),     // 43: core.GetBandwidthQuotaResponse
-	(*GetSystemSettingsRequest)(nil),      // 44: core.GetSystemSettingsRequest
-	(*GetSystemSettingsResponse)(nil),     // 45: core.GetSystemSettingsResponse
-	nil,                                   // 46: core.GetSystemSettingsResponse.SettingsEntry
+	(*GetZipJobRequest)(nil),              // 29: core.GetZipJobRequest
+	(*GetZipJobResponse)(nil),             // 30: core.GetZipJobResponse
+	(*ReportBotUnauthorizedRequest)(nil),  // 31: core.ReportBotUnauthorizedRequest
+	(*ReportEmergencyCleanupRequest)(nil), // 32: core.ReportEmergencyCleanupRequest
+	(*DiskSpaceResponse)(nil),             // 33: core.DiskSpaceResponse
+	(*ReportCronStatsRequest)(nil),        // 34: core.ReportCronStatsRequest
+	(*VerifyFolderShareRequest)(nil),      // 35: core.VerifyFolderShareRequest
+	(*VerifyFolderShareResponse)(nil),     // 36: core.VerifyFolderShareResponse
+	(*GetS3CredentialRequest)(nil),        // 37: core.GetS3CredentialRequest
+	(*GetS3CredentialResponse)(nil),       // 38: core.GetS3CredentialResponse
+	(*ResolveS3ObjectRequest)(nil),        // 39: core.ResolveS3ObjectRequest
+	(*ResolveS3ObjectResponse)(nil),       // 40: core.ResolveS3ObjectResponse
+	(*PrepareS3PutRequest)(nil),           // 41: core.PrepareS3PutRequest
+	(*PrepareS3PutResponse)(nil),          // 42: core.PrepareS3PutResponse
+	(*ReportS3PutCompleteRequest)(nil),    // 43: core.ReportS3PutCompleteRequest
+	(*GetBandwidthQuotaRequest)(nil),      // 44: core.GetBandwidthQuotaRequest
+	(*GetBandwidthQuotaResponse)(nil),     // 45: core.GetBandwidthQuotaResponse
+	(*GetSystemSettingsRequest)(nil),      // 46: core.GetSystemSettingsRequest
+	(*GetSystemSettingsResponse)(nil),     // 47: core.GetSystemSettingsResponse
+	nil,                                   // 48: core.GetSystemSettingsResponse.SettingsEntry
 }
 var file_core_proto_depIdxs = []int32{
 	3,  // 0: core.ReportChunkResultsRequest.results:type_name -> core.ChunkResult
@@ -3231,64 +3364,67 @@ var file_core_proto_depIdxs = []int32{
 	16, // 5: core.ReportBandwidthUsageRequest.entries:type_name -> core.BandwidthUsageEntry
 	22, // 6: core.ReportZipReadyRequest.parts:type_name -> core.ZipPart
 	26, // 7: core.CollectZipEntriesResponse.entries:type_name -> core.ZipEntry
-	46, // 8: core.GetSystemSettingsResponse.settings:type_name -> core.GetSystemSettingsResponse.SettingsEntry
-	4,  // 9: core.CoreService.ReportChunkResults:input_type -> core.ReportChunkResultsRequest
-	7,  // 10: core.CoreService.ReportChunkBuffered:input_type -> core.ReportChunkBufferedRequest
-	9,  // 11: core.CoreService.ReportFileComplete:input_type -> core.ReportFileCompleteRequest
-	10, // 12: core.CoreService.GetFileMetadata:input_type -> core.GetFileMetadataRequest
-	25, // 13: core.CoreService.CollectZipEntries:input_type -> core.CollectZipEntriesRequest
-	28, // 14: core.CoreService.ReportZipProgress:input_type -> core.ReportZipProgressRequest
-	13, // 15: core.CoreService.BatchCheckChunkStatus:input_type -> core.BatchCheckRequest
-	17, // 16: core.CoreService.ReportBandwidthUsage:input_type -> core.ReportBandwidthUsageRequest
-	18, // 17: core.CoreService.ReportUploadFailed:input_type -> core.ReportUploadFailedRequest
-	19, // 18: core.CoreService.ReportDeleteSuccess:input_type -> core.ReportDeleteSuccessRequest
-	20, // 19: core.CoreService.ReportDeleteFailed:input_type -> core.ReportDeleteFailedRequest
-	21, // 20: core.CoreService.ReportFileCorrupted:input_type -> core.ReportFileCorruptedRequest
-	23, // 21: core.CoreService.ReportZipReady:input_type -> core.ReportZipReadyRequest
-	24, // 22: core.CoreService.ReportZipFailed:input_type -> core.ReportZipFailedRequest
-	29, // 23: core.CoreService.ReportBotUnauthorized:input_type -> core.ReportBotUnauthorizedRequest
-	30, // 24: core.CoreService.ReportEmergencyCleanup:input_type -> core.ReportEmergencyCleanupRequest
-	1,  // 25: core.CoreService.CheckDiskSpace:input_type -> core.Empty
-	32, // 26: core.CoreService.ReportCronStats:input_type -> core.ReportCronStatsRequest
-	33, // 27: core.CoreService.VerifyFolderShare:input_type -> core.VerifyFolderShareRequest
-	1,  // 28: core.CoreService.Ping:input_type -> core.Empty
-	35, // 29: core.CoreService.GetS3Credential:input_type -> core.GetS3CredentialRequest
-	37, // 30: core.CoreService.ResolveS3Object:input_type -> core.ResolveS3ObjectRequest
-	39, // 31: core.CoreService.PrepareS3Put:input_type -> core.PrepareS3PutRequest
-	41, // 32: core.CoreService.ReportS3PutComplete:input_type -> core.ReportS3PutCompleteRequest
-	42, // 33: core.CoreService.GetBandwidthQuota:input_type -> core.GetBandwidthQuotaRequest
-	44, // 34: core.CoreService.GetSystemSettings:input_type -> core.GetSystemSettingsRequest
-	5,  // 35: core.CoreService.ReportChunkResults:output_type -> core.ReportChunkResultsResponse
-	8,  // 36: core.CoreService.ReportChunkBuffered:output_type -> core.ReportChunkBufferedResponse
-	1,  // 37: core.CoreService.ReportFileComplete:output_type -> core.Empty
-	12, // 38: core.CoreService.GetFileMetadata:output_type -> core.FileMetadata
-	27, // 39: core.CoreService.CollectZipEntries:output_type -> core.CollectZipEntriesResponse
-	1,  // 40: core.CoreService.ReportZipProgress:output_type -> core.Empty
-	15, // 41: core.CoreService.BatchCheckChunkStatus:output_type -> core.BatchCheckResponse
-	1,  // 42: core.CoreService.ReportBandwidthUsage:output_type -> core.Empty
-	1,  // 43: core.CoreService.ReportUploadFailed:output_type -> core.Empty
-	1,  // 44: core.CoreService.ReportDeleteSuccess:output_type -> core.Empty
-	1,  // 45: core.CoreService.ReportDeleteFailed:output_type -> core.Empty
-	1,  // 46: core.CoreService.ReportFileCorrupted:output_type -> core.Empty
-	1,  // 47: core.CoreService.ReportZipReady:output_type -> core.Empty
-	1,  // 48: core.CoreService.ReportZipFailed:output_type -> core.Empty
-	1,  // 49: core.CoreService.ReportBotUnauthorized:output_type -> core.Empty
-	1,  // 50: core.CoreService.ReportEmergencyCleanup:output_type -> core.Empty
-	31, // 51: core.CoreService.CheckDiskSpace:output_type -> core.DiskSpaceResponse
-	1,  // 52: core.CoreService.ReportCronStats:output_type -> core.Empty
-	34, // 53: core.CoreService.VerifyFolderShare:output_type -> core.VerifyFolderShareResponse
-	2,  // 54: core.CoreService.Ping:output_type -> core.Pong
-	36, // 55: core.CoreService.GetS3Credential:output_type -> core.GetS3CredentialResponse
-	38, // 56: core.CoreService.ResolveS3Object:output_type -> core.ResolveS3ObjectResponse
-	40, // 57: core.CoreService.PrepareS3Put:output_type -> core.PrepareS3PutResponse
-	1,  // 58: core.CoreService.ReportS3PutComplete:output_type -> core.Empty
-	43, // 59: core.CoreService.GetBandwidthQuota:output_type -> core.GetBandwidthQuotaResponse
-	45, // 60: core.CoreService.GetSystemSettings:output_type -> core.GetSystemSettingsResponse
-	35, // [35:61] is the sub-list for method output_type
-	9,  // [9:35] is the sub-list for method input_type
-	9,  // [9:9] is the sub-list for extension type_name
-	9,  // [9:9] is the sub-list for extension extendee
-	0,  // [0:9] is the sub-list for field type_name
+	22, // 8: core.GetZipJobResponse.parts:type_name -> core.ZipPart
+	48, // 9: core.GetSystemSettingsResponse.settings:type_name -> core.GetSystemSettingsResponse.SettingsEntry
+	4,  // 10: core.CoreService.ReportChunkResults:input_type -> core.ReportChunkResultsRequest
+	7,  // 11: core.CoreService.ReportChunkBuffered:input_type -> core.ReportChunkBufferedRequest
+	9,  // 12: core.CoreService.ReportFileComplete:input_type -> core.ReportFileCompleteRequest
+	10, // 13: core.CoreService.GetFileMetadata:input_type -> core.GetFileMetadataRequest
+	25, // 14: core.CoreService.CollectZipEntries:input_type -> core.CollectZipEntriesRequest
+	28, // 15: core.CoreService.ReportZipProgress:input_type -> core.ReportZipProgressRequest
+	29, // 16: core.CoreService.GetZipJob:input_type -> core.GetZipJobRequest
+	13, // 17: core.CoreService.BatchCheckChunkStatus:input_type -> core.BatchCheckRequest
+	17, // 18: core.CoreService.ReportBandwidthUsage:input_type -> core.ReportBandwidthUsageRequest
+	18, // 19: core.CoreService.ReportUploadFailed:input_type -> core.ReportUploadFailedRequest
+	19, // 20: core.CoreService.ReportDeleteSuccess:input_type -> core.ReportDeleteSuccessRequest
+	20, // 21: core.CoreService.ReportDeleteFailed:input_type -> core.ReportDeleteFailedRequest
+	21, // 22: core.CoreService.ReportFileCorrupted:input_type -> core.ReportFileCorruptedRequest
+	23, // 23: core.CoreService.ReportZipReady:input_type -> core.ReportZipReadyRequest
+	24, // 24: core.CoreService.ReportZipFailed:input_type -> core.ReportZipFailedRequest
+	31, // 25: core.CoreService.ReportBotUnauthorized:input_type -> core.ReportBotUnauthorizedRequest
+	32, // 26: core.CoreService.ReportEmergencyCleanup:input_type -> core.ReportEmergencyCleanupRequest
+	1,  // 27: core.CoreService.CheckDiskSpace:input_type -> core.Empty
+	34, // 28: core.CoreService.ReportCronStats:input_type -> core.ReportCronStatsRequest
+	35, // 29: core.CoreService.VerifyFolderShare:input_type -> core.VerifyFolderShareRequest
+	1,  // 30: core.CoreService.Ping:input_type -> core.Empty
+	37, // 31: core.CoreService.GetS3Credential:input_type -> core.GetS3CredentialRequest
+	39, // 32: core.CoreService.ResolveS3Object:input_type -> core.ResolveS3ObjectRequest
+	41, // 33: core.CoreService.PrepareS3Put:input_type -> core.PrepareS3PutRequest
+	43, // 34: core.CoreService.ReportS3PutComplete:input_type -> core.ReportS3PutCompleteRequest
+	44, // 35: core.CoreService.GetBandwidthQuota:input_type -> core.GetBandwidthQuotaRequest
+	46, // 36: core.CoreService.GetSystemSettings:input_type -> core.GetSystemSettingsRequest
+	5,  // 37: core.CoreService.ReportChunkResults:output_type -> core.ReportChunkResultsResponse
+	8,  // 38: core.CoreService.ReportChunkBuffered:output_type -> core.ReportChunkBufferedResponse
+	1,  // 39: core.CoreService.ReportFileComplete:output_type -> core.Empty
+	12, // 40: core.CoreService.GetFileMetadata:output_type -> core.FileMetadata
+	27, // 41: core.CoreService.CollectZipEntries:output_type -> core.CollectZipEntriesResponse
+	1,  // 42: core.CoreService.ReportZipProgress:output_type -> core.Empty
+	30, // 43: core.CoreService.GetZipJob:output_type -> core.GetZipJobResponse
+	15, // 44: core.CoreService.BatchCheckChunkStatus:output_type -> core.BatchCheckResponse
+	1,  // 45: core.CoreService.ReportBandwidthUsage:output_type -> core.Empty
+	1,  // 46: core.CoreService.ReportUploadFailed:output_type -> core.Empty
+	1,  // 47: core.CoreService.ReportDeleteSuccess:output_type -> core.Empty
+	1,  // 48: core.CoreService.ReportDeleteFailed:output_type -> core.Empty
+	1,  // 49: core.CoreService.ReportFileCorrupted:output_type -> core.Empty
+	1,  // 50: core.CoreService.ReportZipReady:output_type -> core.Empty
+	1,  // 51: core.CoreService.ReportZipFailed:output_type -> core.Empty
+	1,  // 52: core.CoreService.ReportBotUnauthorized:output_type -> core.Empty
+	1,  // 53: core.CoreService.ReportEmergencyCleanup:output_type -> core.Empty
+	33, // 54: core.CoreService.CheckDiskSpace:output_type -> core.DiskSpaceResponse
+	1,  // 55: core.CoreService.ReportCronStats:output_type -> core.Empty
+	36, // 56: core.CoreService.VerifyFolderShare:output_type -> core.VerifyFolderShareResponse
+	2,  // 57: core.CoreService.Ping:output_type -> core.Pong
+	38, // 58: core.CoreService.GetS3Credential:output_type -> core.GetS3CredentialResponse
+	40, // 59: core.CoreService.ResolveS3Object:output_type -> core.ResolveS3ObjectResponse
+	42, // 60: core.CoreService.PrepareS3Put:output_type -> core.PrepareS3PutResponse
+	1,  // 61: core.CoreService.ReportS3PutComplete:output_type -> core.Empty
+	45, // 62: core.CoreService.GetBandwidthQuota:output_type -> core.GetBandwidthQuotaResponse
+	47, // 63: core.CoreService.GetSystemSettings:output_type -> core.GetSystemSettingsResponse
+	37, // [37:64] is the sub-list for method output_type
+	10, // [10:37] is the sub-list for method input_type
+	10, // [10:10] is the sub-list for extension type_name
+	10, // [10:10] is the sub-list for extension extendee
+	0,  // [0:10] is the sub-list for field type_name
 }
 
 func init() { file_core_proto_init() }
@@ -3302,7 +3438,7 @@ func file_core_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_core_proto_rawDesc), len(file_core_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   46,
+			NumMessages:   48,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
