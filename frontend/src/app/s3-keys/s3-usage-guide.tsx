@@ -7,13 +7,14 @@ type Translate = (key: string, vars?: Record<string, string | number>) => string
 interface S3UsageGuideProps {
   t: Translate;
   endpointUrl: string;
+  s3Domain: string | null;
   maxConcurrent: number;
   recommendedChunk: number;
   recommendedChunkMB: number;
 }
 
 export default function S3UsageGuide({
-  t, endpointUrl, maxConcurrent, recommendedChunk, recommendedChunkMB,
+  t, endpointUrl, s3Domain, maxConcurrent, recommendedChunk, recommendedChunkMB,
 }: S3UsageGuideProps) {
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
@@ -90,7 +91,13 @@ cli_connect_timeout = 300`}
 
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs text-yellow-800">
           <strong>{t('s3.note')}</strong> {t('s3.noteContent')}{' '}
-          <code className="bg-yellow-100 px-1 rounded font-mono">{endpointUrl}</code>.
+          <code className="bg-yellow-100 px-1 rounded font-mono">{endpointUrl}</code>
+          {s3Domain && (
+            <>
+              {' '}{t('s3.noteOrDomain')}{' '}
+              <code className="bg-yellow-100 px-1 rounded font-mono">{s3Domain}</code>
+            </>
+          )}.{' '}
           {t('s3.notePresigned')}
         </div>
       </div>
