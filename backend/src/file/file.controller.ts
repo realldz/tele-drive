@@ -114,6 +114,23 @@ export class FileController {
     onConflict: 'overwrite' | 'rename' | 'error' | undefined,
     @Req() req: AuthenticatedRequest,
   ) {
+    // Disabled: simple upload (POST /upload) is no longer served here. The
+    // frontend uploads exclusively through the chunked flow (upload/init →
+    // chunk → complete) handled by the Go data plane. Short-circuit before any
+    // processing so this in-process path never runs. Gated on the same
+    // UPLOAD_IO_OWNER flag that governs the legacy fallbacks below (default
+    // 'go' → always rejected); the kept-for-rollback code stays reachable to TS.
+    if (uploadIoOwnerIsGo()) {
+      throw new HttpException(
+        {
+          error: 'use_chunked_upload',
+          message:
+            'Simple upload is disabled; use the chunked upload flow (upload/init).',
+        },
+        HttpStatus.GONE,
+      );
+    }
+
     const shouldBuffer = await this.uploadBufferService.shouldBuffer(file.size);
     if (shouldBuffer) {
       try {
