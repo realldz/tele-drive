@@ -8,6 +8,10 @@ type MockPrisma = {
   fileRecord: {
     count: jest.Mock;
     findMany: jest.Mock;
+    deleteMany: jest.Mock;
+  };
+  fileChunk: {
+    deleteMany: jest.Mock;
   };
   folder: {
     count: jest.Mock;
@@ -32,6 +36,10 @@ describe('TrashCleanupService', () => {
       fileRecord: {
         count: jest.fn(),
         findMany: jest.fn(),
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      },
+      fileChunk: {
+        deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
       },
       folder: {
         count: jest.fn(),
@@ -48,9 +56,20 @@ describe('TrashCleanupService', () => {
       purgeFilesFromTelegram: jest.fn().mockResolvedValue(undefined),
     };
 
+    const cacheService = {
+      acquireLock: jest.fn().mockResolvedValue(true),
+      releaseLock: jest.fn().mockResolvedValue(undefined),
+    };
+
+    const redis = {
+      publish: jest.fn().mockResolvedValue(undefined),
+    };
+
     const service = new TrashCleanupService(
       prisma as never,
       fileLifecycleService as never,
+      cacheService as never,
+      redis as never,
     );
 
     const logger = {
@@ -137,7 +156,7 @@ describe('TrashCleanupService', () => {
     await service.handleTrashCleanup();
 
     expect(logger.warn).toHaveBeenCalledWith(
-      'Skipped permanently deleting folder folder-1 because it was already removed by cascade or concurrent cleanup',
+      'Skipped deleting folder folder-1 (already removed)',
     );
     expect(logger.error).not.toHaveBeenCalledWith(
       expect.stringContaining('Failed to permanently delete folder folder-1'),

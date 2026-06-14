@@ -4,6 +4,7 @@ import Redis from 'ioredis';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FileLifecycleService } from '../file/file-lifecycle.service';
+import { CacheService } from '../cache/cache.service';
 import { REDIS_CLIENT } from '../redis';
 
 interface CleanupResult {
@@ -35,6 +36,7 @@ export class TrashCleanupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fileLifecycleService: FileLifecycleService,
+    private readonly cacheService: CacheService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
@@ -263,6 +265,15 @@ export class TrashCleanupService {
    */
   @Cron('0 2 * * *')
   async handleTrashCleanup() {
+    const lockKey = 'cron:trash-cleanup';
+    const acquired = await this.cacheService.acquireLock(lockKey, 3600);
+    if (!acquired) {
+      this.logger.debug(
+        `Cron ${lockKey} running on another instance, skipping`,
+      );
+      return;
+    }
+
     this.logger.log('Starting trash cleanup cron job...');
 
     const cutoffDate = new Date();
