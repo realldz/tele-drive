@@ -189,6 +189,30 @@ func (h *FileHandler) maxConcurrentChunks(ctx context.Context) int {
 	return h.settingsResolver.GetInt(ctx, "MAX_CONCURRENT_CHUNKS", 3)
 }
 
+// bufferFileSizeThreshold resolves the admin-dashboard MAX_BUFFER_FILE_SIZE
+// setting: files/chunks at or below this stream-vs-buffer boundary are buffered
+// to disk (retry + concurrency), larger ones stream straight to Telegram. Live
+// from the resolver so dashboard edits take effect without a restart; falls back
+// to the env-seeded static value when the resolver is unavailable.
+func (h *FileHandler) bufferFileSizeThreshold(ctx context.Context) int64 {
+	if h.settingsResolver == nil {
+		return h.maxBufferFileSize
+	}
+	return h.settingsResolver.GetInt64(ctx, "MAX_BUFFER_FILE_SIZE", h.maxBufferFileSize)
+}
+
+// bufferDiskMb resolves the admin-dashboard MAX_BUFFER_DISK_MB setting (default
+// 2048 = 2 GB), the max disk the upload buffer may occupy before new buffered
+// writes are rejected. Live from the resolver so dashboard edits take effect
+// without a restart; the capacity check applies an 80% threshold of this value
+// (see TempStorage.HasCapacity).
+func (h *FileHandler) bufferDiskMb(ctx context.Context) int64 {
+	if h.settingsResolver == nil {
+		return 2048
+	}
+	return h.settingsResolver.GetInt64(ctx, "MAX_BUFFER_DISK_MB", 2048)
+}
+
 // downloadURLTTL resolves the admin-dashboard DOWNLOAD_URL_TTL_SECONDS setting
 // (default 300), the lifetime of a signed download token.
 func (h *FileHandler) downloadURLTTL(ctx context.Context) int64 {
@@ -247,6 +271,7 @@ func (h *FileHandler) GetBufferStatus(c echo.Context) error {
 
 func (h *FileHandler) GetStats(c echo.Context) error {
 	usedBytes, _ := h.tempStorage.GetUsedBytes()
+	bufferCapacityBytes := h.bufferDiskMb(c.Request().Context()) * 1024 * 1024
 	stats := map[string]interface{}{
 		"workerPool": map[string]interface{}{
 			"size":         h.workerPool.Size(),
@@ -261,7 +286,7 @@ func (h *FileHandler) GetStats(c echo.Context) error {
 		},
 		"storage": map[string]interface{}{
 			"bufferUsedBytes":     usedBytes,
-			"bufferCapacityBytes": 2048 * 1024 * 1024,
+			"bufferCapacityBytes": bufferCapacityBytes,
 		},
 		"grpc": map[string]interface{}{
 			"coreConnected": h.grpcClient.IsConnected(),

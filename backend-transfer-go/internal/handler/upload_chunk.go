@@ -97,7 +97,7 @@ func (h *FileHandler) UploadChunkWithToken(c echo.Context) error {
 			"message": fmt.Sprintf("Chunk size exceeds maximum allowed size (%d bytes)", h.maxChunkSize),
 		})
 	}
-	if contentLength <= 0 || contentLength > h.maxBufferFileSize {
+	if contentLength <= 0 || contentLength > h.bufferFileSizeThreshold(c.Request().Context()) {
 		return h.streamToTelegram(c, fileID, chunkIndex, contentLength, meta)
 	}
 
@@ -116,7 +116,7 @@ func (h *FileHandler) UploadChunkWithToken(c echo.Context) error {
 	}
 
 	// Capacity check
-	if !h.tempStorage.HasCapacity(2048) {
+	if !h.tempStorage.HasCapacity(h.bufferDiskMb(c.Request().Context())) {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"message": "Upload buffer disk space limit reached"})
 	}
 
@@ -225,7 +225,7 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 			"message": fmt.Sprintf("Chunk size exceeds maximum allowed size (%d bytes)", h.maxChunkSize),
 		})
 	}
-	if contentLength <= 0 || contentLength > h.maxBufferFileSize {
+	if contentLength <= 0 || contentLength > h.bufferFileSizeThreshold(c.Request().Context()) {
 		return h.streamToTelegram(c, fileID, chunkIndex, contentLength, meta)
 	}
 
@@ -244,8 +244,8 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 		})
 	}
 
-	// Capacity check (tempStorage has 80% disk check threshold based on 2048MB max size)
-	if !h.tempStorage.HasCapacity(2048) {
+	// Capacity check (tempStorage applies an 80% threshold to the configured max)
+	if !h.tempStorage.HasCapacity(h.bufferDiskMb(c.Request().Context())) {
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{"message": "Upload buffer disk space limit reached"})
 	}
 
