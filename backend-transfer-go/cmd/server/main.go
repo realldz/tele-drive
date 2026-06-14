@@ -107,11 +107,11 @@ func main() {
 	}
 
 	// 8. Initialize Batch Reporter and Worker Pool for uploads
-	batchReporter := queue.NewBatchReporter(coreClient, tempStorage, log, 1*time.Second, 10)
+	batchReporter := queue.NewBatchReporter(coreClient, tempStorage, rdb, log, 1*time.Second, 10)
 	defer batchReporter.Stop()
 
 	uploadWorker := queue.NewUploadWorker(coreClient, batchReporter, tgClient, cryptoEngine, tempStorage, log)
-	workerPool := queue.NewWorkerPool(cfg.WorkerPoolSize, uploadWorker, log)
+	workerPool := queue.NewWorkerPool(cfg.WorkerPoolSize, uploadWorker, rdb, log)
 	defer workerPool.Stop()
 	log.Info("Initialized internal upload WorkerPool", "size", cfg.WorkerPoolSize)
 

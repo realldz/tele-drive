@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	pb "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/storage"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/telegram"
@@ -24,6 +25,7 @@ type BatchReporter struct {
 	client      CoreClient
 	logger      *slog.Logger
 	tempStorage *storage.TempStorage
+	rdb         *redis.Client
 	buffer      []pendingChunkResult
 	bwBuffer    []*pb.BandwidthUsageEntry
 	mu          sync.Mutex
@@ -32,11 +34,12 @@ type BatchReporter struct {
 	done        chan struct{}
 }
 
-func NewBatchReporter(client CoreClient, tempStorage *storage.TempStorage, logger *slog.Logger, interval time.Duration, batchSize int) *BatchReporter {
+func NewBatchReporter(client CoreClient, tempStorage *storage.TempStorage, rdb *redis.Client, logger *slog.Logger, interval time.Duration, batchSize int) *BatchReporter {
 	br := &BatchReporter{
 		client:      client,
 		logger:      logger,
 		tempStorage: tempStorage,
+		rdb:         rdb,
 		buffer:      make([]pendingChunkResult, 0, batchSize),
 		bwBuffer:    make([]*pb.BandwidthUsageEntry, 0),
 		flushTicker: time.NewTicker(interval),
@@ -120,6 +123,20 @@ func (br *BatchReporter) Flush() {
 		if p.tempKey != "" {
 			_ = br.tempStorage.Delete(p.tempKey)
 		}
+	}
+
+	// Durable-flush DECR of the outstanding counter (see outstanding_counter.go).
+	// This is the success-path decrement deliberately moved OUT of the worker: only
+	// now is the chunk confirmed persisted in the NestJS DB, so a cross-instance
+	// flushAndConfirm will see it in `completed`. Decrementing earlier (at upload)
+	// would let a chunk fall out of both `completed` and `outstanding`. Grouped by
+	// fileId so a multi-chunk batch for one file is a single DECRBY.
+	counts := make(map[string]int)
+	for _, p := range batch {
+		counts[p.result.FileId]++
+	}
+	for fileID, n := range counts {
+		decrOutstanding(context.Background(), br.rdb, br.logger, fileID, n)
 	}
 
 	br.logger.Info("Flushed chunk results via gRPC", "count", len(batch), "accepted", accepted)

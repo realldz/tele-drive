@@ -1,12 +1,14 @@
 package queue
 
 import (
-	"errors"
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/redis/go-redis/v9"
 )
 
 type ChunkJob struct {
@@ -33,12 +35,15 @@ type WorkerPool struct {
 	activeJobs   atomic.Int32
 	workerCount  int
 
-	// Tracking active file uploads for synchronous confirmation
-	fileJobsMu   sync.Mutex
-	fileJobs     map[string]int32 // Count of active jobs per file
+	// Per-file outstanding-chunk counter lives in Redis (see outstanding_counter.go),
+	// not an in-memory map: chunk uploads and the completing flushAndConfirm reach
+	// DIFFERENT instances, so the count must be shared. The success-path decrement is
+	// owned by BatchReporter (at durable flush), not this pool — see the invariant in
+	// outstanding_counter.go.
+	rdb *redis.Client
 }
 
-func NewWorkerPool(size int, processor *UploadWorker, logger *slog.Logger) *WorkerPool {
+func NewWorkerPool(size int, processor *UploadWorker, rdb *redis.Client, logger *slog.Logger) *WorkerPool {
 	ctx, cancel := context.WithCancel(context.Background())
 	pool := &WorkerPool{
 		jobs:         make(chan ChunkJob, 1000),
@@ -47,7 +52,7 @@ func NewWorkerPool(size int, processor *UploadWorker, logger *slog.Logger) *Work
 		logger:       logger,
 		ctx:          ctx,
 		cancel:       cancel,
-		fileJobs:     make(map[string]int32),
+		rdb:          rdb,
 		workerCount:  size,
 	}
 
@@ -69,17 +74,14 @@ func (p *WorkerPool) AddJob(job ChunkJob) error {
 		return ErrBufferFull
 	}
 
-	p.fileJobsMu.Lock()
-	p.fileJobs[job.FileID]++
-	p.fileJobsMu.Unlock()
-
 	select {
 	case p.jobs <- job:
+		// INCR only after the job is safely queued, so a full-channel reject needs no
+		// rollback. The matching success-path DECR happens in BatchReporter at durable
+		// flush; failure/discard branches DECR in worker().
+		incrOutstanding(p.ctx, p.rdb, p.logger, job.FileID)
 		return nil
 	default:
-		p.fileJobsMu.Lock()
-		p.fileJobs[job.FileID]--
-		p.fileJobsMu.Unlock()
 		return ErrBufferFull
 	}
 }
@@ -105,41 +107,38 @@ func (p *WorkerPool) worker(id int) {
 					select {
 					case p.delayedQueue <- job:
 					default:
+						// Discarded before reaching the reporter — this chunk never gets a
+						// durable-flush DECR, so DECR here to keep the invariant.
 						p.logger.Error("Delayed queue full, discarding retry", "chunkId", job.ID)
 						p.processor.ReportFailure(job.FileID, job.ChunkIndex, "delayed_queue_full")
-						p.decrementFileJob(job.FileID)
+						decrOutstanding(p.ctx, p.rdb, p.logger, job.FileID, 1)
 					}
 				} else {
+					// Permanent failure — never reaches the reporter, so DECR here.
 					p.logger.Error("Upload permanently failed", "chunkId", job.ID, "error", err)
 					p.processor.ReportFailure(job.FileID, job.ChunkIndex, err.Error())
-					p.decrementFileJob(job.FileID)
+					decrOutstanding(p.ctx, p.rdb, p.logger, job.FileID, 1)
 				}
-			} else {
-				p.decrementFileJob(job.FileID)
 			}
-			
+			// Success path intentionally does NOT decrement here: the chunk is on
+			// Telegram but only QUEUED in the BatchReporter, not yet durable in the
+			// NestJS DB. The matching DECR happens in BatchReporter.Flush once the
+			// result is confirmed persisted, so a cross-instance flushAndConfirm never
+			// sees the chunk fall out of both `completed` and `outstanding`.
+
 			p.activeJobs.Add(-1)
 		}
 	}
 }
 
-func (p *WorkerPool) decrementFileJob(fileID string) {
-	p.fileJobsMu.Lock()
-	defer p.fileJobsMu.Unlock()
-	
-	p.fileJobs[fileID]--
-	if p.fileJobs[fileID] <= 0 {
-		delete(p.fileJobs, fileID)
-	}
-}
-
-// OutstandingForFile returns the number of active jobs (queued, in-flight, or
-// awaiting retry) for a file. FlushAndConfirm adds this to the chunks already
+// OutstandingForFile returns the number of buffered chunks for a file that are
+// accepted but not yet durably persisted in the NestJS DB (queued, in-flight, or
+// awaiting retry). Backed by a shared Redis counter so every instance sees the
+// same number regardless of which instance the chunk uploads or the gRPC
+// flushAndConfirm landed on. FlushAndConfirm adds this to the chunks already
 // landed on Telegram to compute how many the client has handed over in total.
 func (p *WorkerPool) OutstandingForFile(fileID string) int32 {
-	p.fileJobsMu.Lock()
-	defer p.fileJobsMu.Unlock()
-	return p.fileJobs[fileID]
+	return getOutstanding(p.ctx, p.rdb, p.logger, fileID)
 }
 
 func (p *WorkerPool) manageDelayedQueue() {
