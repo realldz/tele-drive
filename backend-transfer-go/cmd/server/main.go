@@ -169,8 +169,16 @@ func main() {
 	// 10c. Initialize ZIP worker (Go-owned archive assembly)
 	zipWorker := zip.NewWorker(coreClient, downloader, tempStorage, log)
 
-	// 10d. Start Redis subscriber for async delete + ZIP events
-	redisSubscriber := queue.NewRedisSubscriber(rdb, tgClient, coreClient, zipWorker, log)
+	// 10d. Start Redis Stream consumer for async delete + ZIP events. Consumer
+	// group ensures each event is handled by exactly one Go instance (horizontal
+	// scaling); per-instance ConsumerName lets XAUTOCLAIM reclaim a dead instance's
+	// pending entries.
+	redisSubscriber := queue.NewRedisSubscriber(rdb, tgClient, coreClient, zipWorker, queue.SubscriberConfig{
+		Group:        cfg.EventConsumerGroup,
+		ConsumerName: cfg.EventConsumerName,
+		PoolSize:     cfg.EventWorkerPoolSize,
+		ClaimMinIdle: cfg.EventClaimMinIdle,
+	}, log)
 
 	redisSubscriber.Start()
 	defer redisSubscriber.Stop()

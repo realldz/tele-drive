@@ -24,6 +24,8 @@ type MockPrisma = {
 
 type MockFileLifecycleService = {
   purgeFilesFromTelegram: jest.Mock;
+  purgeTempFiles: jest.Mock;
+  publishDeleteEvent: jest.Mock;
 };
 
 describe('TrashCleanupService', () => {
@@ -54,6 +56,8 @@ describe('TrashCleanupService', () => {
 
     const fileLifecycleService: MockFileLifecycleService = {
       purgeFilesFromTelegram: jest.fn().mockResolvedValue(undefined),
+      purgeTempFiles: jest.fn().mockResolvedValue(undefined),
+      publishDeleteEvent: jest.fn().mockResolvedValue(undefined),
     };
 
     const cacheService = {
@@ -61,15 +65,10 @@ describe('TrashCleanupService', () => {
       releaseLock: jest.fn().mockResolvedValue(undefined),
     };
 
-    const redis = {
-      publish: jest.fn().mockResolvedValue(undefined),
-    };
-
     const service = new TrashCleanupService(
       prisma as never,
       fileLifecycleService as never,
       cacheService as never,
-      redis as never,
     );
 
     const logger = {

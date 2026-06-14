@@ -1,10 +1,12 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
@@ -30,6 +32,15 @@ type Config struct {
 	NestJSGrpcURL            string
 	GrpcPort                 int
 	S3Domain                 string
+	// Event stream (file:events) consumer-group settings. Multiple Go instances
+	// join EventConsumerGroup so each event is delivered to exactly one instance
+	// (vs the old Pub/Sub fan-out that delivered to all). EventConsumerName is the
+	// per-instance identity used by XAUTOCLAIM to reclaim a dead instance's
+	// pending entries; it MUST be unique per instance.
+	EventConsumerGroup   string
+	EventConsumerName    string
+	EventWorkerPoolSize  int
+	EventClaimMinIdle    time.Duration
 }
 
 func Load() *Config {
@@ -94,6 +105,32 @@ func Load() *Config {
 		log.Printf("Warning: MASTER_SECRET is %d bytes, expected exactly 32 bytes", len(masterSecret))
 	}
 
+	eventWorkerPoolSizeStr := getEnv("EVENT_WORKER_POOL_SIZE", "5")
+	eventWorkerPoolSize, err := strconv.Atoi(eventWorkerPoolSizeStr)
+	if err != nil || eventWorkerPoolSize <= 0 {
+		eventWorkerPoolSize = 5
+	}
+
+	// Idle threshold before XAUTOCLAIM reclaims another instance's pending entry.
+	// Must exceed the longest expected handler runtime so a slow-but-alive instance
+	// is not robbed of its in-flight message.
+	claimMinIdleStr := getEnv("EVENT_CLAIM_MIN_IDLE", "5m")
+	claimMinIdle, err := time.ParseDuration(claimMinIdleStr)
+	if err != nil || claimMinIdle <= 0 {
+		claimMinIdle = 5 * time.Minute
+	}
+
+	// Per-instance consumer name for XAUTOCLAIM. Defaults to hostname-pid; override
+	// with INSTANCE_ID when hostnames are not unique (e.g. some orchestrators).
+	consumerName := getEnv("INSTANCE_ID", "")
+	if consumerName == "" {
+		host, hErr := os.Hostname()
+		if hErr != nil || host == "" {
+			host = "unknown"
+		}
+		consumerName = fmt.Sprintf("%s-%d", host, os.Getpid())
+	}
+
 	return &Config{
 		Port:                    port,
 		WorkerPoolSize:          workerPoolSize,
@@ -115,6 +152,10 @@ func Load() *Config {
 		NestJSGrpcURL:           getEnv("NESTJS_GRPC_URL", "localhost:50051"),
 		GrpcPort:                grpcPort,
 		S3Domain:                getEnv("S3_DOMAIN", "s3.example.com"),
+		EventConsumerGroup:      getEnv("EVENT_CONSUMER_GROUP", "transfer-workers"),
+		EventConsumerName:       consumerName,
+		EventWorkerPoolSize:     eventWorkerPoolSize,
+		EventClaimMinIdle:       claimMinIdle,
 	}
 }
 
