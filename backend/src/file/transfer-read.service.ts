@@ -401,9 +401,12 @@ export class TransferReadService {
       return this.processRangeDownload(downloadInfo, rangeHeader, res);
     }
 
+    const quotedSingle = downloadInfo.filename
+      .replace(/\\/g, '\\\\')
+      .replace(/"/g, '\\"');
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename="${encodeURIComponent(downloadInfo.filename)}"`,
+      `attachment; filename="${quotedSingle}"; filename*=UTF-8''${encodeURIComponent(downloadInfo.filename)}`,
     );
     res.setHeader('Content-Type', 'application/octet-stream');
     res.setHeader('Content-Length', downloadInfo.size.toString());
@@ -612,9 +615,12 @@ export class TransferReadService {
       downloadInfo.mimeType || 'application/octet-stream',
     );
     if (disposition === 'attachment') {
+      const quotedRange = downloadInfo.filename
+        .replace(/\\/g, '\\\\')
+        .replace(/"/g, '\\"');
       res.setHeader(
         'Content-Disposition',
-        `attachment; filename="${encodeURIComponent(downloadInfo.filename)}"`,
+        `attachment; filename="${quotedRange}"; filename*=UTF-8''${encodeURIComponent(downloadInfo.filename)}`,
       );
     } else {
       res.setHeader('Content-Disposition', 'inline');

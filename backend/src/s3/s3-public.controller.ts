@@ -8,6 +8,7 @@ import {
   Res,
   UseGuards,
   UseInterceptors,
+  VERSION_NEUTRAL,
 } from '@nestjs/common';
 import { S3Service } from './s3.service';
 import { S3PublicGuard } from './s3-public.guard';
@@ -32,7 +33,7 @@ import * as crypto from 'crypto';
 @Public()
 @SkipThrottle()
 @UseGuards(S3PublicGuard)
-@Controller('public')
+@Controller({ path: 'public', version: VERSION_NEUTRAL })
 export class S3PublicController {
   private readonly logger = new Logger(S3PublicController.name);
 
@@ -92,6 +93,61 @@ export class S3PublicController {
   }
 
   // ---------------------------------------------------------------------------
+  // HEAD /s3/public/:userId/:bucket/*key → HeadObject
+  //
+  // MUST be declared BEFORE @Get(':userId/:bucket/*key'). Express 5 falls back
+  // HEAD requests to a matching GET Route's handler when no explicit HEAD
+  // handler is found first; NestJS registers them as separate Routes.
+  // ---------------------------------------------------------------------------
+
+  @Head(':userId/:bucket/*key')
+  async headObject(
+    @Param('userId') userId: string,
+    @Param('bucket') bucket: string,
+    @Param() params: Record<string, string>,
+    @Req() req: S3AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    this.logger.debug(
+      `S3 Public HeadObject: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
+    );
+    const key = this.getObjectKey(bucket, params, req);
+
+    this.logger.log(
+      `S3 Public HeadObject: s3://${bucket}/${key} (userId: ${userId})`,
+    );
+    this.setRequestId(res);
+
+    try {
+      const file = await this.s3Service.findObjectPublic(userId, bucket, key);
+      const lastModified = file.createdAt.toUTCString();
+      const etag = file.etag || `"${file.id}"`;
+
+      res.setHeader(
+        'Content-Type',
+        file.mimeType || 'application/octet-stream',
+      );
+      res.setHeader('Content-Length', file.size.toString());
+      res.setHeader('ETag', etag);
+      res.setHeader('Last-Modified', lastModified);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.status(200).end();
+    } catch (err: unknown) {
+      this.logger.warn(`S3 Public HeadObject not found: s3://${bucket}/${key}`);
+      const status = (err as { status?: number }).status;
+      res
+        .status(status || 404)
+        .setHeader('Content-Type', 'application/xml')
+        .send(
+          this.s3Service.buildErrorXml(
+            'NoSuchKey',
+            'The specified key does not exist.',
+          ),
+        );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // GET /s3/public/:userId/:bucket/*key → GetObject
   // ---------------------------------------------------------------------------
 
@@ -143,57 +199,6 @@ export class S3PublicController {
         `S3 Public GetObject error: ${err instanceof Error ? err.message : String(err)}`,
       );
       this.sendS3Error(res, err);
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // HEAD /s3/public/:userId/:bucket/*key → HeadObject
-  // ---------------------------------------------------------------------------
-
-  @Head(':userId/:bucket/*key')
-  async headObject(
-    @Param('userId') userId: string,
-    @Param('bucket') bucket: string,
-    @Param() params: Record<string, string>,
-    @Req() req: S3AuthenticatedRequest,
-    @Res() res: Response,
-  ) {
-    this.logger.debug(
-      `S3 Public HeadObject: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
-    );
-    const key = this.getObjectKey(bucket, params, req);
-
-    this.logger.log(
-      `S3 Public HeadObject: s3://${bucket}/${key} (userId: ${userId})`,
-    );
-    this.setRequestId(res);
-
-    try {
-      const file = await this.s3Service.findObjectPublic(userId, bucket, key);
-      const lastModified = file.createdAt.toUTCString();
-      const etag = file.etag || `"${file.id}"`;
-
-      res.setHeader(
-        'Content-Type',
-        file.mimeType || 'application/octet-stream',
-      );
-      res.setHeader('Content-Length', file.size.toString());
-      res.setHeader('ETag', etag);
-      res.setHeader('Last-Modified', lastModified);
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.status(200).end();
-    } catch (err: unknown) {
-      this.logger.warn(`S3 Public HeadObject not found: s3://${bucket}/${key}`);
-      const status = (err as { status?: number }).status;
-      res
-        .status(status || 404)
-        .setHeader('Content-Type', 'application/xml')
-        .send(
-          this.s3Service.buildErrorXml(
-            'NoSuchKey',
-            'The specified key does not exist.',
-          ),
-        );
     }
   }
 

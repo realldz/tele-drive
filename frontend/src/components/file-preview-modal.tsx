@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { X, Download, Loader2, FileIcon } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
-import { useI18n } from '@/components/i18n-context';
+import { useI18n } from '@/providers/i18n-context';
 import { API_URL, api, requestDownloadToken, getStreamUrl, getApiErrorMessage, parseBandwidthError } from '@/lib/api';
 import { useStream } from '@/hooks/use-stream';
 import dynamic from 'next/dynamic';

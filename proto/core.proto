@@ -1,0 +1,417 @@
+syntax = "proto3";
+
+package core;
+
+option go_package = "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto";
+
+service CoreService {
+  rpc ReportChunkResults(ReportChunkResultsRequest) returns (ReportChunkResultsResponse);
+  rpc ReportChunkBuffered(ReportChunkBufferedRequest) returns (ReportChunkBufferedResponse);
+  rpc ReportFileComplete(ReportFileCompleteRequest) returns (Empty);
+  rpc GetFileMetadata(GetFileMetadataRequest) returns (FileMetadata);
+  rpc CollectZipEntries(CollectZipEntriesRequest) returns (CollectZipEntriesResponse);
+  rpc ReportZipProgress(ReportZipProgressRequest) returns (Empty);
+  // Serve-side lookup for the Go data plane. Go owns ZIP part streaming but has
+  // no DB; it calls this to validate a part download (status/expiry) and to
+  // build the attachment filename (createdAt + part count). Read-only.
+  rpc GetZipJob(GetZipJobRequest) returns (GetZipJobResponse);
+  rpc BatchCheckChunkStatus(BatchCheckRequest) returns (BatchCheckResponse);
+  rpc ReportBandwidthUsage(ReportBandwidthUsageRequest) returns (Empty);
+  rpc ReportUploadFailed(ReportUploadFailedRequest) returns (Empty);
+  rpc ReportDeleteSuccess(ReportDeleteSuccessRequest) returns (Empty);
+  rpc ReportDeleteFailed(ReportDeleteFailedRequest) returns (Empty);
+  rpc ReportFileCorrupted(ReportFileCorruptedRequest) returns (Empty);
+  rpc ReportZipReady(ReportZipReadyRequest) returns (Empty);
+  rpc ReportZipFailed(ReportZipFailedRequest) returns (Empty);
+  rpc ReportBotUnauthorized(ReportBotUnauthorizedRequest) returns (Empty);
+  rpc ReportEmergencyCleanup(ReportEmergencyCleanupRequest) returns (Empty);
+  rpc CheckDiskSpace(Empty) returns (DiskSpaceResponse);
+  rpc ReportCronStats(ReportCronStatsRequest) returns (Empty);
+  rpc VerifyFolderShare(VerifyFolderShareRequest) returns (VerifyFolderShareResponse);
+  rpc Ping(Empty) returns (Pong);
+
+  // S3 data-plane support (Phase D — Go-owned SigV4 + body I/O)
+  rpc GetS3Credential(GetS3CredentialRequest) returns (GetS3CredentialResponse);
+  rpc ResolveS3Object(ResolveS3ObjectRequest) returns (ResolveS3ObjectResponse);
+  rpc PrepareS3Put(PrepareS3PutRequest) returns (PrepareS3PutResponse);
+  rpc ReportS3PutComplete(ReportS3PutCompleteRequest) returns (Empty);
+
+  // Bandwidth quota lookup (cache-aside source for the Go data plane). Go hits
+  // Redis first; on miss it calls this to seed the quota hash. Read-only — does
+  // NOT mutate DB (lock/increment happens in Redis on the Go side; the daily
+  // reset is applied virtually here so a stale row never blocks a fresh window).
+  rpc GetBandwidthQuota(GetBandwidthQuotaRequest) returns (GetBandwidthQuotaResponse);
+
+  // System settings lookup (admin-dashboard SystemSetting table). The Go data
+  // plane caches these in-memory with a short TTL so admin changes propagate
+  // without a redeploy. Returns raw string values; Go parses per key (matching
+  // NestJS getCachedSetting). Read-only.
+  rpc GetSystemSettings(GetSystemSettingsRequest) returns (GetSystemSettingsResponse);
+}
+
+message Empty {}
+
+message Pong {
+  int64 timestamp = 1;
+}
+
+// --- Upload Flow ---
+
+message ChunkResult {
+  string file_id = 1;
+  int32 chunk_index = 2;
+  string telegram_file_id = 3;
+  int32 telegram_message_id = 4;
+  int64 bot_id = 5;
+  string encryption_iv = 6;
+  int32 size = 7;
+  string etag = 8;
+  string chunk_id = 9;
+}
+
+message ReportChunkResultsRequest {
+  repeated ChunkResult results = 1;
+}
+
+message ReportChunkResultsResponse {
+  int32 accepted = 1;
+}
+
+// --- Chunk Buffered (receive-time manifest entry) ---
+// Go persists a FileChunk row the instant it accepts a chunk to temp storage,
+// before the slow Telegram upload. This makes the chunk visible to the download
+// path (served from temp disk) while it drains, mirroring the legacy NestJS
+// acceptChunk behavior. telegram_file_id stays null until the upload completes.
+
+message BufferedChunk {
+  string file_id = 1;
+  int32 chunk_index = 2;
+  int32 size = 3;
+  string temp_storage_key = 4;
+  string encryption_iv = 5;
+  string etag = 6;
+  string chunk_id = 7;
+}
+
+message ReportChunkBufferedRequest {
+  repeated BufferedChunk chunks = 1;
+}
+
+message ReportChunkBufferedResponse {
+  int32 accepted = 1;
+}
+
+// --- File Complete (record-level, non-chunked) ---
+
+message ReportFileCompleteRequest {
+  string file_id = 1;
+  string telegram_file_id = 2;
+  int32 telegram_message_id = 3;
+  int64 bot_id = 4;
+  string encryption_iv = 5;
+  int64 size = 6;
+  string etag = 7;
+}
+
+// --- File Metadata ---
+
+message GetFileMetadataRequest {
+  string file_id = 1;
+}
+
+message ChunkMetadata {
+  int32 chunk_index = 1;
+  int32 size = 2;
+  string telegram_file_id = 3;
+  int32 telegram_message_id = 4;
+  int64 bot_id = 5;
+  string encryption_iv = 6;
+  string etag = 7;
+}
+
+message FileMetadata {
+  string id = 1;
+  string user_id = 2;
+  int64 size = 3;
+  string mime_type = 4;
+  string filename = 5;
+
+  bool is_encrypted = 10;
+  string encryption_algo = 11;
+  string encryption_iv = 12;
+  string encrypted_key = 13;
+
+  int64 bot_id = 20;
+  bool is_chunked = 21;
+  string telegram_file_id = 22;
+  int32 telegram_message_id = 23;
+  int32 total_chunks = 24;
+  repeated ChunkMetadata chunks = 25;
+
+  string status = 30;
+  string visibility = 31;
+
+  int32 download_limit_24h = 40;
+  int32 downloads_24h = 41;
+  int64 bandwidth_limit_24h = 42;
+  int64 bandwidth_used_24h = 43;
+
+  string temp_storage_key = 50;
+}
+
+// --- Batch Check ---
+
+message BatchCheckRequest {
+  repeated string file_ids = 1;
+}
+
+enum ChunkStatus {
+  CHUNK_STATUS_UNKNOWN = 0;
+  CHUNK_STATUS_PENDING = 1;
+  CHUNK_STATUS_COMPLETE = 2;
+  CHUNK_STATUS_FAILED = 3;
+  CHUNK_STATUS_NOT_FOUND = 4;
+}
+
+message ChunkStatusEntry {
+  string file_id = 1;
+  ChunkStatus status = 2;
+}
+
+message BatchCheckResponse {
+  repeated ChunkStatusEntry entries = 1;
+}
+
+// --- Bandwidth ---
+
+message BandwidthUsageEntry {
+  string user_id = 1;
+  string file_id = 2;
+  int64 actual_bytes = 3;
+  bool count_download = 4;
+}
+
+message ReportBandwidthUsageRequest {
+  repeated BandwidthUsageEntry entries = 1;
+}
+
+// --- Upload Failure ---
+
+message ReportUploadFailedRequest {
+  string file_id = 1;
+  int32 chunk_index = 2;
+  string reason = 3;
+  bool is_chunk = 4;
+  string chunk_id = 5;
+}
+
+// --- Delete ---
+
+message ReportDeleteSuccessRequest {
+  string file_id = 1;
+}
+
+message ReportDeleteFailedRequest {
+  string file_id = 1;
+  string reason = 2;
+}
+
+message ReportFileCorruptedRequest {
+  string file_id = 1;
+  string telegram_file_id = 2;
+}
+
+// --- ZIP ---
+
+message ZipPart {
+  string key = 1;
+  int64 size = 2;
+  int32 index = 3;
+}
+
+message ReportZipReadyRequest {
+  string job_id = 1;
+  repeated ZipPart parts = 2;
+  int64 total_size = 3;
+  bool streaming = 4;
+}
+
+message ReportZipFailedRequest {
+  string job_id = 1;
+  string reason = 2;
+}
+
+// --- ZIP collection & progress (Go-owned zip assembly) ---
+
+message CollectZipEntriesRequest {
+  string job_id = 1;
+}
+
+message ZipEntry {
+  string file_record_id = 1;
+  string relative_path = 2;
+  int64 size = 3;
+}
+
+message CollectZipEntriesResponse {
+  repeated ZipEntry entries = 1;
+}
+
+message ReportZipProgressRequest {
+  string job_id = 1;
+  int32 processed_files = 2;
+}
+
+// Serve-side job lookup (Go-owned ZIP part streaming). Go validates the part
+// download and derives the attachment filename from these fields.
+
+message GetZipJobRequest {
+  string job_id = 1;
+}
+
+message GetZipJobResponse {
+  bool found = 1;
+  string status = 2;       // pending/collecting/zipping/ready/expired/failed
+  string created_at = 3;   // ISO8601 — used for the download_<timestamp> filename
+  string expires_at = 4;   // ISO8601; empty when unset
+  repeated ZipPart parts = 5;
+}
+
+// --- Bot ---
+
+message ReportBotUnauthorizedRequest {
+  int64 bot_id = 1;
+}
+
+// --- Emergency ---
+
+message ReportEmergencyCleanupRequest {
+  repeated string file_ids = 1;
+}
+
+// --- Disk ---
+
+message DiskSpaceResponse {
+  int64 free_bytes = 1;
+  int64 total_bytes = 2;
+  double usage_percent = 3;
+}
+
+// --- Cron ---
+
+message ReportCronStatsRequest {
+  string cron_name = 1;
+  int32 processed_count = 2;
+  int64 freed_bytes = 3;
+}
+
+// --- Folder Sharing ---
+
+message VerifyFolderShareRequest {
+  string share_token = 1;
+  string file_id = 2;
+}
+
+message VerifyFolderShareResponse {
+  bool is_valid = 1;
+}
+
+// --- S3 Credential lookup (Pattern 2 fallback when Redis miss) ---
+
+message GetS3CredentialRequest {
+  string access_key_id = 1;
+}
+
+message GetS3CredentialResponse {
+  bool found = 1;
+  bool is_active = 2;
+  string user_id = 3;
+  string secret_access_key = 4; // plaintext after NestJS decrypts
+}
+
+// --- S3 object resolution for GET/HEAD ---
+
+message ResolveS3ObjectRequest {
+  string user_id = 1;
+  string bucket = 2;
+  string key = 3;
+}
+
+message ResolveS3ObjectResponse {
+  bool found = 1;
+  string file_id = 2;
+  string mime_type = 3;
+  int64 size = 4;
+  string etag = 5;
+  string last_modified = 6; // ISO8601
+}
+
+// --- S3 PUT placeholder creation (returns fileId so Go can ingest) ---
+
+message PrepareS3PutRequest {
+  string user_id = 1;
+  string bucket = 2;
+  string key = 3;
+  string mime_type = 4;
+  int64 content_length = 5;
+}
+
+message PrepareS3PutResponse {
+  string file_id = 1;
+  string folder_id = 2;
+  string encrypted_key = 3; // base64; Go decrypts via MASTER_SECRET-derived KEK
+  bool is_encrypted = 4;
+}
+
+// --- S3 PUT completion (overwrite-friendly) ---
+
+message ReportS3PutCompleteRequest {
+  string file_id = 1;
+  string telegram_file_id = 2;
+  int32 telegram_message_id = 3;
+  int64 bot_id = 4;
+  string encryption_iv = 5;
+  int64 size = 6;
+  string etag = 7;
+  bool is_chunked = 8;
+  int32 total_chunks = 9;
+}
+
+// --- Bandwidth quota lookup (cache-aside seed for Go data plane) ---
+
+message GetBandwidthQuotaRequest {
+  string user_id = 1; // empty → guest (resolve by ip)
+  string ip = 2;      // used when user_id is empty
+  string file_id = 3; // per-file counters (optional)
+}
+
+message GetBandwidthQuotaResponse {
+  // Tier 1 — user/guest daily bandwidth (post virtual-reset).
+  int64 daily_used = 1;
+  int64 daily_limit = 2; // 0 = unlimited
+  string last_reset = 3; // ISO8601
+
+  // Tier 3 — guest discriminator.
+  bool is_guest = 4;
+
+  // Tier 2 — per-file counters (from FileRecord; 0 limit = unlimited).
+  int32 file_downloads_24h = 10;
+  int32 file_download_limit_24h = 11;
+  int64 file_bandwidth_used_24h = 12;
+  int64 file_bandwidth_limit_24h = 13;
+  string file_last_download_reset = 14; // ISO8601
+}
+
+// --- System settings lookup (admin-dashboard cache-aside for Go data plane) ---
+
+message GetSystemSettingsRequest {
+  // Specific keys to fetch. Empty → return all settings (Go filters what it needs).
+  repeated string keys = 1;
+}
+
+message GetSystemSettingsResponse {
+  // Raw key→value string map mirroring the SystemSetting table. Go parses each
+  // value per key (int/bool/int64) the same way NestJS getCachedSetting does.
+  map<string, string> settings = 1;
+}
+

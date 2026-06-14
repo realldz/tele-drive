@@ -1,5 +1,11 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Injectable, Logger, Inject, OnModuleDestroy } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  Inject,
+  OnModuleDestroy,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { Job } from 'bullmq';
 // @ts-ignore: archiver v8 exports ZipArchive but @types/archiver is v7
@@ -30,6 +36,8 @@ interface ZipPart {
 const PART_SIZE = 2n * 1024n * 1024n * 1024n; // 2GB
 const ZIP_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
 
+const zipOwnerIsGo = (): boolean => (process.env.ZIP_OWNER || 'go') === 'go';
+
 interface FileEntry {
   fileRecordId: string;
   relativePath: string; // e.g. "FolderA/SubFolder/file.txt"
@@ -42,7 +50,7 @@ interface FileEntry {
 @Injectable()
 export class DownloadZipProcessor
   extends WorkerHost
-  implements OnModuleDestroy
+  implements OnModuleDestroy, OnApplicationBootstrap
 {
   private readonly logger = new Logger(DownloadZipProcessor.name);
   private readonly baseDir: string;
@@ -65,6 +73,14 @@ export class DownloadZipProcessor
   }
 
   async process(job: Job<DownloadZipJobData>): Promise<void> {
+    if (zipOwnerIsGo()) {
+      // ZIP assembly is owned by the Go transfer service. This worker is
+      // disabled (paused at bootstrap); ignore any residual jobs.
+      this.logger.warn(
+        `Ignoring download-zip job ${job.id}: ZIP assembly owned by Go transfer service.`,
+      );
+      return;
+    }
     const { jobId } = job.data;
 
     try {
@@ -445,7 +461,7 @@ export class DownloadZipProcessor
     });
 
     for (const job of expired) {
-      if (this.downloadZipService.hasActiveStreams(job.id)) {
+      if (await this.downloadZipService.hasActiveStreams(job.id)) {
         this.logger.debug(`Skipping cleanup for ${job.id}: active streams`);
         continue;
       }
@@ -490,5 +506,18 @@ export class DownloadZipProcessor
       where: { id: jobId },
       data: { status },
     });
+  }
+
+  async onApplicationBootstrap(): Promise<void> {
+    if (process.env.IS_TRANSFER_SERVICE === 'false' || zipOwnerIsGo()) {
+      this.logger.log(
+        zipOwnerIsGo()
+          ? 'ZIP_OWNER=go. ZIP assembly handled by Go transfer service; pausing NestJS worker.'
+          : 'IS_TRANSFER_SERVICE is false. Pausing download-zip queue worker.',
+      );
+      if (this.worker) {
+        await this.worker.pause();
+      }
+    }
   }
 }

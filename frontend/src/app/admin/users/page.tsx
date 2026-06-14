@@ -12,13 +12,13 @@ import {
   updateUserRole,
 } from '@/lib/api';
 import type { AdminUser } from '@/lib/types';
-import { useI18n } from '@/components/i18n-context';
-import { useAuth } from '@/components/auth-context';
+import { useI18n } from '@/providers/i18n-context';
+import { useAuth } from '@/providers/auth-context';
 import { useAppNavigate } from '@/hooks/use-app-navigate';
-import UserManagement from '../components/user-management';
-import EditUserModal from '../components/edit-user-modal';
-import ResetPasswordModal from '../components/reset-password-modal';
-import ConfirmModal from '../components/confirm-modal';
+import UserManagement from '@/app/admin/components/user-management';
+import EditUserModal from '@/app/admin/components/edit-user-modal';
+import ResetPasswordModal from '@/app/admin/components/reset-password-modal';
+import ConfirmModal from '@/app/admin/components/confirm-modal';
 
 export default function AdminUsersPage() {
   const navigate = useAppNavigate();

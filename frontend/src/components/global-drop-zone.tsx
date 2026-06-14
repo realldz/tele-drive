@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { UploadCloud } from 'lucide-react';
-import { useI18n } from '@/components/i18n-context';
-import { useUpload } from '@/components/upload-context';
+import { useI18n } from '@/providers/i18n-context';
+import { useUpload } from '@/providers/upload/upload-provider';
 
 // Recursively read all files from a FileSystemDirectoryEntry
 async function readAllEntries(entry: FileSystemEntry, basePath: string = ''): Promise<File[]> {

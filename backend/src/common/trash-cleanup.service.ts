@@ -1,8 +1,10 @@
-import { Injectable, Logger, ConflictException } from '@nestjs/common';
+import { Injectable, Logger, ConflictException, Inject } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
+import Redis from 'ioredis';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FileLifecycleService } from '../file/file-lifecycle.service';
+import { REDIS_CLIENT } from '../redis';
 
 interface CleanupResult {
   deletedCount: number;
@@ -33,6 +35,7 @@ export class TrashCleanupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fileLifecycleService: FileLifecycleService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   private async clearCleanupFlag(userId: string): Promise<void> {
@@ -149,6 +152,44 @@ export class TrashCleanupService {
     return { accepted: true };
   }
 
+  private async publishDeleteEvent(fileRecord: any) {
+    if (process.env.ENABLE_EVENT_DRIVEN_DELETE !== 'true') {
+      await this.fileLifecycleService.purgeFilesFromTelegram([fileRecord]);
+      return;
+    }
+
+    const telegramFileIds: string[] = [];
+    if (fileRecord.telegramMessageId) {
+      telegramFileIds.push(fileRecord.telegramMessageId.toString());
+    }
+
+    if (fileRecord.isChunked && fileRecord.chunks) {
+      fileRecord.chunks.forEach(
+        (chunk: { telegramMessageId: number | null }) => {
+          if (chunk.telegramMessageId) {
+            telegramFileIds.push(chunk.telegramMessageId.toString());
+          }
+        },
+      );
+    }
+
+    const eventPayload = {
+      fileId: fileRecord.id,
+      telegramMessageIds: telegramFileIds,
+      botId: Number(fileRecord.botId),
+    };
+
+    await this.redis.publish(
+      'file:events',
+      JSON.stringify({
+        type: 'DELETE_FILE',
+        payload: eventPayload,
+      }),
+    );
+
+    this.logger.debug(`Published DELETE_FILE event for file ${fileRecord.id}`);
+  }
+
   /**
    * Internal: delete all trashed items for a user, then clear flag.
    */
@@ -165,7 +206,7 @@ export class TrashCleanupService {
 
       for (const file of trashFiles) {
         try {
-          await this.fileLifecycleService.purgeFilesFromTelegram([file]);
+          await this.publishDeleteEvent(file);
           await this.fileLifecycleService.purgeTempFiles([file]);
           await this.prisma.$transaction(async (tx) => {
             await tx.fileRecord.delete({ where: { id: file.id } });
@@ -225,74 +266,99 @@ export class TrashCleanupService {
     this.logger.log('Starting trash cleanup cron job...');
 
     const cutoffDate = new Date();
-    cutoffDate.setDate(cutoffDate.getDate() - 7);
+    cutoffDate.setDate(cutoffDate.getDate() - 30);
 
     const affectedUserIds = new Set<string>();
-    const fileCountsByUser = new Map<string, number>();
-    const folderCountsByUser = new Map<string, number>();
-    let filesDeleted = 0;
+    let eventsPublished = 0;
+    let filesHardDeleted = 0;
     let foldersDeleted = 0;
 
     try {
-      // 1. Delete expired files
+      // Phase 1: Publish DELETE_FILE events for expired files not yet deleted from Telegram
       const expiredFiles = await this.prisma.fileRecord.findMany({
-        where: { deletedAt: { not: null, lt: cutoffDate } },
+        where: {
+          deletedAt: { not: null, lt: cutoffDate },
+          telegram_deleted: false,
+        },
         include: { chunks: true },
+        take: 100,
       });
-
-      const fileUserIds = new Set(expiredFiles.map((f) => f.userId));
-      for (const uid of fileUserIds) {
-        await this.prisma.user.update({
-          where: { id: uid },
-          data: { isCleaningTrash: true },
-        });
-        affectedUserIds.add(uid);
-        fileCountsByUser.set(uid, 0);
-      }
 
       for (const file of expiredFiles) {
         try {
-          await this.fileLifecycleService.purgeFilesFromTelegram([file]);
-          await this.fileLifecycleService.purgeTempFiles([file]);
-          await this.prisma.$transaction(async (tx) => {
-            await tx.fileRecord.delete({ where: { id: file.id } });
-            if (file.status === 'complete') {
-              await tx.user.update({
-                where: { id: file.userId },
-                data: { usedSpace: { decrement: file.size } },
-              });
-            }
-          });
-          filesDeleted++;
-          fileCountsByUser.set(
-            file.userId,
-            (fileCountsByUser.get(file.userId) ?? 0) + 1,
-          );
+          await this.publishDeleteEvent(file);
+          eventsPublished++;
+          affectedUserIds.add(file.userId);
         } catch (err) {
           this.logger.error(
-            `Failed to permanently delete file ${file.id}: ${getErrorMessage(err)}`,
+            `Failed to publish delete event for file ${file.id}: ${getErrorMessage(err)}`,
           );
         }
       }
 
-      // 2. Delete expired folders
-      const expiredFolders = await this.prisma.folder.findMany({
-        where: { deletedAt: { not: null, lt: cutoffDate } },
-        select: { id: true, userId: true },
+      // Phase 2: Hard delete files that Go has confirmed deleted from Telegram
+      const confirmedDeleted = await this.prisma.fileRecord.findMany({
+        where: {
+          deletedAt: { not: null, lt: cutoffDate },
+          telegram_deleted: true,
+        },
+        take: 500,
       });
 
-      const folderUserIds = new Set(expiredFolders.map((f) => f.userId));
-      for (const uid of folderUserIds) {
-        if (!affectedUserIds.has(uid)) {
+      if (confirmedDeleted.length > 0) {
+        const userIds = new Set(confirmedDeleted.map((f) => f.userId));
+        for (const uid of userIds) {
           await this.prisma.user.update({
             where: { id: uid },
             data: { isCleaningTrash: true },
           });
           affectedUserIds.add(uid);
         }
-        if (!folderCountsByUser.has(uid)) {
-          folderCountsByUser.set(uid, 0);
+
+        const ids = confirmedDeleted.map((f) => f.id);
+        let freedSize = 0n;
+        for (const file of confirmedDeleted) {
+          if (file.status === 'complete') {
+            freedSize += file.size;
+          }
         }
+
+        await this.prisma.$transaction(async (tx) => {
+          await tx.fileChunk.deleteMany({ where: { fileId: { in: ids } } });
+          await tx.fileRecord.deleteMany({ where: { id: { in: ids } } });
+
+          if (freedSize > 0n) {
+            for (const uid of userIds) {
+              const userFiles = confirmedDeleted.filter(
+                (f) => f.userId === uid,
+              );
+              const userFreed = userFiles.reduce((sum, f) => {
+                return f.status === 'complete' ? sum + f.size : sum;
+              }, 0n);
+              if (userFreed > 0n) {
+                await tx.user.update({
+                  where: { id: uid },
+                  data: { usedSpace: { decrement: userFreed } },
+                });
+              }
+            }
+          }
+        });
+
+        filesHardDeleted = confirmedDeleted.length;
+        this.logger.log(
+          `Hard deleted ${filesHardDeleted} files confirmed by Go`,
+        );
+      }
+
+      // 3. Delete expired folders (same as before)
+      const expiredFolders = await this.prisma.folder.findMany({
+        where: { deletedAt: { not: null, lt: cutoffDate } },
+        select: { id: true, userId: true },
+      });
+
+      for (const uid of new Set(expiredFolders.map((f) => f.userId))) {
+        affectedUserIds.add(uid);
       }
 
       for (const folder of expiredFolders) {
@@ -306,42 +372,25 @@ export class TrashCleanupService {
             where: { id: folder.id },
           });
           foldersDeleted++;
-          folderCountsByUser.set(
-            folder.userId,
-            (folderCountsByUser.get(folder.userId) ?? 0) + 1,
-          );
         } catch (err) {
           if (isPrismaRecordNotFoundError(err)) {
             this.logger.warn(
-              `Skipped permanently deleting folder ${folder.id} because it was already removed by cascade or concurrent cleanup`,
+              `Skipped deleting folder ${folder.id} (already removed)`,
             );
             continue;
           }
-
           this.logger.error(
-            `Failed to permanently delete folder ${folder.id}: ${getErrorMessage(err)}`,
+            `Failed to delete folder ${folder.id}: ${getErrorMessage(err)}`,
           );
         }
       }
 
-      // Cache results per user
-      const now = Date.now();
-      for (const uid of affectedUserIds) {
-        const totalDeleted =
-          (fileCountsByUser.get(uid) ?? 0) + (folderCountsByUser.get(uid) ?? 0);
-        this.cleanupResults.set(uid, {
-          deletedCount: totalDeleted,
-          expiresAt: now + this.CACHE_TTL_MS,
-        });
-      }
-
       this.logger.log(
-        `Trash cleanup cron completed: ${filesDeleted} files, ${foldersDeleted} folders permanently deleted`,
+        `Trash cleanup cron completed: ${eventsPublished} events published, ${filesHardDeleted} files hard deleted, ${foldersDeleted} folders deleted`,
       );
     } catch (err) {
       this.logger.error(`Trash cleanup cron failed: ${getErrorMessage(err)}`);
     } finally {
-      // Clear flags for all affected users
       await this.clearCleanupFlags(affectedUserIds);
     }
   }

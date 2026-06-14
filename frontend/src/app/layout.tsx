@@ -1,17 +1,17 @@
 import type { Metadata } from "next";
 import { Inter, Roboto_Mono } from "next/font/google";
 import "./globals.css";
-import { AuthProvider } from "@/components/auth-context";
-import { I18nProvider } from "@/components/i18n-context";
+import { AuthProvider } from "@/providers/auth-context";
+import { I18nProvider } from "@/providers/i18n-context";
 import { Toaster } from "react-hot-toast";
-import { UploadProvider } from "@/components/upload-context";
-import { DownloadProvider } from "@/components/download-context";
+import { UploadProvider } from "@/providers/upload/upload-provider";
+import { DownloadProvider } from "@/providers/download-context";
 import GlobalDropZone from "@/components/global-drop-zone";
 import TransferPanel from "@/components/transfer-panel";
-import StoreProvider from "@/components/store-provider";
-import { RequestTrackerProvider } from "@/lib/request-tracker";
-import NavigationLoader from "@/components/navigation-loader";
-import LoadingOverlay from "@/components/loading-overlay";
+import StoreProvider from "@/providers/store-provider";
+import { RequestTrackerProvider } from "@/providers/request-tracker";
+import NavigationLoader from "@/components/molecules/navigation-loader";
+import LoadingOverlay from "@/components/molecules/loading-overlay";
 
 const inter = Inter({
   variable: "--font-inter",

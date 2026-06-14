@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package transfer;
+
+option go_package = "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto";
+
+service TransferService {
+  rpc FlushAndConfirm(FlushAndConfirmRequest) returns (FlushAndConfirmResponse);
+  rpc EnqueueBufferedUpload(EnqueueBufferedUploadRequest) returns (EnqueueBufferedUploadResponse);
+  rpc Ping(TransferPingRequest) returns (TransferPingResponse);
+}
+
+message EnqueueBufferedUploadRequest {
+  string file_id = 1;
+  string temp_storage_key = 2;
+  string user_id = 3;
+  bool is_chunk = 4;
+  int32 chunk_index = 5;
+  int64 size = 6;
+}
+
+message EnqueueBufferedUploadResponse {
+  bool accepted = 1;
+  string reason = 2;
+}
+
+message TransferPingRequest {}
+
+message TransferPingResponse {
+  int64 timestamp = 1;
+}
+
+message FlushAndConfirmRequest {
+  string file_id = 1;
+}
+
+message ChunkConfirmation {
+  int32 chunk_index = 1;
+  string telegram_file_id = 2;
+  int32 telegram_message_id = 3;
+  int64 bot_id = 4;
+  string encryption_iv = 5;
+  int32 size = 6;
+  string etag = 7;
+}
+
+message FlushAndConfirmResponse {
+  bool all_complete = 1;
+  int32 total_chunks = 2;
+  int32 completed_chunks = 3;
+  repeated ChunkConfirmation chunks = 4;
+  // Chunks the client has handed off to Go = already-in-DB (completed) plus
+  // still-draining (queued/in-flight). Lets NestJS tell "client sent everything,
+  // background still uploading" (→ buffer & return OK) apart from "client never
+  // sent some chunk" (→ reject).
+  int32 received_chunks = 5;
+  bool all_received = 6;
+}

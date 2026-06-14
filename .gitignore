@@ -1,31 +1,61 @@
-# Dependencies
+# ==========================================
+# Package Managers & Dependencies
+# ==========================================
 node_modules/
+/node_modules
 .pnp
 .pnp.*
+/.pnp
 .yarn/
+.yarn/*
 !.yarn/patches
 !.yarn/plugins
 !.yarn/releases
 !.yarn/versions
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
 
-# Next.js
+# ==========================================
+# Build & Frameworks (Next.js, Flutter, etc.)
+# ==========================================
 .next/
+/.next/
 out/
-
-# Production/Build
+/out/
 dist/
 build/
-*.tsbuildinfo
+/build
+bin/
+.vercel
+.dart_tool
+GoogleService-Info.plist
 
-# IDE/Tools
+# ==========================================
+# Languages & Tools (TypeScript, Python)
+# ==========================================
+*.tsbuildinfo
+next-env.d.ts
+__pycache__
+.nyc_output
+/coverage
+
+# ==========================================
+# IDEs, OS & Worktrees
+# ==========================================
 .vscode/
 .idea/
 .DS_Store
 *.swp
 *.swo
+worktrees/
+external/
 
-# Environment & Secrets
+# ==========================================
+# Environment, Secrets & Local DB
+# ==========================================
 .env
+.env*
 .env.local
 .env.development.local
 .env.test.local
@@ -36,28 +66,57 @@ build/
 *.crt
 cert.pfx
 !/nginx/ssl/.gitkeep
-
-# Database
 *.db
 *.sqlite
 /prisma/migrations/
 /generated/
 
-# Logs
+# ==========================================
+# Logs & Debugging
+# ==========================================
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 *.log
 backend/.logs/
+logs.txt
 
-# Agent & System specific
+# ==========================================
+# AI Agents & IDE Assistants (Claude, Gemini, etc.)
+# ==========================================
 .agent/
 .agents/
-.gemini/
 .cursor/
 .claude/
-docs/
-
+/.claude/
+!/.claude/rules/
+.gemini/
+.gemini/settings.json
 CLAUDE.md
 AGENTS.md
+
+# Claude Code Local State
+claude/agent-memory/
+claude/hooks/.logs/
+claude/session-state/latest.md
+claude/session-state/archive/
+claude/settings.bak.json
+claude/skills/ai-multimodal/assets/demo-*.claude/session-state/*.tmp
+
+# ==========================================
+# Project Specific & Generated Assets
+# ==========================================
+docs/
+docs/screenshots/
+assets/
+screenshots/*
+repomix-output.xml
+.serena/cache
+test-ck
+prompt.md
+ck.md
+
+# Plans Configuration
+plans/**/*
+!plans/templates/*

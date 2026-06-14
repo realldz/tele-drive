@@ -61,6 +61,7 @@ services:
       - ./nginx/ssl:/etc/nginx/ssl:rw
     environment:
       - APP_DOMAIN=${APP_DOMAIN:-}
+      - S3_DOMAIN=${S3_DOMAIN:-s3.example.com}
       - SSL_CERT_FILE=${SSL_CERT_FILE:-cert.pem}
       - SSL_KEY_FILE=${SSL_KEY_FILE:-key.pem}
     depends_on:
@@ -87,6 +88,27 @@ services:
       REDIS_URL: redis://redis:6379
       UPLOAD_BUFFER_DIR: /data/upload-buffer
       IS_TRANSFER_SERVICE: "false"
+      # Data-plane ownership: Go transfer service owns heavy I/O (upload dispatch + ZIP assembly).
+      # NestJS disables its BullMQ workers and hands off via gRPC / Redis events.
+      UPLOAD_DISPATCH_OWNER: "go"
+      ZIP_OWNER: "go"
+      # Go owns ALL binary ingestion (encrypt + Telegram upload). NestJS only does
+      # metadata/quota and disables every in-process direct-upload path.
+      UPLOAD_IO_OWNER: "go"
+      # Go owns the S3 data plane (GetObject/PutObject/HeadObject). nginx routes
+      # these ops straight to the Go transfer service (no 307 redirect). NestJS
+      # keeps only the control plane (bucket ops, multipart orchestration, copy,
+      # delete, ListParts). Set to "nest" to instantly roll back to the legacy
+      # 307/direct path (also revert nginx routing).
+      S3_DATA_PLANE_OWNER: "go"
+      # Go owns bandwidth enforcement (user/guest daily + per-file quota) via its
+      # QuotaResolver on the download/stream/S3 data plane. The NestJS
+      # BandwidthInterceptor short-circuits to pass-through on every route it
+      # decorates. Set to "nest" to restore in-process enforcement (legacy path).
+      BANDWIDTH_OWNER: "go"
+      GO_TRANSFER_GRPC_URL: backend-transfer:50051
+      GRPC_PORT: "50051"
+      S3_DOMAIN: ${S3_DOMAIN:-s3.example.com}
     volumes:
       - ./backend/.logs:/app/.logs
       - upload-buffer:/data/upload-buffer
@@ -98,35 +120,43 @@ services:
       redis:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/v1 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
     restart: unless-stopped
     command: ["sh", "-c", "npx prisma db push --skip-generate && node dist/main-core.js"]
 
-  # ─── Backend Transfer API (NestJS) ─────────────────────────────────
+  # ─── Backend Transfer API (Go) ─────────────────────────────────
   backend-transfer:
-    build: ./backend
+    build: ./backend-transfer-go
     env_file:
       - ./backend/.env
     environment:
-      NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: postgresql://tele_drive:tele_drive@postgres:5432/tele_drive
+      # This service is the data plane: it owns upload dispatch + ZIP assembly
+      # (see UPLOAD_DISPATCH_OWNER / ZIP_OWNER on backend-core).
       TELEGRAM_API_ROOT: http://nginx:8088
       REDIS_URL: redis://redis:6379
       UPLOAD_BUFFER_DIR: /data/upload-buffer
-      IS_TRANSFER_SERVICE: "true"
+      # Files at or below this size are buffered to disk (enables retry +
+      # concurrency); larger files stream straight to Telegram (no RAM/disk).
+      # Keep in sync with NestJS MAX_BUFFER_FILE_SIZE.
+      MAX_BUFFER_FILE_SIZE: ${MAX_BUFFER_FILE_SIZE:-52428800}
+      NESTJS_GRPC_URL: backend-core:50051
+      GRPC_PORT: "50051"
+      # Host filter for the S3 data-plane routes (GET/PUT/HEAD object). Requests
+      # are only treated as S3 API calls when Host matches this domain.
+      S3_DOMAIN: ${S3_DOMAIN:-s3.example.com}
     volumes:
       - ./backend/.logs:/app/.logs
       - upload-buffer:/data/upload-buffer
     depends_on:
-      postgres:
-        condition: service_healthy
       telegram-bot-api:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      backend-core:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3001/files/config || exit 1"]
@@ -134,7 +164,6 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
-    command: ["sh", "-c", "node dist/main-transfer.js"]
 
   # ─── Frontend (Next.js) ────────────────────────────────────────────
   # NEXT_PUBLIC_* vars are baked at build time, not runtime
@@ -142,7 +171,8 @@ services:
     build:
       context: ./frontend
       args:
-        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+        NEXT_PUBLIC_S3_DOMAIN: ${S3_DOMAIN:-}
     restart: unless-stopped
 
   # ─── Optional: Cloudflare Tunnel ───────────────────────────────────

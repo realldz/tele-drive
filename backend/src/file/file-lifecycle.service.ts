@@ -5,8 +5,10 @@ import {
   ConflictException,
   Inject,
 } from '@nestjs/common';
+import Redis from 'ioredis';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
+import { REDIS_CLIENT } from '../redis';
 import { TEMP_STORAGE } from '../common/temp-storage';
 import type { TempStorage } from '../common/temp-storage';
 
@@ -19,6 +21,7 @@ export class FileLifecycleService {
     private readonly prisma: PrismaService,
     private readonly telegram: TelegramService,
     @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
   private async acquireDeletionLock(userId: string): Promise<() => void> {
@@ -63,17 +66,35 @@ export class FileLifecycleService {
       }
     }
 
-    for (const { messageId, botId } of messages) {
-      try {
-        await this.telegram.deleteMessage(messageId, botId ?? undefined);
-        if (messages.length > 5) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
-        }
-      } catch (err) {
-        this.logger.warn(
-          `Failed to delete Telegram message ${messageId}: ${err instanceof Error ? err.message : String(err)}`,
+    if (messages.length === 0) return;
+
+    try {
+      const transferUrl =
+        process.env.TRANSFER_API_URL || 'http://backend-transfer:3001';
+      const payload = messages.map((m) => ({
+        telegramMessageId: m.messageId,
+        botId: m.botId ? Number(m.botId) : 0,
+      }));
+
+      const res = await fetch(`${transferUrl}/internal/files/purge`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        this.logger.warn(`Failed to delegate purge: ${res.statusText}`);
+      } else {
+        this.logger.log(
+          `Delegated purge of ${messages.length} messages to Go Transfer`,
         );
       }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to connect to Go Transfer for purging: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -93,6 +114,47 @@ export class FileLifecycleService {
         }
       }
     }
+  }
+
+  async publishDeleteEvent(fileRecord: any) {
+    if (process.env.ENABLE_EVENT_DRIVEN_DELETE !== 'true') {
+      return this.legacyHttpPurge(fileRecord);
+    }
+
+    const telegramFileIds: string[] = [];
+    if (fileRecord.telegramMessageId) {
+      telegramFileIds.push(fileRecord.telegramMessageId.toString());
+    }
+
+    if (fileRecord.isChunked && fileRecord.chunks) {
+      fileRecord.chunks.forEach(
+        (chunk: { telegramMessageId: number | null }) => {
+          if (chunk.telegramMessageId) {
+            telegramFileIds.push(chunk.telegramMessageId.toString());
+          }
+        },
+      );
+    }
+
+    const eventPayload = {
+      fileId: fileRecord.id,
+      telegramMessageIds: telegramFileIds,
+      botId: Number(fileRecord.botId),
+    };
+
+    await this.redis.publish(
+      'file:events',
+      JSON.stringify({
+        type: 'DELETE_FILE',
+        payload: eventPayload,
+      }),
+    );
+
+    this.logger.debug(`Published DELETE_FILE event for file ${fileRecord.id}`);
+  }
+
+  private async legacyHttpPurge(fileRecord: any) {
+    await this.purgeFilesFromTelegram([fileRecord]);
   }
 
   async delete(id: string, userId?: string) {
@@ -144,7 +206,7 @@ export class FileLifecycleService {
       });
       if (!fileRecord) throw new NotFoundException('File not found in trash');
 
-      await this.purgeFilesFromTelegram([fileRecord]);
+      await this.publishDeleteEvent(fileRecord);
       await this.purgeTempFiles([fileRecord]);
 
       await this.prisma.$transaction(async (tx) => {
@@ -185,7 +247,9 @@ export class FileLifecycleService {
         }
       }
 
-      await this.purgeFilesFromTelegram(files);
+      for (const file of files) {
+        await this.publishDeleteEvent(file);
+      }
       await this.purgeTempFiles(files);
 
       await this.prisma.$transaction(async (tx) => {
@@ -245,7 +309,9 @@ export class FileLifecycleService {
         }
       }
 
-      await this.purgeFilesFromTelegram(files);
+      for (const file of files) {
+        await this.publishDeleteEvent(file);
+      }
       await this.purgeTempFiles(files);
 
       await this.prisma.$transaction(async (tx) => {

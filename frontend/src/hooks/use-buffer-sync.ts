@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { api } from '../lib/api';
+import { api } from '@/lib/api';
 
 export function useBufferSync(
   files: Array<{ id: string; status: string }>,
@@ -24,7 +24,7 @@ export function useBufferSync(
       try {
         // Chunk IDs to max 50 items per request (server limit)
         const chunk = bufferedIds.slice(0, 50);
-        const res = await api.get('/files/buffer-status', {
+        const res = await api.get('/transfer/buffer-status', {
           params: { ids: chunk.join(',') },
         });
 

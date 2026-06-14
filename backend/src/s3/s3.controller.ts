@@ -10,6 +10,8 @@ import {
   Req,
   Res,
   UseGuards,
+  HttpStatus,
+  VERSION_NEUTRAL,
 } from '@nestjs/common';
 import { S3AuthGuard } from './s3-auth.guard';
 import { S3Service } from './s3.service';
@@ -115,7 +117,7 @@ function isRetryableUpstreamError(err: unknown): boolean {
  */
 @Public()
 @SkipThrottle()
-@Controller('s3')
+@Controller({ path: 's3', version: VERSION_NEUTRAL })
 export class S3Controller {
   private readonly logger = new Logger(S3Controller.name);
 
@@ -388,6 +390,19 @@ export class S3Controller {
     const partNumberStr = this.qstr(req.query['partNumber']);
     if (uploadId && partNumberStr) {
       const partNumber = parseInt(partNumberStr, 10);
+      const chunkIndex = partNumber - 1;
+
+      if (process.env.ENABLE_S3_PUT_REDIRECT === 'true') {
+        const token = await this.s3Service.generateUploadToken(
+          uploadId,
+          userId,
+          chunkIndex,
+        );
+        const s3Domain = process.env.S3_DOMAIN || 's3.example.com';
+        const redirectUrl = `https://${s3Domain}/transfer/upload/${uploadId}/chunk/${chunkIndex}?token=${token}`;
+        return res.redirect(HttpStatus.TEMPORARY_REDIRECT, redirectUrl);
+      }
+
       const { stream, contentLength } = wrapRequestStream(req);
       try {
         const { etag } = await this.s3Multipart.uploadPart(
@@ -410,6 +425,15 @@ export class S3Controller {
     }
 
     // --- PutObject (default) ---
+    // When Go owns the data plane, single-shot PutObject (incl. zero-byte folder
+    // markers) is served directly by the Go transfer service via nginx routing.
+    // This NestJS path is only reachable if nginx misroutes — fail loudly.
+    if (this.rejectIfGoOwnsDataPlane(res, 'PutObject', bucket, key)) return;
+
+    if (process.env.ENABLE_S3_PUT_REDIRECT === 'true') {
+      return this.redirectPutObject(userId, bucket, key, req, res);
+    }
+
     const { stream, contentLength } = wrapRequestStream(req);
     return this.doPutObject(
       userId,
@@ -525,6 +549,65 @@ export class S3Controller {
   }
 
   // ---------------------------------------------------------------------------
+  // HEAD /s3/:bucket/* — HeadObject
+  //
+  // MUST be declared BEFORE @Get(':bucket/*key'). Express 5 Route registration
+  // order matters: when no explicit HEAD handler matches, Express falls back to
+  // the GET Route's handler for HEAD requests. NestJS registers Get/Head as
+  // separate Routes (not on the same Layer), so a HEAD request would otherwise
+  // hit the GET Route first and trigger its 307 redirect.
+  // ---------------------------------------------------------------------------
+
+  @UseGuards(S3AuthGuard)
+  @Head(':bucket/*key')
+  async headObject(
+    @Param('bucket') bucket: string,
+    @Param() params: Record<string, string>,
+    @Req() req: S3AuthenticatedRequest,
+    @Res() res: Response,
+  ) {
+    const userId = req.s3UserId as string;
+    this.logger.debug(
+      `S3 HeadObject: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
+    );
+    const key = this.getObjectKey(bucket, params, req);
+
+    // Go owns HeadObject when S3_DATA_PLANE_OWNER=go (served via nginx → Go).
+    if (this.rejectIfGoOwnsDataPlane(res, 'HeadObject', bucket, key)) return;
+
+    this.logger.log(`S3 HeadObject: s3://${bucket}/${key} (userId: ${userId})`);
+    this.setRequestId(res);
+
+    try {
+      const file = await this.s3Service.findObject(userId, bucket, key);
+      const lastModified = file.createdAt.toUTCString();
+      const etag = file.etag || `"${file.id}"`;
+
+      res.setHeader(
+        'Content-Type',
+        file.mimeType || 'application/octet-stream',
+      );
+      res.setHeader('Content-Length', file.size.toString());
+      res.setHeader('ETag', etag);
+      res.setHeader('Last-Modified', lastModified);
+      res.setHeader('Accept-Ranges', 'bytes');
+      res.status(200).end();
+    } catch (err: unknown) {
+      this.logger.warn(`S3 HeadObject not found: s3://${bucket}/${key}`);
+      const status = (err as { status?: number }).status;
+      res
+        .status(status || 404)
+        .setHeader('Content-Type', 'application/xml')
+        .send(
+          this.s3Service.buildErrorXml(
+            'NoSuchKey',
+            'The specified key does not exist.',
+          ),
+        );
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // GET /s3/:bucket/* — GetObject / ListParts
   // ---------------------------------------------------------------------------
 
@@ -567,88 +650,30 @@ export class S3Controller {
       return;
     }
 
-    // --- GetObject ---
+    // --- GetObject (HTTP 307 Redirect) ---
+    // Go owns GetObject when S3_DATA_PLANE_OWNER=go (served via nginx → Go).
+    if (this.rejectIfGoOwnsDataPlane(res, 'GetObject', bucket, key)) return;
+
     this.logger.log(`S3 GetObject: s3://${bucket}/${key} (userId: ${userId})`);
     try {
       this.logger.debug(`S3 GetObject: ${userId}, ${bucket}, ${key}`);
       const file = await this.s3Service.findObject(userId, bucket, key);
-      const downloadInfo = this.transferReadService.getDownloadMetadata(file);
-      const lastModified = file.createdAt.toUTCString();
 
-      const etag = file.etag || `"${file.id}"`;
-      res.setHeader(
-        'Content-Type',
-        file.mimeType || 'application/octet-stream',
+      const token = await this.s3Service.generateDownloadToken(file.id, userId);
+
+      const s3Domain = process.env.S3_DOMAIN || 's3.example.com';
+      const redirectUrl = `https://${s3Domain}/transfer/d/${token}`;
+
+      this.logger.debug(
+        `S3 GetObject redirect: ${redirectUrl} (fileId: ${file.id})`,
       );
-      res.setHeader('Content-Length', file.size.toString());
-      res.setHeader('ETag', etag);
-      res.setHeader('Last-Modified', lastModified);
-      res.setHeader('Accept-Ranges', 'bytes');
 
-      const rangeHeader = req.headers['range'];
-      if (rangeHeader) {
-        return this.transferReadService.processStream(
-          downloadInfo,
-          rangeHeader,
-          res,
-        );
-      }
-      return this.transferReadService.processDownload(downloadInfo, res);
+      return res.redirect(HttpStatus.TEMPORARY_REDIRECT, redirectUrl);
     } catch (err: unknown) {
       this.logger.error(
         `S3 GetObject error: ${err instanceof Error ? err.message : err}`,
       );
       this.sendS3Error(res, err);
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // HEAD /s3/:bucket/* — HeadObject
-  // ---------------------------------------------------------------------------
-
-  @UseGuards(S3AuthGuard)
-  @Head(':bucket/*key')
-  async headObject(
-    @Param('bucket') bucket: string,
-    @Param() params: Record<string, string>,
-    @Req() req: S3AuthenticatedRequest,
-    @Res() res: Response,
-  ) {
-    const userId = req.s3UserId as string;
-    this.logger.debug(
-      `S3 HeadObject: ${userId}, ${bucket}, ${JSON.stringify(params)}`,
-    );
-    const key = this.getObjectKey(bucket, params, req);
-
-    this.logger.log(`S3 HeadObject: s3://${bucket}/${key} (userId: ${userId})`);
-    this.setRequestId(res);
-
-    try {
-      const file = await this.s3Service.findObject(userId, bucket, key);
-      const lastModified = file.createdAt.toUTCString();
-      const etag = file.etag || `"${file.id}"`;
-
-      res.setHeader(
-        'Content-Type',
-        file.mimeType || 'application/octet-stream',
-      );
-      res.setHeader('Content-Length', file.size.toString());
-      res.setHeader('ETag', etag);
-      res.setHeader('Last-Modified', lastModified);
-      res.setHeader('Accept-Ranges', 'bytes');
-      res.status(200).end();
-    } catch (err: unknown) {
-      this.logger.warn(`S3 HeadObject not found: s3://${bucket}/${key}`);
-      const status = (err as { status?: number }).status;
-      res
-        .status(status || 404)
-        .setHeader('Content-Type', 'application/xml')
-        .send(
-          this.s3Service.buildErrorXml(
-            'NoSuchKey',
-            'The specified key does not exist.',
-          ),
-        );
     }
   }
 
@@ -941,6 +966,87 @@ export class S3Controller {
   }
 
   // ---------------------------------------------------------------------------
+  // PutObject — Redirect flow (when ENABLE_S3_PUT_REDIRECT = true)
+  // ---------------------------------------------------------------------------
+
+  private async redirectPutObject(
+    userId: string,
+    bucket: string,
+    key: string,
+    req: S3AuthenticatedRequest,
+    res: Response,
+  ) {
+    const contentType =
+      (req.headers['content-type'] as string) || 'application/octet-stream';
+    const contentLengthHeader = req.headers['content-length'];
+    const contentLength = contentLengthHeader
+      ? parseInt(contentLengthHeader, 10)
+      : 0;
+    const filename = key.split('/').pop() || key;
+
+    this.logger.log(
+      `S3 PutObject redirect: s3://${bucket}/${key} (${contentLength} bytes, userId: ${userId})`,
+    );
+
+    try {
+      // Zero-byte → folder marker (handle locally)
+      if (contentLength === 0) {
+        const folderKey = key.endsWith('/') ? key : `${key}/`;
+        await this.s3Service.resolveKeyAsFolder(userId, bucket, folderKey);
+        return res.status(200).end();
+      }
+
+      const { folderId } = await this.s3Service.resolveKey(
+        userId,
+        bucket,
+        key,
+        true,
+      );
+
+      // Create FileRecord in 'uploading' status. Provision encryption upfront
+      // so the Go transfer service encrypts the stream (it reads isEncrypted +
+      // encryptedKey from metadata); the IV is generated by Go and reported on
+      // completion. Without this, Go would upload plaintext while the record is
+      // later marked encrypted, corrupting downloads.
+      const encryptedKey = this.cryptoService.encryptKey(
+        this.cryptoService.generateFileKey(),
+      );
+      const fileRecord = await this.prisma.fileRecord.create({
+        data: {
+          filename,
+          size: BigInt(contentLength),
+          mimeType: contentType,
+          status: 'uploading',
+          isEncrypted: true,
+          encryptionAlgo: 'aes-256-ctr',
+          encryptedKey,
+          folderId: folderId || null,
+          userId,
+        },
+      });
+
+      const token = await this.s3Service.generateUploadToken(
+        fileRecord.id,
+        userId,
+      );
+      const s3Domain = process.env.S3_DOMAIN || 's3.example.com';
+      const redirectUrl = `https://${s3Domain}/transfer/upload/${fileRecord.id}?token=${token}`;
+
+      this.logger.debug(
+        `S3 PutObject redirect: ${redirectUrl} (fileId: ${fileRecord.id})`,
+      );
+
+      return res.redirect(HttpStatus.TEMPORARY_REDIRECT, redirectUrl);
+    } catch (err: unknown) {
+      this.logger.error(
+        `S3 PutObject redirect error: ${err instanceof Error ? err.message : err}`,
+        err instanceof Error ? err.stack : undefined,
+      );
+      this.sendS3Error(res, err);
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // CopyObject — Task 7
   // ---------------------------------------------------------------------------
 
@@ -1058,6 +1164,48 @@ export class S3Controller {
       stream.on('end', () => resolve(Buffer.concat(chunks)));
       stream.on('error', reject);
     });
+  }
+
+  /**
+   * True when the Go transfer service owns the S3 data plane (GetObject /
+   * PutObject / HeadObject body I/O). Controlled by S3_DATA_PLANE_OWNER:
+   *   - "go"   → nginx routes these ops to Go; NestJS should never see them.
+   *   - "nest" → NestJS serves them itself (legacy 307 / direct path).
+   * Default "nest" so a deploy without the env var keeps the working path.
+   * When "go", these handlers are unreachable behind nginx (Phase 8); the guard
+   * here is a loud safety net that flags a routing misconfig instead of silently
+   * issuing a broken 307.
+   */
+  private goOwnsDataPlane(): boolean {
+    return (process.env.S3_DATA_PLANE_OWNER || 'nest').toLowerCase() === 'go';
+  }
+
+  /**
+   * Reject a data-plane request that reached NestJS while Go owns the data plane
+   * — means nginx routing is broken. Returns true if it handled (rejected) the
+   * request, so callers `if (this.rejectIfGoOwnsDataPlane(...)) return;`.
+   */
+  private rejectIfGoOwnsDataPlane(
+    res: Response,
+    op: string,
+    bucket: string,
+    key: string,
+  ): boolean {
+    if (!this.goOwnsDataPlane()) return false;
+    this.logger.error(
+      `S3 ${op} reached NestJS while S3_DATA_PLANE_OWNER=go — nginx routing broken. s3://${bucket}/${key}`,
+    );
+    this.setRequestId(res);
+    res
+      .status(500)
+      .setHeader('Content-Type', 'application/xml')
+      .send(
+        this.s3Service.buildErrorXml(
+          'InternalError',
+          'S3 routing misconfigured.',
+        ),
+      );
+    return true;
   }
 
   /** Add x-amz-request-id to every response for aws-cli compatibility. */

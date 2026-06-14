@@ -16,10 +16,17 @@ import { RequestLoggingInterceptor } from './common/interceptors/request-logging
 import { CoreAppModule } from './core-app.module';
 import { RedisModule } from './redis';
 import { QueueModule } from './queue';
+import { DownloadZipModule } from './download-zip/download-zip.module';
+import { S3Module } from './s3/s3.module';
+import { GrpcCoreModule } from './grpc/grpc-core.module';
+import { CacheModule } from './cache/cache.module';
+import { QuotaSyncService } from './common/quota-sync.service';
 
 @Module({
   imports: [
     AppLoggerModule,
+    GrpcCoreModule,
+    CacheModule,
     ConfigModule.forRoot({ isGlobal: true }),
     ScheduleModule.forRoot(),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 60 }]),
@@ -44,7 +51,9 @@ import { QueueModule } from './queue';
     PrismaModule,
     CryptoModule,
     BandwidthModule,
+    S3Module,
     CoreAppModule,
+    DownloadZipModule,
   ],
   controllers: [AppController],
   providers: [
@@ -61,6 +70,7 @@ import { QueueModule } from './queue';
       provide: APP_INTERCEPTOR,
       useClass: RequestLoggingInterceptor,
     },
+    QuotaSyncService,
   ],
 })
 export class CoreServerModule {}

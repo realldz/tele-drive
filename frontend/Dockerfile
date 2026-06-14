@@ -18,6 +18,10 @@ COPY . .
 ARG NEXT_PUBLIC_API_URL=/api
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 
+# Optional dedicated S3 domain (e.g. s3.example.com); empty = path-based only
+ARG NEXT_PUBLIC_S3_DOMAIN=
+ENV NEXT_PUBLIC_S3_DOMAIN=${NEXT_PUBLIC_S3_DOMAIN}
+
 RUN npm run build
 
 # --- Production runner ---

@@ -16,6 +16,7 @@ import { TempStorageModule } from '../common/temp-storage/temp-storage.module';
 import { UploadBufferService } from './upload-buffer.service';
 import { UploadQueueProcessor } from './upload-queue.processor';
 import { QueueModule } from '../queue';
+import { GrpcTransferModule } from '../grpc/grpc-transfer.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { QueueModule } from '../queue';
     NameConflictModule,
     TempStorageModule,
     QueueModule,
+    GrpcTransferModule,
   ],
   controllers: [FileController],
   providers: [

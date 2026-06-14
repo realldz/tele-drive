@@ -8,7 +8,6 @@ import {
   OnApplicationBootstrap,
 } from '@nestjs/common';
 import { Job, Queue } from 'bullmq';
-import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { CryptoService } from '../crypto/crypto.service';
@@ -17,6 +16,10 @@ import type { TempStorage } from '../common/temp-storage';
 import { SettingsService } from '../settings/settings.service';
 import { UploadJobData, UploadFileJobData, UploadChunkJobData } from '../queue';
 import { FileRecord, FileChunk } from '@prisma/client';
+import { GrpcTransferClient } from '../grpc/grpc-transfer.client';
+
+const dispatchOwnerIsGo = (): boolean =>
+  (process.env.UPLOAD_DISPATCH_OWNER || 'go') === 'go';
 
 const getConcurrency = () => {
   const envVal = process.env.DISPATCH_CONCURRENCY;
@@ -48,12 +51,14 @@ export class UploadQueueProcessor
     @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
     private readonly settingsService: SettingsService,
     @InjectQueue('upload-dispatch') private readonly uploadQueue: Queue,
+    private readonly transferClient: GrpcTransferClient,
   ) {
     super();
   }
 
   async onModuleInit(): Promise<void> {
-    if (process.env.IS_TRANSFER_SERVICE === 'false') {
+    if (process.env.IS_TRANSFER_SERVICE === 'false' && !dispatchOwnerIsGo()) {
+      if (this.worker) this.worker.pause();
       return;
     }
 
@@ -76,6 +81,60 @@ export class UploadQueueProcessor
       });
 
       let reEnqueuedCount = 0;
+
+      // When Go owns dispatch, re-hand-off stuck buffered items to Go via gRPC
+      if (dispatchOwnerIsGo()) {
+        for (const file of bufferedFiles) {
+          if (!file.tempStorageKey) continue;
+          try {
+            const res = await this.transferClient.enqueueBufferedUpload({
+              fileId: file.id,
+              tempStorageKey: file.tempStorageKey,
+              userId: file.userId,
+              isChunk: false,
+              chunkIndex: 0,
+              size: Number(file.size),
+            });
+            if (res.accepted) reEnqueuedCount++;
+          } catch (err) {
+            this.logger.error(
+              `Failed to re-hand-off buffered file ${file.id} to Go: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+
+        for (const chunk of bufferedChunks) {
+          if (!chunk.tempStorageKey) continue;
+          try {
+            const res = await this.transferClient.enqueueBufferedUpload({
+              fileId: chunk.fileId,
+              tempStorageKey: chunk.tempStorageKey,
+              userId: chunk.file.userId,
+              isChunk: true,
+              chunkIndex: chunk.chunkIndex,
+              size: Number(chunk.size),
+            });
+            if (res.accepted) reEnqueuedCount++;
+          } catch (err) {
+            this.logger.error(
+              `Failed to re-hand-off buffered chunk ${chunk.id} to Go: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+
+        if (this.worker) await this.worker.pause();
+
+        if (reEnqueuedCount > 0) {
+          this.logger.log(
+            `Startup recovery (Go dispatch): re-handed-off ${reEnqueuedCount} buffered items to transfer service.`,
+          );
+        } else {
+          this.logger.log(
+            'Startup recovery (Go dispatch): no buffered items to recover.',
+          );
+        }
+        return;
+      }
 
       for (const file of bufferedFiles) {
         if (!file.tempStorageKey) continue;
@@ -150,9 +209,11 @@ export class UploadQueueProcessor
   }
 
   async onApplicationBootstrap(): Promise<void> {
-    if (process.env.IS_TRANSFER_SERVICE === 'false') {
+    if (process.env.IS_TRANSFER_SERVICE === 'false' || dispatchOwnerIsGo()) {
       this.logger.log(
-        'IS_TRANSFER_SERVICE is false. Pausing upload queue worker.',
+        dispatchOwnerIsGo()
+          ? 'UPLOAD_DISPATCH_OWNER=go. Upload dispatch handled by Go transfer service; pausing NestJS worker.'
+          : 'IS_TRANSFER_SERVICE is false. Pausing upload queue worker.',
       );
       if (this.worker) {
         await this.worker.pause();
@@ -168,6 +229,14 @@ export class UploadQueueProcessor
   }
 
   async process(job: Job<UploadJobData>): Promise<void> {
+    if (dispatchOwnerIsGo()) {
+      // Dispatch is owned by the Go transfer service. This worker is disabled
+      // (paused at bootstrap); ignore any residual jobs without processing.
+      this.logger.warn(
+        `Ignoring upload-dispatch job ${job.id}: dispatch owned by Go transfer service.`,
+      );
+      return;
+    }
     try {
       if (job.data.type === 'file') {
         await this.processFileJob(job as Job<UploadFileJobData>);
@@ -437,32 +506,5 @@ export class UploadQueueProcessor
       encryptedBuffer,
       iv: ivBuffer.toString('hex'),
     };
-  }
-
-  @Cron('0 */15 * * * *')
-  async expireStaleBufferedFiles(): Promise<void> {
-    if (process.env.IS_TRANSFER_SERVICE === 'false') return;
-
-    try {
-      const bufferTtlHours = await this.settingsService.getCachedSetting(
-        'BUFFER_TTL_HOURS',
-        24,
-        (v) => parseInt(v, 10),
-      );
-      const cutoff = new Date(Date.now() - bufferTtlHours * 60 * 60 * 1000);
-      const expired = await this.prisma.fileRecord.updateMany({
-        where: { status: 'buffered', createdAt: { lt: cutoff } },
-        data: { status: 'buffer_failed' },
-      });
-      if (expired.count > 0) {
-        this.logger.warn(
-          `Expired ${expired.count} stale buffered files (>${bufferTtlHours}h)`,
-        );
-      }
-    } catch (err) {
-      this.logger.error(
-        `Failed to expire stale buffered files: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
   }
 }

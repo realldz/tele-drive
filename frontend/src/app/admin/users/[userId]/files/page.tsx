@@ -11,10 +11,10 @@ import {
   deleteUserFile,
 } from '@/lib/api';
 import type { AdminUserBasic, AdminUserFile } from '@/lib/types';
-import { useI18n } from '@/components/i18n-context';
+import { useI18n } from '@/providers/i18n-context';
 import { useAppNavigate } from '@/hooks/use-app-navigate';
-import AdminUserFilesList from '../../../components/admin-user-files-list';
-import ConfirmModal from '../../../components/confirm-modal';
+import AdminUserFilesList from '@/app/admin/components/admin-user-files-list';
+import ConfirmModal from '@/app/admin/components/confirm-modal';
 
 interface DownloadPolicyForm {
   downloadLimit24h: string;

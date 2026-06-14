@@ -3,9 +3,10 @@ import { AdminDashboardController } from './admin-dashboard.controller';
 import { AdminDashboardService } from './admin-dashboard.service';
 import { AdminSystemController } from './admin-system.controller';
 import { TempStorageModule } from '../common/temp-storage/temp-storage.module';
+import { HttpModule } from '@nestjs/axios';
 
 @Module({
-  imports: [TempStorageModule],
+  imports: [TempStorageModule, HttpModule],
   controllers: [AdminDashboardController, AdminSystemController],
   providers: [AdminDashboardService],
 })

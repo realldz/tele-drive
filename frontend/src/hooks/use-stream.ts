@@ -5,7 +5,7 @@ import {
   clearStreamCookie,
   handleBandwidthError,
 } from '@/lib/api';
-import { useI18n } from '@/components/i18n-context';
+import { useI18n } from '@/providers/i18n-context';
 import toast from 'react-hot-toast';
 
 interface UseStreamOptions {

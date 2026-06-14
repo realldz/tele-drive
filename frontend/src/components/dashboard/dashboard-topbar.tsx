@@ -1,6 +1,6 @@
 import React from 'react';
 import { Search, Plus, FolderPlus, File, FolderOpen, LayoutGrid, List } from 'lucide-react';
-import { useI18n } from '@/components/i18n-context';
+import { useI18n } from '@/providers/i18n-context';
 
 interface DashboardTopbarProps {
   showMobileSearch: boolean;

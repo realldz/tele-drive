@@ -1,39 +1,30 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Loader2 } from 'lucide-react';
-import { useI18n, LOCALE_DATE_MAP } from '@/components/i18n-context';
+import { useI18n } from '@/providers/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import { useSelection } from '@/hooks/use-selection';
 import { useDragSelect, DragSelectOverlay } from '@/hooks/use-drag-select';
+import { useUpload } from '@/providers/upload/upload-provider';
+import { useDownload } from '@/providers/download-context';
+import { useFolderContent } from '@/hooks/use-folder-content';
+import { useConflictResolution } from '@/hooks/use-conflict-resolution';
+import { useDashboardActions } from '@/hooks/use-dashboard-actions';
+import { useDndMove } from '@/hooks/use-dnd-move';
 import Sidebar from '@/components/sidebar';
-import Breadcrumbs from '@/components/breadcrumbs';
-import ContextMenu from '@/components/context-menu';
-import SelectionActionBar from '@/components/selection-action-bar';
-import { useUpload } from '@/components/upload-context';
-import { useDownload } from '@/components/download-context';
-import { useBufferSync } from '@/hooks/use-buffer-sync';
+import Breadcrumbs from '@/components/molecules/breadcrumbs';
+import ContextMenu from '@/components/molecules/context-menu';
+import SelectionActionBar from '@/components/molecules/selection-action-bar';
+import Spinner from '@/components/atoms/spinner';
 import DashboardTopbar from '@/components/dashboard/dashboard-topbar';
 import DashboardContent from '@/components/dashboard/dashboard-content';
 import DashboardDialogs from '@/components/dashboard/dashboard-dialogs';
+import ConflictDialog from '@/components/organisms/dialogs/conflict-dialog';
 import toast from 'react-hot-toast';
-import axios from 'axios';
-import {
-  fetchBreadcrumbs,
-  createFolder, deleteFolder, restoreFolder, deleteFile, restoreFile,
-  abortUpload, requestDownloadToken, moveItem, formatBandwidthResetTime, API_URL,
-  isConflictError, parseConflictResponse,
-  fetchFolderContentInitial,
-  fetchFolderContentNextPage,
-  retryBuffer,
-} from '@/lib/api';
-import ConflictDialog from '@/components/conflict-dialog';
-import type { ConflictInfo } from '@/lib/api';
-import type { FileRecord, FolderRecord, BreadcrumbItem } from '@/lib/types';
-import type { ConflictResolution } from '@/components/upload-context';
+import type { FileRecord, FolderRecord } from '@/lib/types';
 
-type SortField = 'name' | 'createdAt';
-type SortDirection = 'asc' | 'desc';
+type ActiveDialog = 'rename' | 'move' | 'share' | 'details' | 'batchMove' | 'none';
+type ItemType = 'file' | 'folder';
 
 export default function Dashboard() {
   const { isReady, token } = useRequireAuth();
@@ -41,53 +32,39 @@ export default function Dashboard() {
   const { setCurrentFolderId: setUploadFolderId, setOnUploadSuccess, addFiles, addFolder, resolveConflict, queue } = useUpload();
   const { startDownload } = useDownload();
 
-  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
-  const [folders, setFolders] = useState<FolderRecord[]>([]);
-  const [files, setFiles] = useState<FileRecord[]>([]);
+  const selection = useSelection();
+  const content = useFolderContent(token);
+  const {
+    currentFolderId, setCurrentFolderId, folders, files, setFiles, breadcrumbs,
+    isLoadingContent, hasMore, loadMoreRef, searchQuery, setSearchQuery,
+    sortField, sortDirection, handleSort, filteredFolders, filteredFiles, orderedIds, fetchContent,
+  } = content;
 
-  // Poll status of buffered files
-  useBufferSync(files, (id, newStatus) => {
-    setFiles(prev => prev.map(f => f.id === id ? { ...f, status: newStatus } : f));
+  const conflict = useConflictResolution({ folders, files, fetchContent, resolveConflict, queue, t });
+  const { pendingConflict, setPendingConflict, applyToAllRef, buildMoveConflict, handleConflictResolution } = conflict;
+
+  const actions = useDashboardActions({
+    t, locale, currentFolderId, fetchContent, selection,
+    files, folders, setFiles, startDownload, buildMoveConflict, applyToAllRef,
   });
-  const [breadcrumbs, setBreadcrumbs] = useState<BreadcrumbItem[]>([]);
-  const [downloadingFiles, setDownloadingFiles] = useState<Set<string>>(new Set());
-  const [actionLoading, setActionLoading] = useState<Set<string>>(new Set());
-  const [isLoadingContent, setIsLoadingContent] = useState(false);
-  const [isLoadMore, setIsLoadMore] = useState(false);
-  const [hasMoreFolders, setHasMoreFolders] = useState(true);
-  const [hasMoreFiles, setHasMoreFiles] = useState(true);
-  const nextFileCursor = useRef<string | null>(null);
-  const nextFolderCursor = useRef<string | null>(null);
 
-  // Conflict dialog state
-  interface PendingConflict {
-    type: 'upload' | 'move';
-    itemId: string;
-    conflictInfo: ConflictInfo;
-    destinationFolderId?: string | null;
-    existingItemName?: string;
-    existingItemSize?: number;
-    existingItemDate?: string;
-    incomingSize?: number;
-    incomingDate?: string;
-  }
-  const [pendingConflict, setPendingConflict] = useState<PendingConflict | null>(null);
-  const applyToAllRef = useRef<ConflictResolution | null>(null);
+  const dnd = useDndMove({
+    currentFolderId, fetchContent, buildMoveConflict,
+    onMoveError: () => toast.error(t('dashboard.moveError')),
+  });
 
-  // Modal / dialog state
+  // ── UI-only state ──────────────────────────────────────────────────────────
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const [showCreateFolder, setShowCreateFolder] = useState(false);
-  const [activeDialog, setActiveDialog] = useState<'rename' | 'move' | 'share' | 'details' | 'batchMove' | 'none'>('none');
+  const [activeDialog, setActiveDialog] = useState<ActiveDialog>('none');
   const [dialogItem, setDialogItem] = useState<FileRecord | FolderRecord | null>(null);
-  const [dialogItemType, setDialogItemType] = useState<'file' | 'folder'>('file');
+  const [dialogItemType, setDialogItemType] = useState<ItemType>('file');
 
-  // "New" dropdown
   const [showNewMenu, setShowNewMenu] = useState(false);
   const newMenuRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
-  // View mode
   const [viewMode, setViewMode] = useState<'grid' | 'list'>(() => {
     if (typeof window !== 'undefined') {
       return (localStorage.getItem('viewMode') as 'grid' | 'list') || 'grid';
@@ -96,88 +73,24 @@ export default function Dashboard() {
   });
   useEffect(() => { localStorage.setItem('viewMode', viewMode); }, [viewMode]);
 
-  // Search + mobile toggle
-  const [searchQuery, setSearchQuery] = useState('');
   const [showMobileSearch, setShowMobileSearch] = useState(false);
 
-  // Sorting (list view)
-  const [sortField, setSortField] = useState<SortField>('name');
-  const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
-
-  // Selection
-  const selection = useSelection();
-  const contentRef = useRef<HTMLDivElement>(null);
-
-  const handleDragSelect = useCallback((ids: string[]) => {
-    selection.selectAll(ids);
-  }, [selection]);
-
-  const { isDragging, rect: dragRect } = useDragSelect({
-    containerRef: contentRef,
-    onSelect: handleDragSelect,
-  });
-
-  const handleSort = useCallback((field: SortField) => {
-    setSortDirection(prev => sortField === field ? (prev === 'asc' ? 'desc' : 'asc') : 'desc');
-    setSortField(field);
-  }, [sortField]);
-
-  // Filter + sort
-  const filteredFolders = useMemo(() => {
-    return folders.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase()));
-  }, [folders, searchQuery]);
-
-  const filteredFiles = useMemo(() => {
-    return files.filter(f => f.filename.toLowerCase().includes(searchQuery.toLowerCase()));
-  }, [files, searchQuery]);
-
-  // Ordered IDs for shift-select
-  const orderedIds = useMemo(
-    () => [...filteredFolders.map(f => f.id), ...filteredFiles.map(f => f.id)],
-    [filteredFolders, filteredFiles],
-  );
-
-  // Load more for server-side pagination
-  const hasMore = hasMoreFolders || hasMoreFiles;
-  const loadMoreRef = useRef<HTMLDivElement>(null);
-  const observerRef = useRef<IntersectionObserver | null>(null);
-
-  useEffect(() => {
-    if (!loadMoreRef.current) return;
-    if (observerRef.current) observerRef.current.disconnect();
-
-    observerRef.current = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !isLoadingContent && !isLoadMore) {
-          handleLoadMore();
-        }
-      },
-      { rootMargin: '200px' },
-    );
-
-    observerRef.current.observe(loadMoreRef.current);
-    return () => { if (observerRef.current) observerRef.current.disconnect(); };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMore, isLoadingContent, isLoadMore]);
-
-  // Context menu
   const [contextMenu, setContextMenu] = useState<{
     isOpen: boolean; x: number; y: number;
-    item: FileRecord | FolderRecord | null; type: 'file' | 'folder';
+    item: FileRecord | FolderRecord | null; type: ItemType;
   }>({ isOpen: false, x: 0, y: 0, item: null, type: 'file' });
 
-  // Drag and Drop
-  const [draggedItem, setDraggedItem] = useState<{ id: string; type: 'file' | 'folder' } | null>(null);
-  const [dragOverFolderId, setDragOverFolderId] = useState<string | null>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const handleDragSelect = useCallback((ids: string[]) => { selection.selectAll(ids); }, [selection]);
+  const { isDragging, rect: dragRect } = useDragSelect({ containerRef: contentRef, onSelect: handleDragSelect });
 
-  // Close context menu on click anywhere
+  // ── Effects: menu dismissal + upload wiring ──────────────────────────────────
   useEffect(() => {
     const handler = () => setContextMenu(prev => ({ ...prev, isOpen: false }));
     document.addEventListener('click', handler);
     return () => document.removeEventListener('click', handler);
   }, []);
 
-  // Close "New" dropdown on click outside
   useEffect(() => {
     if (!showNewMenu) return;
     const handler = (e: MouseEvent) => {
@@ -187,402 +100,33 @@ export default function Dashboard() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showNewMenu]);
 
-  // Clear selection when folder changes
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { selection.clearSelection(); }, [currentFolderId, selection.clearSelection]);
 
-  useEffect(() => {
-    nextFileCursor.current = null;
-    nextFolderCursor.current = null;
-    setHasMoreFolders(true);
-    setHasMoreFiles(true);
-  }, [currentFolderId]);
-
-  // Fetch content
-  const fetchContent = useCallback(async (isLoadMoreCall = false) => {
-    if (!token) return;
-    if (!isLoadMoreCall) setIsLoadingContent(true);
-    if (isLoadMoreCall) setIsLoadMore(true);
-    try {
-      const data = isLoadMoreCall
-        ? await fetchFolderContentNextPage(
-            currentFolderId,
-            nextFolderCursor.current,
-            nextFileCursor.current,
-            undefined, // search
-            sortField,
-            sortDirection
-          )
-        : await fetchFolderContentInitial(currentFolderId, undefined, sortField, sortDirection);
-
-      if (isLoadMoreCall) {
-        setFolders(prev => {
-          const existingIds = new Set(prev.map(f => f.id));
-          return [...prev, ...data.folders.filter(f => !existingIds.has(f.id))];
-        });
-        setFiles(prev => {
-          const existingIds = new Set(prev.map(f => f.id));
-          return [...prev, ...data.files.filter(f => !existingIds.has(f.id))];
-        });
-      } else {
-        setFolders(data.folders);
-        setFiles(data.files);
-      }
-      setHasMoreFolders(data.nextFolderCursor !== null);
-      setHasMoreFiles(data.nextFileCursor !== null);
-      nextFileCursor.current = data.nextFileCursor;
-      nextFolderCursor.current = data.nextFolderCursor;
-      if (!isLoadMoreCall && currentFolderId) {
-        const bc = await fetchBreadcrumbs(currentFolderId);
-        setBreadcrumbs(bc);
-      }
-      if (!isLoadMoreCall && !currentFolderId) {
-        setBreadcrumbs([]);
-      }
-    } catch {
-      // 401 handled by axios interceptor
-    } finally {
-      setIsLoadingContent(false);
-      setIsLoadMore(false);
-    }
-  }, [currentFolderId, token, sortField, sortDirection]);
-
-  const handleLoadMore = useCallback(() => {
-    fetchContent(true);
-  }, [fetchContent]);
-
-  useEffect(() => { fetchContent(false); }, [fetchContent]);
   useEffect(() => { setUploadFolderId(currentFolderId); }, [currentFolderId, setUploadFolderId]);
   useEffect(() => {
     setOnUploadSuccess(fetchContent);
     return () => setOnUploadSuccess(undefined);
   }, [fetchContent, setOnUploadSuccess]);
 
-  // Polling for uploading files
-  useEffect(() => {
-    const hasUploading = files.some(f => f.status === 'uploading');
-    if (hasUploading && !searchQuery) {
-      const id = setInterval(fetchContent, 3000);
-      return () => clearInterval(id);
+  // ── Coordination handlers ────────────────────────────────────────────────────
+  const onCreateFolder = useCallback(async (name: string) => {
+    const ok = await actions.handleCreateFolder(name);
+    if (ok) setShowCreateFolder(false);
+  }, [actions]);
+
+  const handleItemClick = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: ItemType) => {
+    if (e.ctrlKey || e.metaKey || e.shiftKey) {
+      selection.handleSelect(item.id, e, orderedIds);
+    } else if (type === 'folder') {
+      setCurrentFolderId(item.id);
+    } else {
+      const file = item as FileRecord;
+      if (file.status === 'complete' || file.status === 'buffered') setPreviewFileId(file.id);
     }
-  }, [files, fetchContent, searchQuery]);
+  }, [selection, orderedIds, setCurrentFolderId]);
 
-  // Watch for upload conflicts in the queue
-  useEffect(() => {
-    const conflictItem = queue.find(item => item.errorMessage === 'conflict');
-    if (conflictItem && !pendingConflict) {
-      const fileInfo = conflictItem.conflictInfo;
-      if (fileInfo) {
-        setPendingConflict({
-          type: 'upload',
-          itemId: conflictItem.id,
-          conflictInfo: {
-            type: 'file',
-            id: fileInfo.existingItemId,
-            name: fileInfo.name,
-            suggestedName: '',
-            existingItemId: fileInfo.existingItemId,
-          },
-          existingItemName: fileInfo.name,
-          incomingSize: conflictItem.totalBytes,
-          incomingDate: new Date().toISOString(),
-        });
-      }
-    }
-  }, [queue, pendingConflict]);
-
-  // Handlers
-  const [createFolderError, setCreateFolderError] = useState<string | null>(null);
-
-  const handleCreateFolder = useCallback(async (name: string) => {
-    setCreateFolderError(null);
-    try {
-      await createFolder(name, currentFolderId);
-      setShowCreateFolder(false);
-      fetchContent();
-    } catch (error: unknown) {
-      if (isConflictError(error)) {
-        setCreateFolderError(t('createFolder.nameConflict'));
-      } else {
-        setCreateFolderError(t('dashboard.createFolderError'));
-      }
-    }
-  }, [currentFolderId, fetchContent, t]);
-
-  const handleDeleteFolder = useCallback(async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    try {
-      await deleteFolder(id);
-      fetchContent();
-      toast.success((ti) => (
-        <span className="flex items-center gap-2">
-          {t('dashboard.deletedFolder')}
-          <button onClick={async () => { toast.dismiss(ti.id); try { await restoreFolder(id); fetchContent(); } catch { toast.error(t('dashboard.undoError')); } }}
-            className="text-blue-500 font-semibold text-sm hover:underline ml-2 cursor-pointer">{t('dashboard.undo')}</button>
-        </span>
-      ), { duration: 5000 });
-    } catch { toast.error(t('dashboard.deleteStuckError')); }
-  }, [fetchContent, t]);
-
-  const handleDeleteFile = useCallback(async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    try {
-      await deleteFile(id);
-      fetchContent();
-      toast.success((ti) => (
-        <span className="flex items-center gap-2">
-          {t('dashboard.deletedFile')}
-          <button onClick={async () => { toast.dismiss(ti.id); try { await restoreFile(id); fetchContent(); } catch { toast.error(t('dashboard.undoError')); } }}
-            className="text-blue-500 font-semibold text-sm hover:underline ml-2 cursor-pointer">{t('dashboard.undo')}</button>
-        </span>
-      ), { duration: 5000 });
-    } catch { toast.error(t('dashboard.deleteStuckError')); }
-  }, [fetchContent, t]);
-
-  const handleDeleteStuckFile = useCallback(async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    setActionLoading(prev => new Set(prev).add(id));
-    try { await abortUpload(id); fetchContent(); }
-    catch { toast.error(t('dashboard.deleteStuckError')); }
-    finally { setActionLoading(prev => { const next = new Set(prev); next.delete(id); return next; }); }
-  }, [fetchContent, t]);
-
-  const handleRetryBuffer = useCallback(async (id: string) => {
-    try {
-      await retryBuffer(id);
-      setFiles(prev => prev.map(f => f.id === id ? { ...f, status: 'buffered', bufferRetries: 0 } : f));
-      toast.success(t('upload.complete'));
-    } catch {
-      toast.error(t('upload.failed'));
-    }
-  }, [t]);
-
-  const handleDownload = useCallback(async (fileId: string, filename: string) => {
-    setDownloadingFiles(prev => new Set(prev).add(fileId));
-    toast.loading(t('dashboard.downloadStarted'), { icon: '⬇️', duration: 2000 });
-    try {
-      const { url } = await requestDownloadToken(fileId);
-      const link = document.createElement('a');
-      link.href = API_URL + url;
-      link.setAttribute('download', filename);
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-    } catch (err: unknown) {
-      if (axios.isAxiosError(err) && err.response?.status === 429) {
-        const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset'], LOCALE_DATE_MAP[locale]);
-        toast.error(resetTime
-          ? t('dashboard.bandwidthExceededAt', { time: resetTime })
-          : t('dashboard.bandwidthExceeded'));
-      } else {
-        toast.error(t('dashboard.downloadError'));
-      }
-    } finally {
-      setTimeout(() => setDownloadingFiles(prev => { const n = new Set(prev); n.delete(fileId); return n; }), 2000);
-    }
-  }, [locale, t]);
-
-  // Batch download selected files/folders as ZIP
-  const handleBatchDownload = useCallback(async () => {
-    const ids = Array.from(selection.selectedIds);
-    const selectedFileIds = ids.filter(id => files.some(f => f.id === id));
-    const selectedFolderIds = ids.filter(id => folders.some(f => f.id === id));
-
-    // Single file, no folders → existing direct download
-    if (selectedFileIds.length === 1 && selectedFolderIds.length === 0) {
-      const file = files.find(f => f.id === selectedFileIds[0])!;
-      return handleDownload(file.id, file.filename);
-    }
-
-    // Build label
-    const label = selectedFolderIds.length === 1 && selectedFileIds.length === 0
-      ? folders.find(f => f.id === selectedFolderIds[0])?.name || 'download'
-      : `${ids.length} items`;
-
-    try {
-      await startDownload(
-        selectedFileIds.length > 0 ? selectedFileIds : undefined,
-        selectedFolderIds.length > 0 ? selectedFolderIds : undefined,
-        label,
-      );
-      selection.clearSelection();
-      toast.success(t('downloadZip.preparing'));
-    } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
-        if (err.response?.status === 409) {
-          toast.error(t('downloadZip.activeJob'));
-          return;
-        }
-        if (err.response?.status === 429) {
-          const resetTime = formatBandwidthResetTime(err.response.headers?.['x-bandwidth-reset'], LOCALE_DATE_MAP[locale]);
-          toast.error(resetTime
-            ? t('dashboard.bandwidthExceededAt', { time: resetTime })
-            : t('downloadZip.bandwidthExceeded'));
-          return;
-        }
-      }
-      toast.error(t('downloadZip.failed'));
-    }
-  }, [selection, files, folders, startDownload, handleDownload, t, locale]);
-
-  // Batch delete selected items
-  const handleBatchDelete = useCallback(async () => {
-    const ids = Array.from(selection.selectedIds);
-    for (const id of ids) {
-      const isFolder = folders.some(f => f.id === id);
-      try {
-        if (isFolder) {
-          await deleteFolder(id);
-        } else {
-          await deleteFile(id);
-        }
-      } catch {
-        toast.error(t('dashboard.deleteStuckError'));
-      }
-    }
-    selection.clearSelection();
-    fetchContent();
-    toast.success(t('dashboard.deletedFile'));
-  }, [selection, folders, fetchContent, t]);
-
-  // Batch move: open the move dialog
-  const handleBatchMoveOpen = useCallback(() => {
-    setActiveDialog('batchMove');
-  }, []);
-
-  const handleBatchMoveConfirm = useCallback(async (destFolderId: string | null) => {
-    const ids = Array.from(selection.selectedIds);
-    for (const id of ids) {
-      const isFolder = folders.some(f => f.id === id);
-      const type: 'file' | 'folder' = isFolder ? 'folder' : 'file';
-
-      const applyStored = applyToAllRef.current;
-      if (applyStored) {
-        const action = applyStored === 'skip' ? 'skip' : applyStored === 'overwrite' ? 'overwrite' : applyStored === 'keepBoth' ? 'rename' : 'merge';
-        try {
-          await moveItem(type, id, destFolderId, action);
-        } catch (error: unknown) {
-          if (!isConflictError(error)) {
-            toast.error(t('dashboard.moveError'));
-          }
-        }
-        continue;
-      }
-
-      try {
-        await moveItem(type, id, destFolderId);
-      } catch (error: unknown) {
-        if (isConflictError(error)) {
-          const conflict = parseConflictResponse(error);
-          if (!conflict) continue;
-          const existingItem = isFolder
-            ? folders.find(f => f.id === conflict.existingItemId)
-            : files.find(f => f.id === conflict.existingItemId);
-          const movingItem = isFolder
-            ? folders.find(f => f.id === id)
-            : files.find(f => f.id === id);
-
-          setPendingConflict({
-            type: 'move',
-            itemId: id,
-            conflictInfo: conflict,
-            destinationFolderId: destFolderId,
-            existingItemName: type === 'folder' && existingItem ? (existingItem as FolderRecord).name : type === 'file' && existingItem ? (existingItem as FileRecord).filename : conflict.name,
-            existingItemDate: existingItem?.updatedAt,
-            incomingSize: type === 'file' && movingItem ? (movingItem as FileRecord).size : undefined,
-            incomingDate: movingItem?.updatedAt,
-          });
-          return;
-        }
-        toast.error(t('dashboard.moveError'));
-      }
-    }
-
-    selection.clearSelection();
-    setActiveDialog('none');
-    fetchContent();
-  }, [selection, folders, files, fetchContent, t]);
-
-  // Resolve conflict from dialog — works for both move and upload conflicts
-  const handleConflictResolution = useCallback(async (action: ConflictResolution, applyToAll: boolean) => {
-    if (!pendingConflict) return;
-    const { type, itemId, destinationFolderId } = pendingConflict;
-
-    if (applyToAll) {
-      applyToAllRef.current = action;
-    }
-
-    if (type === 'move') {
-      const backendAction = action === 'skip' ? 'skip' : action === 'overwrite' ? 'overwrite' : action === 'keepBoth' ? 'rename' : 'merge';
-      try {
-        const itemType = folders.some(f => f.id === itemId) ? 'folder' : 'file';
-        await moveItem(itemType, itemId, destinationFolderId ?? null, backendAction);
-        if (action !== 'skip') {
-          toast.success(
-            action === 'overwrite' ? t('conflict.overwriteSuccess')
-              : action === 'keepBoth' ? t('conflict.renamed')
-                : t('conflict.merged'),
-          );
-        } else {
-          toast.success(t('conflict.skipped'));
-        }
-        fetchContent();
-      } catch (error: unknown) {
-        if (!isConflictError(error)) {
-          toast.error(t('dashboard.moveError'));
-        }
-      }
-    } else if (type === 'upload') {
-      await resolveConflict(itemId, action);
-    }
-
-    setPendingConflict(null);
-  }, [pendingConflict, folders, fetchContent, resolveConflict, t]);
-
-  const handleDragStart = (e: React.DragEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
-    setDraggedItem({ id: item.id, type }); e.dataTransfer.effectAllowed = 'move';
-  };
-  const handleDragOver = (e: React.DragEvent, folderId: string | null) => {
-    e.preventDefault(); e.stopPropagation();
-    if (draggedItem && draggedItem.id !== folderId) setDragOverFolderId(folderId);
-  };
-  const handleDragLeave = (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragOverFolderId(null); };
-  const handleDrop = async (e: React.DragEvent, targetFolderId: string | null) => {
-    e.preventDefault(); e.stopPropagation(); setDragOverFolderId(null);
-    if (!draggedItem || targetFolderId === (currentFolderId || null) || draggedItem.id === targetFolderId) return;
-
-    try {
-      await moveItem(draggedItem.type, draggedItem.id, targetFolderId);
-      fetchContent();
-    } catch (error: unknown) {
-      if (isConflictError(error)) {
-        const conflict = parseConflictResponse(error);
-        if (!conflict) return;
-        const existingItem = draggedItem.type === 'folder'
-          ? folders.find(f => f.id === conflict.existingItemId)
-          : files.find(f => f.id === conflict.existingItemId);
-        const movingItem = draggedItem.type === 'folder'
-          ? folders.find(f => f.id === draggedItem.id)
-          : files.find(f => f.id === draggedItem.id);
-
-        setPendingConflict({
-          type: 'move',
-          itemId: draggedItem.id,
-          conflictInfo: conflict,
-          destinationFolderId: targetFolderId,
-          existingItemName: draggedItem.type === 'folder' && existingItem ? (existingItem as FolderRecord).name : draggedItem.type === 'file' && existingItem ? (existingItem as FileRecord).filename : conflict.name,
-          existingItemDate: existingItem?.updatedAt,
-          incomingSize: draggedItem.type === 'file' && movingItem ? (movingItem as FileRecord).size : undefined,
-          incomingDate: movingItem?.updatedAt,
-        });
-        return;
-      }
-      toast.error(t('dashboard.moveError'));
-    }
-    setDraggedItem(null);
-  };
-
-  const openContextMenu = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
+  const openContextMenu = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: ItemType) => {
     e.preventDefault(); e.stopPropagation();
     if (!selection.isSelected(item.id)) {
       selection.clearSelection();
@@ -598,49 +142,28 @@ export default function Dashboard() {
     setContextMenu(prev => ({ ...prev, isOpen: false }));
   }, [contextMenu.item, contextMenu.type]);
 
-  // Handle click on an item (selection)
-  const handleItemClick = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => {
-    if (e.ctrlKey || e.metaKey || e.shiftKey) {
-      selection.handleSelect(item.id, e, orderedIds);
-    } else {
-      if (type === 'folder') {
-        setCurrentFolderId(item.id);
-      } else {
-        const file = item as FileRecord;
-        if (file.status === 'complete' || file.status === 'buffered') setPreviewFileId(file.id);
-      }
-    }
-  }, [selection, orderedIds]);
-
-  // Handle context menu actions for batch
   const handleContextMenuDelete = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     setContextMenu(prev => ({ ...prev, isOpen: false }));
     if (selection.selectedCount > 1) {
-      handleBatchDelete();
+      actions.handleBatchDelete();
     } else if (contextMenu.item) {
-      if (contextMenu.type === 'folder') {
-        handleDeleteFolder(e, contextMenu.item.id);
-      } else {
-        handleDeleteFile(e, contextMenu.item.id);
-      }
+      if (contextMenu.type === 'folder') actions.handleDeleteFolder(e, contextMenu.item.id);
+      else actions.handleDeleteFile(e, contextMenu.item.id);
     }
-  }, [selection.selectedCount, contextMenu, handleBatchDelete, handleDeleteFolder, handleDeleteFile]);
+  }, [selection.selectedCount, contextMenu, actions]);
 
   const handleContextMenuMove = useCallback(() => {
     setContextMenu(prev => ({ ...prev, isOpen: false }));
-    if (selection.selectedCount > 1) {
-      handleBatchMoveOpen();
-    } else {
-      handleOpenDialog('move');
-    }
-  }, [selection.selectedCount, handleBatchMoveOpen, handleOpenDialog]);
+    if (selection.selectedCount > 1) setActiveDialog('batchMove');
+    else handleOpenDialog('move');
+  }, [selection.selectedCount, handleOpenDialog]);
 
-  // Batch move dummy item (stable reference)
   const batchMoveItem = useMemo(() => ({
     id: '__batch__', name: `${selection.selectedCount} items`,
     parentId: null, userId: '', visibility: 'PRIVATE',
-    shareToken: null, createdAt: '', updatedAt: '',
+    shareToken: null, s3PublicAccess: false, s3PublicListObjects: false,
+    createdAt: '', updatedAt: '',
   } as FolderRecord), [selection.selectedCount]);
 
   const batchExcludeIds = useMemo(
@@ -649,7 +172,11 @@ export default function Dashboard() {
   );
 
   if (!isReady) {
-    return (<div className="min-h-screen bg-gray-50 flex items-center justify-center"><Loader2 className="animate-spin text-blue-500" size={32} /></div>);
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <Spinner size={32} />
+      </div>
+    );
   }
 
   return (
@@ -658,13 +185,10 @@ export default function Dashboard() {
       <main className="flex-1 flex flex-col min-w-0 bg-white relative"
         onClick={(e) => {
           if (e.target === e.currentTarget || (e.target as HTMLElement).closest('[data-content-area]')) {
-            if (!e.ctrlKey && !e.metaKey && !e.shiftKey) {
-              selection.clearSelection();
-            }
+            if (!e.ctrlKey && !e.metaKey && !e.shiftKey) selection.clearSelection();
           }
         }}
       >
-
         <DashboardTopbar
           showMobileSearch={showMobileSearch} setShowMobileSearch={setShowMobileSearch}
           searchQuery={searchQuery} setSearchQuery={setSearchQuery}
@@ -676,38 +200,35 @@ export default function Dashboard() {
           setShowCreateFolder={setShowCreateFolder}
         />
 
-        {/* Scrollable Content */}
         <div className="flex-1 overflow-y-auto relative" ref={contentRef} style={{ userSelect: isDragging ? 'none' : undefined }}>
           <DragSelectOverlay rect={dragRect} />
-          <Breadcrumbs items={breadcrumbs} onNavigate={setCurrentFolderId} onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop} dragOverFolderId={dragOverFolderId} />
+          <Breadcrumbs items={breadcrumbs} onNavigate={setCurrentFolderId}
+            onDragOver={dnd.handleDragOver} onDragLeave={dnd.handleDragLeave} onDrop={dnd.handleDrop}
+            dragOverFolderId={dnd.dragOverFolderId} />
 
           <div className="px-2 py-6 md:px-6" data-content-area onClick={(e) => {
-            if (e.target === e.currentTarget && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-              selection.clearSelection();
-            }
+            if (e.target === e.currentTarget && !e.ctrlKey && !e.metaKey && !e.shiftKey) selection.clearSelection();
           }}>
             <DashboardContent
               isLoadingContent={isLoadingContent}
-              folders={folders} files={files}
               visibleFolders={filteredFolders} visibleFiles={filteredFiles}
               filteredFoldersCount={filteredFolders.length} filteredFilesCount={filteredFiles.length}
               viewMode={viewMode} searchQuery={searchQuery}
               sortField={sortField} sortDirection={sortDirection} onSort={handleSort}
-              selection={selection} downloadingFiles={downloadingFiles} actionLoading={actionLoading}
-              dragOverFolderId={dragOverFolderId}
+              selection={selection} downloadingFiles={actions.downloadingFiles} actionLoading={actions.actionLoading}
+              dragOverFolderId={dnd.dragOverFolderId}
               hasMore={hasMore} loadMoreRef={loadMoreRef}
               onItemClick={handleItemClick}
-              onDragStart={handleDragStart} onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave} onDrop={handleDrop}
+              onDragStart={dnd.handleDragStart} onDragOver={dnd.handleDragOver}
+              onDragLeave={dnd.handleDragLeave} onDrop={dnd.handleDrop}
               onContextMenu={openContextMenu}
-              onDownload={handleDownload} onDeleteStuckFile={handleDeleteStuckFile}
-              onRetryBuffer={handleRetryBuffer}
+              onDownload={actions.handleDownload} onDeleteStuckFile={actions.handleDeleteStuckFile}
+              onRetryBuffer={actions.handleRetryBuffer}
             />
           </div>
         </div>
       </main>
 
-      {/* Context Menu */}
       {contextMenu.isOpen && contextMenu.item && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} itemType={contextMenu.type}
           selectionCount={selection.selectedCount}
@@ -716,55 +237,33 @@ export default function Dashboard() {
           onShare={() => handleOpenDialog('share')}
           onDetails={() => handleOpenDialog('details')}
           onDelete={handleContextMenuDelete}
-          onDownload={handleBatchDownload}
+          onDownload={actions.handleBatchDownload}
         />
       )}
 
-      {/* Selection Action Bar */}
       <SelectionActionBar
         selectedCount={selection.selectedCount}
         onClear={selection.clearSelection}
         variant="dashboard"
-        onDelete={handleBatchDelete}
-        onMove={handleBatchMoveOpen}
-        onDownload={handleBatchDownload}
+        onDelete={actions.handleBatchDelete}
+        onMove={handleContextMenuMove}
+        onDownload={actions.handleBatchDownload}
       />
 
-      {/* Dialogs */}
       <DashboardDialogs
         showCreateFolder={showCreateFolder} setShowCreateFolder={setShowCreateFolder}
-        onCreateFolder={handleCreateFolder}
-        createFolderError={createFolderError} setCreateFolderError={setCreateFolderError}
+        onCreateFolder={onCreateFolder}
+        createFolderError={actions.createFolderError} setCreateFolderError={actions.setCreateFolderError}
         activeDialog={activeDialog} setActiveDialog={setActiveDialog}
         dialogItem={dialogItem} dialogItemType={dialogItemType}
         fetchContent={fetchContent}
         batchExcludeIds={batchExcludeIds}
         batchMoveItemToMove={batchMoveItem}
-        onBatchMoveConfirm={handleBatchMoveConfirm}
+        onBatchMoveConfirm={actions.handleBatchMoveConfirm}
         previewFileId={previewFileId} setPreviewFileId={setPreviewFileId}
-        onMoveConflict={(itemId, itemType, error) => {
-          const conflict = parseConflictResponse(error);
-          if (!conflict) return;
-          const existingItem = itemType === 'folder'
-            ? folders.find(f => f.id === conflict.existingItemId)
-            : files.find(f => f.id === conflict.existingItemId);
-          const movingItem = itemType === 'folder'
-            ? folders.find(f => f.id === itemId)
-            : files.find(f => f.id === itemId);
-
-          setPendingConflict({
-            type: 'move',
-            itemId,
-            conflictInfo: conflict,
-            existingItemName: itemType === 'folder' && existingItem ? (existingItem as FolderRecord).name : itemType === 'file' && existingItem ? (existingItem as FileRecord).filename : conflict.name,
-            existingItemDate: existingItem?.updatedAt,
-            incomingSize: itemType === 'file' && movingItem ? (movingItem as FileRecord).size : undefined,
-            incomingDate: movingItem?.updatedAt,
-          });
-        }}
+        onMoveConflict={buildMoveConflict}
       />
 
-      {/* Conflict Dialog */}
       {pendingConflict && (
         <ConflictDialog
           isOpen={!!pendingConflict}

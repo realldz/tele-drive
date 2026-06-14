@@ -25,9 +25,10 @@ fi
 # ─── Apply envsubst to template ──────────────────────────────────────
 echo "[nginx] Rendering nginx.conf from template..."
 export APP_DOMAIN="${APP_DOMAIN:-_}"
+export S3_DOMAIN="${S3_DOMAIN:-s3.example.com}"
 export SSL_CERT_FILE="${SSL_CERT_FILE}"
 export SSL_KEY_FILE="${SSL_KEY_FILE}"
-envsubst '${APP_DOMAIN} ${SSL_CERT_FILE} ${SSL_KEY_FILE}' \
+envsubst '${APP_DOMAIN} ${S3_DOMAIN} ${SSL_CERT_FILE} ${SSL_KEY_FILE}' \
   < /etc/nginx/conf.d/nginx.conf.template \
   > /etc/nginx/conf.d/default.conf
 

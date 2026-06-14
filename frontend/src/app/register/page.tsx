@@ -1,10 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import { useAuth } from '@/components/auth-context';
-import AppLink from '@/components/app-link';
-import { useI18n } from '@/components/i18n-context';
-import { useNavigation } from '@/components/navigation-loader';
+import { useAuth } from '@/providers/auth-context';
+import AppLink from '@/components/atoms/app-link';
+import { useI18n } from '@/providers/i18n-context';
+import { useNavigation } from '@/components/molecules/navigation-loader';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import { UserPlus, Loader2 } from 'lucide-react';
 import { getApiErrorMessage } from '@/lib/api';

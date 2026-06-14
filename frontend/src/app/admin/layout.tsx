@@ -2,9 +2,9 @@
 
 import { useState } from 'react';
 import { Menu } from 'lucide-react';
-import { useI18n } from '@/components/i18n-context';
+import { useI18n } from '@/providers/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
-import { useNavigation } from '@/components/navigation-loader';
+import { useNavigation } from '@/components/molecules/navigation-loader';
 import { useAppNavigate } from '@/hooks/use-app-navigate';
 import AdminSidebar from './components/admin-sidebar';
 

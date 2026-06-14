@@ -103,8 +103,12 @@ model FileRecord {
   // ETag — MD5 của plaintext content (PutObject), hoặc MD5-of-part-MD5s-N (Multipart)
   etag              String?     // Stored at upload time for S3 ETag compatibility
 
-  // Soft delete
-  deletedAt         DateTime?   // Thùng rác
+  // Soft delete and event-driven deletion tracking
+  deletedAt              DateTime?
+  telegram_deleted       Boolean     @default(false)
+  telegram_delete_failed Boolean     @default(false)
+  delete_retry_count     Int         @default(0)
+  last_retry_at          DateTime?
 
   folderId          String?
   folder            Folder?     @relation(fields: [folderId], references: [id], onDelete: Cascade)
@@ -115,6 +119,8 @@ model FileRecord {
   updatedAt         DateTime    @updatedAt
 
   @@index([status, createdAt])
+  @@index([deletedAt, telegram_deleted])
+  @@index([telegram_delete_failed, delete_retry_count, last_retry_at])
 }
 
 /// S3 Credentials — AccessKeyId/SecretAccessKey per user cho S3-compatible API

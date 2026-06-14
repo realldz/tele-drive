@@ -542,6 +542,15 @@ export class S3AuthService {
   }
 
   /**
+   * Decrypt stored secret — public wrapper for the gRPC GetS3Credential handler,
+   * which returns the plaintext secret to the Go data plane (over the trusted
+   * docker-internal channel) so Go can verify SigV4 without MASTER_SECRET.
+   */
+  decryptSecretPublic(encryptedSecret: string): string {
+    return this.decryptSecret(encryptedSecret);
+  }
+
+  /**
    * Decrypt stored secret.
    */
   private decryptSecret(encryptedSecret: string): string {
