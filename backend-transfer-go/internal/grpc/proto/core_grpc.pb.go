@@ -20,6 +20,7 @@ const _ = grpc.SupportPackageIsVersion9
 
 const (
 	CoreService_ReportChunkResults_FullMethodName     = "/core.CoreService/ReportChunkResults"
+	CoreService_ReportChunkBuffered_FullMethodName    = "/core.CoreService/ReportChunkBuffered"
 	CoreService_ReportFileComplete_FullMethodName     = "/core.CoreService/ReportFileComplete"
 	CoreService_GetFileMetadata_FullMethodName        = "/core.CoreService/GetFileMetadata"
 	CoreService_CollectZipEntries_FullMethodName      = "/core.CoreService/CollectZipEntries"
@@ -51,6 +52,7 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type CoreServiceClient interface {
 	ReportChunkResults(ctx context.Context, in *ReportChunkResultsRequest, opts ...grpc.CallOption) (*ReportChunkResultsResponse, error)
+	ReportChunkBuffered(ctx context.Context, in *ReportChunkBufferedRequest, opts ...grpc.CallOption) (*ReportChunkBufferedResponse, error)
 	ReportFileComplete(ctx context.Context, in *ReportFileCompleteRequest, opts ...grpc.CallOption) (*Empty, error)
 	GetFileMetadata(ctx context.Context, in *GetFileMetadataRequest, opts ...grpc.CallOption) (*FileMetadata, error)
 	CollectZipEntries(ctx context.Context, in *CollectZipEntriesRequest, opts ...grpc.CallOption) (*CollectZipEntriesResponse, error)
@@ -98,6 +100,16 @@ func (c *coreServiceClient) ReportChunkResults(ctx context.Context, in *ReportCh
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(ReportChunkResultsResponse)
 	err := c.cc.Invoke(ctx, CoreService_ReportChunkResults_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *coreServiceClient) ReportChunkBuffered(ctx context.Context, in *ReportChunkBufferedRequest, opts ...grpc.CallOption) (*ReportChunkBufferedResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ReportChunkBufferedResponse)
+	err := c.cc.Invoke(ctx, CoreService_ReportChunkBuffered_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -349,6 +361,7 @@ func (c *coreServiceClient) GetSystemSettings(ctx context.Context, in *GetSystem
 // for forward compatibility.
 type CoreServiceServer interface {
 	ReportChunkResults(context.Context, *ReportChunkResultsRequest) (*ReportChunkResultsResponse, error)
+	ReportChunkBuffered(context.Context, *ReportChunkBufferedRequest) (*ReportChunkBufferedResponse, error)
 	ReportFileComplete(context.Context, *ReportFileCompleteRequest) (*Empty, error)
 	GetFileMetadata(context.Context, *GetFileMetadataRequest) (*FileMetadata, error)
 	CollectZipEntries(context.Context, *CollectZipEntriesRequest) (*CollectZipEntriesResponse, error)
@@ -394,6 +407,9 @@ type UnimplementedCoreServiceServer struct{}
 
 func (UnimplementedCoreServiceServer) ReportChunkResults(context.Context, *ReportChunkResultsRequest) (*ReportChunkResultsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportChunkResults not implemented")
+}
+func (UnimplementedCoreServiceServer) ReportChunkBuffered(context.Context, *ReportChunkBufferedRequest) (*ReportChunkBufferedResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReportChunkBuffered not implemented")
 }
 func (UnimplementedCoreServiceServer) ReportFileComplete(context.Context, *ReportFileCompleteRequest) (*Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReportFileComplete not implemented")
@@ -502,6 +518,24 @@ func _CoreService_ReportChunkResults_Handler(srv interface{}, ctx context.Contex
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(CoreServiceServer).ReportChunkResults(ctx, req.(*ReportChunkResultsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _CoreService_ReportChunkBuffered_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReportChunkBufferedRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(CoreServiceServer).ReportChunkBuffered(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: CoreService_ReportChunkBuffered_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(CoreServiceServer).ReportChunkBuffered(ctx, req.(*ReportChunkBufferedRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -948,6 +982,10 @@ var CoreService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReportChunkResults",
 			Handler:    _CoreService_ReportChunkResults_Handler,
+		},
+		{
+			MethodName: "ReportChunkBuffered",
+			Handler:    _CoreService_ReportChunkBuffered_Handler,
 		},
 		{
 			MethodName: "ReportFileComplete",

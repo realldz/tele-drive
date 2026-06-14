@@ -62,9 +62,15 @@ func (cw *countingWriter) Write(p []byte) (n int, err error) {
 }
 
 func (uw *UploadWorker) ProcessInternalChunk(ctx context.Context, job ChunkJob) error {
-	// Cleanup temp file on return (success or failure)
+	// Cleanup temp file on return. For a chunked job that succeeds, ownership of
+	// the temp file is handed to the BatchReporter, which deletes it only after
+	// the completion report is durably flushed to NestJS — so a still-draining
+	// chunk stays downloadable from disk until its row flips to complete. In every
+	// other case (failure, or non-chunked success that reports synchronously) we
+	// delete here as before.
+	handedOff := false
 	defer func() {
-		if job.TempStorageKey != "" {
+		if !handedOff && job.TempStorageKey != "" {
 			_ = uw.tempStorage.Delete(job.TempStorageKey)
 		}
 	}()
@@ -113,7 +119,9 @@ func (uw *UploadWorker) ProcessInternalChunk(ctx context.Context, job ChunkJob) 
 	etag := fmt.Sprintf("\"%s\"", md5Hex)
 
 	if job.IsChunked {
-		// Chunk path: report via batcher (NestJS upserts FileChunk)
+		// Chunk path: report via batcher (NestJS upserts FileChunk). Hand the temp
+		// file to the reporter — it deletes it only after the completion report is
+		// durably flushed, keeping the chunk downloadable from disk until then.
 		uw.batchReporter.Report(&pb.ChunkResult{
 			FileId:            job.FileID,
 			ChunkIndex:        int32(job.ChunkIndex),
@@ -124,7 +132,8 @@ func (uw *UploadWorker) ProcessInternalChunk(ctx context.Context, job ChunkJob) 
 			Size:              int32(counter.count),
 			Etag:              etag,
 			ChunkId:           job.ID,
-		})
+		}, job.TempStorageKey)
+		handedOff = true
 		uw.logger.Info("Chunk dispatched via gRPC", "chunkIndex", job.ChunkIndex, "fileId", job.FileID)
 		return nil
 	}

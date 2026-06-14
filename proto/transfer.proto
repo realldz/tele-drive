@@ -49,4 +49,10 @@ message FlushAndConfirmResponse {
   int32 total_chunks = 2;
   int32 completed_chunks = 3;
   repeated ChunkConfirmation chunks = 4;
+  // Chunks the client has handed off to Go = already-in-DB (completed) plus
+  // still-draining (queued/in-flight). Lets NestJS tell "client sent everything,
+  // background still uploading" (→ buffer & return OK) apart from "client never
+  // sent some chunk" (→ reject).
+  int32 received_chunks = 5;
+  bool all_received = 6;
 }

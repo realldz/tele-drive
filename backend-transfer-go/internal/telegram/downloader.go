@@ -113,7 +113,14 @@ func (d *Downloader) GetDownloadInfo(meta *pb.FileMetadata) (*DownloadInfo, erro
 		iv, _ = hex.DecodeString(meta.EncryptionIv)
 	}
 
-	if meta.Status == "buffered" {
+	// A buffered SINGLE file is one blob on disk → serve it directly. A buffered
+	// CHUNKED file has no single blob; its parts live at chunk/{id}/{idx}.tmp and
+	// each is served individually by the chunked branch below (buffered chunk →
+	// temp disk, completed chunk → Telegram). Gating on !IsChunked is essential:
+	// treating a draining chunked file as a single buffered blob would advertise
+	// Content-Length=size but stream from a temp key that does not exist →
+	// ERR_CONTENT_LENGTH_MISMATCH.
+	if meta.Status == "buffered" && !meta.IsChunked {
 		// NestJS stores buffered single files at a random-UUID key; prefer the
 		// real key carried in metadata, fall back to the legacy convention.
 		tempKey := meta.TempStorageKey

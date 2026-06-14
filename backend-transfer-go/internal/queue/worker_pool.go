@@ -133,21 +133,13 @@ func (p *WorkerPool) decrementFileJob(fileID string) {
 	}
 }
 
-// WaitForFile waits until all active jobs for a specific file complete
-func (p *WorkerPool) WaitForFile(fileID string, timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	
-	for time.Now().Before(deadline) {
-		p.fileJobsMu.Lock()
-		count := p.fileJobs[fileID]
-		p.fileJobsMu.Unlock()
-		
-		if count <= 0 {
-			return true
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return false
+// OutstandingForFile returns the number of active jobs (queued, in-flight, or
+// awaiting retry) for a file. FlushAndConfirm adds this to the chunks already
+// landed on Telegram to compute how many the client has handed over in total.
+func (p *WorkerPool) OutstandingForFile(fileID string) int32 {
+	p.fileJobsMu.Lock()
+	defer p.fileJobsMu.Unlock()
+	return p.fileJobs[fileID]
 }
 
 func (p *WorkerPool) manageDelayedQueue() {

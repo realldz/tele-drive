@@ -57,22 +57,36 @@ func (s *TransferServer) EnqueueBufferedUpload(ctx context.Context, req *pb.Enqu
 
 func (s *TransferServer) FlushAndConfirm(ctx context.Context, req *pb.FlushAndConfirmRequest) (*pb.FlushAndConfirmResponse, error) {
 	s.logger.Info("FlushAndConfirm called", "fileId", req.FileId)
-	
-	// 1. Wait for active workers processing this file (max 15s)
-	s.workerPool.WaitForFile(req.FileId, 15*time.Second)
-	
-	// 2. Flush any buffered results for this file
+
+	// Buffered chunks return 200 to the client the instant they hit the worker
+	// queue, long before they reach Telegram (worker count + per-bot rate limiting
+	// pace the actual upload). The whole point of the async buffer is that the
+	// client never waits for Telegram, so we DO NOT block here until the queue
+	// drains. Instead we report two counts and let NestJS park the record as
+	// "buffered" — the background worker flips it to "complete" as chunks land.
+	//
+	//   completed = chunks already on Telegram and persisted in NestJS (DB-backed)
+	//   received  = completed + still-draining jobs Go holds for this file
+	//
+	// "received" answers the client's real question — "did I hand over every
+	// chunk?" — without waiting for the slow Telegram leg.
+
+	// Flush buffered chunk results so NestJS DB reflects everything the workers
+	// have finished uploading up to this instant.
 	s.batchReporter.FlushForFile(req.FileId)
-	
-	// 3. Query NestJS for final metadata to verify
+
+	// Jobs still queued / in-flight / awaiting retry for this file.
+	outstanding := s.workerPool.OutstandingForFile(req.FileId)
+
+	// Query NestJS for final metadata to count what has actually landed.
 	meta, err := s.coreClient.GetFileMetadata(ctx, req.FileId)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch metadata: %w", err)
 	}
-	
+
 	completedChunks := 0
 	var confirmed []*pb.ChunkConfirmation
-	
+
 	for _, c := range meta.Chunks {
 		if c.TelegramFileId != "" {
 			completedChunks++
@@ -87,11 +101,28 @@ func (s *TransferServer) FlushAndConfirm(ctx context.Context, req *pb.FlushAndCo
 			})
 		}
 	}
-	
+
+	receivedChunks := completedChunks + int(outstanding)
+	if receivedChunks > int(meta.TotalChunks) {
+		// Tiny window: a worker reported its chunk to the batch (now flushed to
+		// DB) but has not yet decremented the outstanding counter. Clamp so we
+		// never claim more chunks than the file declares.
+		receivedChunks = int(meta.TotalChunks)
+	}
+
+	s.logger.Info("FlushAndConfirm result",
+		"fileId", req.FileId,
+		"completed", completedChunks,
+		"outstanding", outstanding,
+		"received", receivedChunks,
+		"total", meta.TotalChunks)
+
 	return &pb.FlushAndConfirmResponse{
 		AllComplete:     completedChunks == int(meta.TotalChunks),
 		TotalChunks:     meta.TotalChunks,
 		CompletedChunks: int32(completedChunks),
+		ReceivedChunks:  int32(receivedChunks),
+		AllReceived:     receivedChunks == int(meta.TotalChunks),
 		Chunks:          confirmed,
 	}, nil
 }

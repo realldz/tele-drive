@@ -29,9 +29,16 @@ func (h *FileHandler) GetCachedMetadata(ctx context.Context, fileID string) (*pb
 		return nil, err
 	}
 
-	// Repopulate cache
-	metaJSON, _ := json.Marshal(meta)
-	h.redisClient.Set(ctx, cacheKey, metaJSON, time.Hour)
+	// Only cache terminal metadata. While a chunked upload is still draining
+	// (status uploading/buffered) its chunk list grows as each part lands on
+	// Telegram, so a snapshot taken mid-flight is incomplete. Caching it for an
+	// hour would keep serving that stale shape long after the record flips to
+	// "complete" — yielding Content-Length/body mismatches on download. "complete"
+	// is immutable, so it is the only status safe to cache.
+	if meta.Status == "complete" {
+		metaJSON, _ := json.Marshal(meta)
+		h.redisClient.Set(ctx, cacheKey, metaJSON, time.Hour)
+	}
 
 	return meta, nil
 }

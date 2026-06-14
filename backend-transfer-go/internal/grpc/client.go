@@ -59,6 +59,21 @@ func (c *CoreClient) ReportChunkResults(ctx context.Context, results []*pb.Chunk
 	return resp.Accepted, nil
 }
 
+// ReportChunkBuffered persists FileChunk rows (status="buffered",
+// telegramFileId=null) the instant Go accepts chunks to temp storage, before the
+// slow Telegram upload. This makes a still-draining chunked file fully visible to
+// the download path (each chunk served from temp disk) — the legacy NestJS
+// acceptChunk created these rows at receive time, and Go must do the same.
+func (c *CoreClient) ReportChunkBuffered(ctx context.Context, chunks []*pb.BufferedChunk) (int32, error) {
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	resp, err := c.client.ReportChunkBuffered(ctx, &pb.ReportChunkBufferedRequest{Chunks: chunks})
+	if err != nil {
+		return 0, err
+	}
+	return resp.Accepted, nil
+}
+
 func (c *CoreClient) ReportFileComplete(ctx context.Context, req *pb.ReportFileCompleteRequest) error {
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()

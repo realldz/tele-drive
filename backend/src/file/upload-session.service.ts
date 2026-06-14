@@ -680,21 +680,17 @@ export class UploadSessionService {
     if (!fileRecord) throw new NotFoundException('File record not found');
     if (fileRecord.status === 'complete') return fileRecord;
 
-    // Call Go to flush and confirm all chunks
+    // Ask Go for two counts: how many chunks have actually landed on Telegram
+    // (completed, DB-backed) and how many the client has handed over in total
+    // (received = completed + still-draining jobs Go holds). The async buffer's
+    // whole purpose is that the client never waits for the slow Telegram leg, so
+    // we must NOT block until everything drains — we decide based on `received`.
+    let confirmRes: Awaited<
+      ReturnType<typeof this.transferClient.flushAndConfirm>
+    >;
     try {
-      const confirmRes = await this.transferClient.flushAndConfirm(fileId);
-
-      // If not all chunks are uploaded on Go's side
-      if (!confirmRes.allComplete) {
-        throw new HttpException(
-          `Upload incomplete. Expected ${confirmRes.totalChunks} chunks, got ${confirmRes.completedChunks}.`,
-          HttpStatus.BAD_REQUEST,
-        );
-      }
+      confirmRes = await this.transferClient.flushAndConfirm(fileId);
     } catch (err) {
-      if (err instanceof HttpException) {
-        throw err;
-      }
       this.logger.error(
         `Failed to confirm chunks with Go for file ${fileId}`,
         err,
@@ -705,44 +701,81 @@ export class UploadSessionService {
       );
     }
 
-    // Go has flushed. Now query DB to verify
+    // The client genuinely did not upload every chunk — this is a real client
+    // error, not background draining. Reject so the client can retry the gap.
+    if (!confirmRes.allReceived) {
+      this.logger.warn(
+        `Chunked upload incomplete for ${fileId}: received ${confirmRes.receivedChunks}/${confirmRes.totalChunks} chunks`,
+      );
+      throw new HttpException(
+        `Upload incomplete. Expected ${confirmRes.totalChunks} chunks, got ${confirmRes.receivedChunks}.`,
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     const record = await this.prisma.fileRecord.findFirst({
       where: { id: fileId, userId, deletedAt: null },
       include: { chunks: true },
     });
-
     if (!record) {
       throw new NotFoundException('File record not found');
     }
 
-    const completeChunks = record.chunks.filter((c) => c.telegramFileId);
-    if (completeChunks.length < record.totalChunks) {
-      throw new BadRequestException('Chunks missing in database');
-    }
+    // Re-check after the metadata round-trip: a concurrent reportChunkResults
+    // flip may have already completed the record.
+    if (record.status === 'complete') return record;
 
-    const hasBuffered = record.chunks.some((c) => c.status === 'buffered');
+    const landed = record.chunks.filter((c) => c.telegramFileId).length;
 
-    const result = await this.prisma.$transaction(async (tx) => {
-      const targetStatus = hasBuffered ? 'buffered' : 'complete';
-      const updated = await tx.fileRecord.update({
-        where: { id: fileId },
-        data: { status: targetStatus },
+    // The client has handed over every chunk (all_received), so this upload
+    // always succeeds from the client's perspective — we return OK regardless of
+    // how many chunks have finished the slow Telegram leg:
+    //
+    //   all chunks landed → win the uploading/buffered → complete edge atomically
+    //   and charge storage quota exactly once (count===1 means we won, not a
+    //   racing chunk report). The file is now fully on Telegram and serveable.
+    //
+    //   still draining → park as "buffered" and return OK. Go persists every
+    //   chunk row (status=buffered, temp key) at receive time, so the download
+    //   path serves a draining chunked file part-by-part — buffered chunks from
+    //   temp disk, completed chunks from Telegram. The final chunk report flips
+    //   the record buffered → complete and charges quota then. "buffered" (not
+    //   "uploading") is required: the download-token guard only accepts
+    //   complete/buffered, so this is what makes download-while-draining reachable.
+    if (landed >= record.totalChunks) {
+      const flip = await this.prisma.fileRecord.updateMany({
+        where: { id: fileId, status: { in: ['uploading', 'buffered'] } },
+        data: { status: 'complete' },
       });
-
-      if (targetStatus === 'complete') {
-        await tx.user.update({
+      if (flip.count === 1) {
+        await this.prisma.user.update({
           where: { id: userId },
           data: { usedSpace: { increment: record.size } },
         });
       }
+      this.logger.log(
+        `Chunked upload completed: "${record.filename}" ` +
+          `(fileId: ${fileId}, ${record.totalChunks} chunks, ${record.size} bytes)`,
+      );
+    } else {
+      // Park as "buffered" so the file is downloadable while the remaining chunks
+      // drain. Guard on status='uploading' so we never clobber a "complete" a
+      // concurrent final-chunk report may have just won. Quota is charged on the
+      // → complete flip (here or in reportChunkResults), never on this edge.
+      await this.prisma.fileRecord.updateMany({
+        where: { id: fileId, status: 'uploading' },
+        data: { status: 'buffered' },
+      });
+      this.logger.log(
+        `Chunked upload accepted (buffering): "${record.filename}" ` +
+          `(fileId: ${fileId}, ${landed}/${record.totalChunks} chunks landed, ${record.size} bytes)`,
+      );
+    }
 
-      return updated;
+    return this.prisma.fileRecord.findFirstOrThrow({
+      where: { id: fileId },
+      include: { chunks: true },
     });
-
-    this.logger.log(
-      `Chunked upload completed: "${record.filename}" (fileId: ${fileId}, ${record.totalChunks} chunks, ${record.size} bytes)`,
-    );
-    return result;
   }
 
   async getUploadedChunks(fileId: string, userId: string) {

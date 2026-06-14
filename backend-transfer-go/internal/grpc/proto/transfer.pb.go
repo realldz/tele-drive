@@ -379,8 +379,14 @@ type FlushAndConfirmResponse struct {
 	TotalChunks     int32                  `protobuf:"varint,2,opt,name=total_chunks,json=totalChunks,proto3" json:"total_chunks,omitempty"`
 	CompletedChunks int32                  `protobuf:"varint,3,opt,name=completed_chunks,json=completedChunks,proto3" json:"completed_chunks,omitempty"`
 	Chunks          []*ChunkConfirmation   `protobuf:"bytes,4,rep,name=chunks,proto3" json:"chunks,omitempty"`
-	unknownFields   protoimpl.UnknownFields
-	sizeCache       protoimpl.SizeCache
+	// Chunks the client has handed off to Go = already-in-DB (completed) plus
+	// still-draining (queued/in-flight). Lets NestJS tell "client sent everything,
+	// background still uploading" (→ buffer & return OK) apart from "client never
+	// sent some chunk" (→ reject).
+	ReceivedChunks int32 `protobuf:"varint,5,opt,name=received_chunks,json=receivedChunks,proto3" json:"received_chunks,omitempty"`
+	AllReceived    bool  `protobuf:"varint,6,opt,name=all_received,json=allReceived,proto3" json:"all_received,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *FlushAndConfirmResponse) Reset() {
@@ -441,6 +447,20 @@ func (x *FlushAndConfirmResponse) GetChunks() []*ChunkConfirmation {
 	return nil
 }
 
+func (x *FlushAndConfirmResponse) GetReceivedChunks() int32 {
+	if x != nil {
+		return x.ReceivedChunks
+	}
+	return 0
+}
+
+func (x *FlushAndConfirmResponse) GetAllReceived() bool {
+	if x != nil {
+		return x.AllReceived
+	}
+	return false
+}
+
 var File_transfer_proto protoreflect.FileDescriptor
 
 const file_transfer_proto_rawDesc = "" +
@@ -470,12 +490,14 @@ const file_transfer_proto_rawDesc = "" +
 	"\x06bot_id\x18\x04 \x01(\x03R\x05botId\x12#\n" +
 	"\rencryption_iv\x18\x05 \x01(\tR\fencryptionIv\x12\x12\n" +
 	"\x04size\x18\x06 \x01(\x05R\x04size\x12\x12\n" +
-	"\x04etag\x18\a \x01(\tR\x04etag\"\xbf\x01\n" +
+	"\x04etag\x18\a \x01(\tR\x04etag\"\x8b\x02\n" +
 	"\x17FlushAndConfirmResponse\x12!\n" +
 	"\fall_complete\x18\x01 \x01(\bR\vallComplete\x12!\n" +
 	"\ftotal_chunks\x18\x02 \x01(\x05R\vtotalChunks\x12)\n" +
 	"\x10completed_chunks\x18\x03 \x01(\x05R\x0fcompletedChunks\x123\n" +
-	"\x06chunks\x18\x04 \x03(\v2\x1b.transfer.ChunkConfirmationR\x06chunks2\x9a\x02\n" +
+	"\x06chunks\x18\x04 \x03(\v2\x1b.transfer.ChunkConfirmationR\x06chunks\x12'\n" +
+	"\x0freceived_chunks\x18\x05 \x01(\x05R\x0ereceivedChunks\x12!\n" +
+	"\fall_received\x18\x06 \x01(\bR\vallReceived2\x9a\x02\n" +
 	"\x0fTransferService\x12V\n" +
 	"\x0fFlushAndConfirm\x12 .transfer.FlushAndConfirmRequest\x1a!.transfer.FlushAndConfirmResponse\x12h\n" +
 	"\x15EnqueueBufferedUpload\x12&.transfer.EnqueueBufferedUploadRequest\x1a'.transfer.EnqueueBufferedUploadResponse\x12E\n" +

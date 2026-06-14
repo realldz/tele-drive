@@ -49,6 +49,7 @@ export class GrpcCoreController {
     this.logger.debug(`Received ${data.results.length} chunk results from Go`);
 
     let accepted = 0;
+    const touchedFileIds = new Set<string>();
     for (const chunk of data.results) {
       try {
         await this.prisma.fileChunk.upsert({
@@ -81,6 +82,7 @@ export class GrpcCoreController {
           },
         });
         accepted++;
+        touchedFileIds.add(chunk.fileId);
       } catch (err) {
         this.logger.error(
           `Failed to upsert chunk ${chunk.chunkIndex} for file ${chunk.fileId}`,
@@ -89,7 +91,133 @@ export class GrpcCoreController {
       }
     }
 
+    // A chunked file is "complete" once every declared chunk has landed on
+    // Telegram. This handler is the SOLE place that performs the
+    // buffered/uploading → complete flip and charges storage quota, so the flip
+    // works no matter whether the client's /complete call arrives before or
+    // after the final chunk drains (the async buffer never blocks on Telegram).
+    for (const fileId of touchedFileIds) {
+      await this.finalizeChunkedFileIfLanded(fileId);
+    }
+
     return { accepted };
+  }
+
+  /**
+   * Persist a FileChunk row the instant Go accepts a chunk to temp storage,
+   * BEFORE the slow Telegram upload. The row carries the temp storage key and a
+   * null telegramFileId, so the download path can serve the chunk straight from
+   * temp disk while it drains — mirroring the legacy NestJS acceptChunk. The
+   * subsequent ReportChunkResults flips the same row (matched on
+   * fileId+chunkIndex) to status=complete with the Telegram coordinates. Upsert
+   * keeps this idempotent and avoids clobbering a row that already completed
+   * (e.g. a retried receive landing after the upload finished).
+   */
+  @GrpcMethod('CoreService', 'ReportChunkBuffered')
+  async reportChunkBuffered(data: {
+    chunks: Array<{
+      fileId: string;
+      chunkIndex: number;
+      size: number;
+      tempStorageKey: string;
+      encryptionIv: string;
+      etag: string;
+      chunkId: string;
+    }>;
+  }) {
+    if (!data.chunks || data.chunks.length === 0) {
+      return { accepted: 0 };
+    }
+
+    let accepted = 0;
+    for (const chunk of data.chunks) {
+      try {
+        await this.prisma.fileChunk.upsert({
+          where: {
+            fileId_chunkIndex: {
+              fileId: chunk.fileId,
+              chunkIndex: chunk.chunkIndex,
+            },
+          },
+          // Never downgrade a chunk that already completed; only refresh the
+          // buffered placeholder's temp key / metadata.
+          update: {},
+          create: {
+            id: chunk.chunkId || randomUUID(),
+            fileId: chunk.fileId,
+            chunkIndex: chunk.chunkIndex,
+            size: chunk.size,
+            telegramFileId: null,
+            tempStorageKey: chunk.tempStorageKey,
+            encryptionIv: chunk.encryptionIv || null,
+            etag: chunk.etag || null,
+            status: 'buffered',
+          },
+        });
+        accepted++;
+      } catch (err) {
+        this.logger.error(
+          `Failed to persist buffered chunk ${chunk.chunkIndex} for file ${chunk.fileId}`,
+          err,
+        );
+      }
+    }
+
+    this.logger.debug(
+      `Persisted ${accepted}/${data.chunks.length} buffered chunk rows from Go`,
+    );
+    return { accepted };
+  }
+
+  /**
+   * Flip a chunked FileRecord to `complete` and charge storage quota exactly
+   * once, but only after all declared chunks have landed on Telegram. The
+   * atomic `updateMany` guard (status in uploading/buffered → complete) ensures
+   * that of all the racing callers — concurrent chunk reports, or the client's
+   * /complete parking the record — exactly one wins the transition and thus
+   * charges quota a single time.
+   */
+  private async finalizeChunkedFileIfLanded(fileId: string): Promise<void> {
+    try {
+      const record = await this.prisma.fileRecord.findUnique({
+        where: { id: fileId },
+        select: {
+          status: true,
+          totalChunks: true,
+          size: true,
+          userId: true,
+          filename: true,
+        },
+      });
+      if (!record) return;
+      if (record.status === 'complete' || record.status === 'aborted') return;
+
+      const landed = await this.prisma.fileChunk.count({
+        where: { fileId, telegramFileId: { not: null } },
+      });
+      if (landed < record.totalChunks) return;
+
+      const flip = await this.prisma.fileRecord.updateMany({
+        where: { id: fileId, status: { in: ['uploading', 'buffered'] } },
+        data: { status: 'complete' },
+      });
+      if (flip.count !== 1) return; // another caller already won the transition
+
+      await this.prisma.user.update({
+        where: { id: record.userId },
+        data: { usedSpace: { increment: record.size } },
+      });
+
+      this.logger.log(
+        `Chunked file completed via chunk report: "${record.filename}" ` +
+          `(fileId: ${fileId}, ${landed}/${record.totalChunks} chunks, ${record.size} bytes)`,
+      );
+    } catch (err) {
+      this.logger.error(
+        `Failed to finalize chunked file ${fileId} after chunk report`,
+        err,
+      );
+    }
   }
 
   @GrpcMethod('CoreService', 'ReportFileComplete')

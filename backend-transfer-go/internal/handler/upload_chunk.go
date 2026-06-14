@@ -2,14 +2,37 @@ package handler
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
 
 	"github.com/labstack/echo/v4"
+	pb "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/queue"
 )
+
+// persistBufferedChunk records a FileChunk row (status=buffered, no Telegram
+// coordinates yet) the instant a chunk lands in temp storage, so the download
+// path can serve it straight from disk while it waits in the worker queue.
+// Best-effort: on failure we log and proceed — the chunk still uploads, and the
+// later completion report creates the row; we only lose download-while-draining
+// for this one chunk. Mirrors the legacy NestJS acceptChunk, which persisted the
+// row at receive time. Plaintext is buffered to disk, so no IV/etag is needed
+// here; the worker fills those in on completion.
+func (h *FileHandler) persistBufferedChunk(ctx context.Context, fileID string, chunkIndex int, size int64, storageKey string) {
+	if _, err := h.grpcClient.ReportChunkBuffered(ctx, []*pb.BufferedChunk{{
+		FileId:         fileID,
+		ChunkIndex:     int32(chunkIndex),
+		Size:           int32(size),
+		TempStorageKey: storageKey,
+		ChunkId:        generateUUID(),
+	}}); err != nil {
+		h.logger.Warn("Failed to persist buffered chunk row; download-while-draining unavailable for this chunk",
+			"fileId", fileID, "chunkIndex", chunkIndex, "error", err)
+	}
+}
 
 func (h *FileHandler) UploadChunkWithToken(c echo.Context) error {
 	token := c.QueryParam("token")
@@ -142,6 +165,10 @@ func (h *FileHandler) UploadChunkWithToken(c echo.Context) error {
 		})
 	}
 
+	// Persist the buffered chunk row now (before Telegram) so the file is
+	// downloadable from temp disk while it drains.
+	h.persistBufferedChunk(c.Request().Context(), fileID, chunkIndex, size, storageKey)
+
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":     "buffered",
 		"chunkIndex": chunkIndex,
@@ -270,6 +297,10 @@ func (h *FileHandler) UploadChunk(c echo.Context) error {
 			"message": "Upload buffer is temporarily full, please retry",
 		})
 	}
+
+	// Persist the buffered chunk row now (before Telegram) so the file is
+	// downloadable from temp disk while it drains.
+	h.persistBufferedChunk(c.Request().Context(), fileID, chunkIndex, size, storageKey)
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"status":     "buffered",

@@ -8,6 +8,8 @@ interface TransferService {
     allComplete: boolean;
     totalChunks: number;
     completedChunks: number;
+    receivedChunks: number;
+    allReceived: boolean;
     chunks: Array<{
       chunkIndex: number;
       telegramFileId: string;
