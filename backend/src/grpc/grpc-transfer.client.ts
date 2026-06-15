@@ -47,6 +47,16 @@ export class GrpcTransferClient implements OnModuleInit {
         keepaliveTimeoutMs: 10000,
         keepalivePermitWithoutCalls: 1,
       },
+      // Client-side load balancing across multiple Go transfer instances.
+      // Requires a dns:/// target (e.g. dns:///backend-transfer:50051) so the
+      // resolver returns every A-record; round_robin then spreads RPCs over all
+      // READY subchannels instead of pinning one backend via pick_first.
+      channelOptions: {
+        'grpc.service_config': JSON.stringify({
+          loadBalancingConfig: [{ round_robin: {} }],
+        }),
+        'grpc.dns_min_time_between_resolutions_ms': 5000,
+      },
     },
   })
   private grpcClient!: microservices.ClientGrpc;

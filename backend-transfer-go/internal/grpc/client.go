@@ -21,6 +21,11 @@ type CoreClient struct {
 func NewCoreClient(nestjsURL string, logger *slog.Logger) (*CoreClient, error) {
 	conn, err := grpc.NewClient(nestjsURL,
 		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		// Client-side load balancing across multiple NestJS core instances.
+		// Requires a dns:/// target (e.g. dns:///backend-core:50051) so the
+		// resolver returns every A-record; round_robin then spreads RPCs over
+		// all READY SubConns instead of pinning one backend via pick_first.
+		grpc.WithDefaultServiceConfig(`{"loadBalancingConfig":[{"round_robin":{}}]}`),
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                30 * time.Second,
 			Timeout:             10 * time.Second,
