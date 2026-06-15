@@ -127,13 +127,16 @@ func (s *TransferServer) FlushAndConfirm(ctx context.Context, req *pb.FlushAndCo
 	}, nil
 }
 
-func StartGRPCServer(ctx context.Context, port int, server *TransferServer, logger *slog.Logger) error {
+// StartGRPCServer serves the TransferService. When certFile/keyFile/caFile are
+// all set, the server requires mTLS (every client must present a cert signed by
+// the internal CA); when empty it falls back to plaintext for local dev.
+func StartGRPCServer(ctx context.Context, port int, server *TransferServer, certFile, keyFile, caFile string, logger *slog.Logger) error {
 	lis, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return fmt.Errorf("failed to listen on gRPC port %d: %w", port, err)
 	}
 
-	grpcServer := grpc.NewServer(
+	opts := []grpc.ServerOption{
 		grpc.KeepaliveParams(keepalive.ServerParameters{
 			Time:    30 * time.Second,
 			Timeout: 10 * time.Second,
@@ -142,7 +145,20 @@ func StartGRPCServer(ctx context.Context, port int, server *TransferServer, logg
 			MinTime:             10 * time.Second,
 			PermitWithoutStream: true,
 		}),
-	)
+	}
+
+	if certFile != "" && keyFile != "" && caFile != "" {
+		creds, credErr := ServerTLSCreds(certFile, keyFile, caFile)
+		if credErr != nil {
+			return fmt.Errorf("build server mTLS creds: %w", credErr)
+		}
+		opts = append(opts, grpc.Creds(creds))
+		logger.Info("gRPC server mTLS enabled", "cert", certFile)
+	} else {
+		logger.Warn("gRPC server running in PLAINTEXT (no GRPC_TLS_* configured)")
+	}
+
+	grpcServer := grpc.NewServer(opts...)
 
 	pb.RegisterTransferServiceServer(grpcServer, server)
 

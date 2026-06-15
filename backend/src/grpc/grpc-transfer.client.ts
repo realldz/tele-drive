@@ -2,6 +2,14 @@ import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import * as microservices from '@nestjs/microservices';
 import { join } from 'path';
 import { Observable, lastValueFrom } from 'rxjs';
+import { buildClientCredentials } from './grpc-tls';
+
+// mTLS when GRPC_TLS_* are set: NestJS presents its leaf cert and verifies the
+// Go server against the internal CA. The dns:/// authority (backend-transfer)
+// must match the Go cert SAN for hostname verification. Independent of the
+// round_robin LB below — credentials are a transport-layer concern. null →
+// plaintext fallback for local dev.
+const grpcTransferCredentials = buildClientCredentials();
 
 interface TransferService {
   flushAndConfirm(data: { fileId: string }): Observable<{
@@ -42,6 +50,9 @@ export class GrpcTransferClient implements OnModuleInit {
       package: 'transfer',
       protoPath: join(__dirname, 'proto/transfer.proto'),
       url: process.env.GO_TRANSFER_GRPC_URL || 'localhost:50051',
+      ...(grpcTransferCredentials
+        ? { credentials: grpcTransferCredentials }
+        : {}),
       keepalive: {
         keepaliveTimeMs: 30000,
         keepaliveTimeoutMs: 10000,

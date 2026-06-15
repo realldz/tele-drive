@@ -73,8 +73,16 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 7. Initialize gRPC client (calls NestJS Core API)
-	coreClient, err := appGrpc.NewCoreClient(cfg.NestJSGrpcURL, log)
+	// 7. Initialize gRPC client (calls NestJS Core API). When GRPC_TLS_* are set
+	// the client presents this service's leaf cert and verifies NestJS against
+	// the internal CA; ServerName "backend-core" must match the NestJS cert SAN
+	// (the dns:/// authority it dials).
+	coreClient, err := appGrpc.NewCoreClient(cfg.NestJSGrpcURL, appGrpc.CoreTLSConfig{
+		CertFile:   cfg.GrpcTLSCert,
+		KeyFile:    cfg.GrpcTLSKey,
+		CAFile:     cfg.GrpcTLSCA,
+		ServerName: "backend-core",
+	}, log)
 	if err != nil {
 		log.Error("Failed to create gRPC client", "error", err)
 		panic(err)
@@ -118,7 +126,7 @@ func main() {
 	// 9. Start gRPC server (TransferService)
 	transferServer := appGrpc.NewTransferServer(log, workerPool, batchReporter, coreClient)
 	go func() {
-		if err := appGrpc.StartGRPCServer(ctx, cfg.GrpcPort, transferServer, log); err != nil {
+		if err := appGrpc.StartGRPCServer(ctx, cfg.GrpcPort, transferServer, cfg.GrpcTLSCert, cfg.GrpcTLSKey, cfg.GrpcTLSCA, log); err != nil {
 			log.Error("gRPC server failed", "error", err)
 		}
 	}()

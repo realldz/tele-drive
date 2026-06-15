@@ -32,6 +32,14 @@ type Config struct {
 	NestJSGrpcURL            string
 	GrpcPort                 int
 	S3Domain                 string
+	// gRPC mTLS material. When all three are set, both the TransferService
+	// server and the CoreService client run over TLS with mutual cert auth
+	// (peers must present a cert signed by GrpcTLSCA). Empty → plaintext
+	// (single-host bridge / local dev). SAN of each leaf must match the
+	// dns:/// authority the peer dials (backend-core / backend-transfer).
+	GrpcTLSCert string
+	GrpcTLSKey  string
+	GrpcTLSCA   string
 	// Event stream (file:events) consumer-group settings. Multiple Go instances
 	// join EventConsumerGroup so each event is delivered to exactly one instance
 	// (vs the old Pub/Sub fan-out that delivered to all). EventConsumerName is the
@@ -152,6 +160,9 @@ func Load() *Config {
 		NestJSGrpcURL:           getEnv("NESTJS_GRPC_URL", "localhost:50051"),
 		GrpcPort:                grpcPort,
 		S3Domain:                getEnv("S3_DOMAIN", "s3.example.com"),
+		GrpcTLSCert:             getEnv("GRPC_TLS_CERT", ""),
+		GrpcTLSKey:              getEnv("GRPC_TLS_KEY", ""),
+		GrpcTLSCA:               getEnv("GRPC_TLS_CA", ""),
 		EventConsumerGroup:      getEnv("EVENT_CONSUMER_GROUP", "transfer-workers"),
 		EventConsumerName:       consumerName,
 		EventWorkerPoolSize:     eventWorkerPoolSize,

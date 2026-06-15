@@ -12,15 +12,42 @@ import (
 	"google.golang.org/grpc/keepalive"
 )
 
+// CoreTLSConfig carries the mTLS material the client presents to NestJS. When
+// all fields are empty the client falls back to plaintext (dev non-Docker);
+// any field set requires all three so a half-configured TLS never silently
+// downgrades. ServerName must match a SAN on the NestJS cert (the dns:///
+// authority, e.g. "backend-core").
+type CoreTLSConfig struct {
+	CertFile   string
+	KeyFile    string
+	CAFile     string
+	ServerName string
+}
+
 type CoreClient struct {
 	conn   *grpc.ClientConn
 	client pb.CoreServiceClient
 	logger *slog.Logger
 }
 
-func NewCoreClient(nestjsURL string, logger *slog.Logger) (*CoreClient, error) {
+func NewCoreClient(nestjsURL string, tlsCfg CoreTLSConfig, logger *slog.Logger) (*CoreClient, error) {
+	// mTLS when cert paths are provided; plaintext otherwise (dev non-Docker).
+	// The transport credentials are independent of the round_robin LB policy
+	// below — both compose without interference.
+	transportCreds := insecure.NewCredentials()
+	if tlsCfg.CertFile != "" || tlsCfg.KeyFile != "" || tlsCfg.CAFile != "" {
+		creds, err := ClientTLSCreds(tlsCfg.CertFile, tlsCfg.KeyFile, tlsCfg.CAFile, tlsCfg.ServerName)
+		if err != nil {
+			return nil, fmt.Errorf("build NestJS gRPC mTLS credentials: %w", err)
+		}
+		transportCreds = creds
+		logger.Info("NestJS gRPC client mTLS enabled", "serverName", tlsCfg.ServerName)
+	} else {
+		logger.Warn("NestJS gRPC client running PLAINTEXT (no GRPC_TLS_* set)")
+	}
+
 	conn, err := grpc.NewClient(nestjsURL,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithTransportCredentials(transportCreds),
 		// Client-side load balancing across multiple NestJS core instances.
 		// Requires a dns:/// target (e.g. dns:///backend-core:50051) so the
 		// resolver returns every A-record; round_robin then spreads RPCs over
