@@ -7,7 +7,9 @@ services:
       POSTGRES_USER: tele_drive
       POSTGRES_PASSWORD: tele_drive
     ports:
-      - "5432:5432"
+      # Loopback-only: reachable from the host (psql/GUI dev) but NOT from the LAN.
+      # Containers reach Postgres over the Docker bridge at postgres:5432 regardless.
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -21,16 +23,20 @@ services:
   # ─── Redis ──────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
-    ports:
-      - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    # No host port: Redis holds auth tokens, quota, and the upload outstanding
+    # counter — never expose it to the host/LAN. Containers reach it over the
+    # Docker bridge at redis:6379. Debug from host via:
+    #   docker compose exec redis redis-cli -a "$REDIS_PASSWORD"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     restart: unless-stopped
 
   # ─── Telegram Local Bot API Server ──────────────────────────────────
@@ -85,7 +91,7 @@ services:
       PORT: 3001
       DATABASE_URL: postgresql://tele_drive:tele_drive@postgres:5432/tele_drive
       TELEGRAM_API_ROOT: http://nginx:8088
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       UPLOAD_BUFFER_DIR: /data/upload-buffer
       IS_TRANSFER_SERVICE: "false"
       # Data-plane ownership: Go transfer service owns heavy I/O (upload dispatch + ZIP assembly).
@@ -137,7 +143,7 @@ services:
       # This service is the data plane: it owns upload dispatch + ZIP assembly
       # (see UPLOAD_DISPATCH_OWNER / ZIP_OWNER on backend-core).
       TELEGRAM_API_ROOT: http://nginx:8088
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       UPLOAD_BUFFER_DIR: /data/upload-buffer
       # Files at or below this size are buffered to disk (enables retry +
       # concurrency); larger files stream straight to Telegram (no RAM/disk).
