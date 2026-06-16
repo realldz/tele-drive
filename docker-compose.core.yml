@@ -145,8 +145,11 @@ services:
       - S3_DOMAIN=${S3_DOMAIN:-s3.example.com}
       - SSL_CERT_FILE=${SSL_CERT_FILE:-cert.pem}
       - SSL_KEY_FILE=${SSL_KEY_FILE:-key.pem}
-      # Cross-host data-plane upstream: the Go transfer service on GO_HOST.
-      - GO_UPSTREAM=${GO_HOST}:3001
+      # Cross-host data-plane upstream(s): the Go transfer service host(s). Defaults
+      # to the single GO_HOST; set GO_UPSTREAM in .env.core to a comma/space list
+      # (e.g. "10.0.0.2:3001,10.0.0.3:3001") to round_robin the edge across several
+      # Go hosts. entrypoint-edge.sh expands it into the go_data_plane upstream block.
+      - GO_UPSTREAM=${GO_UPSTREAM:-${GO_HOST}:3001}
     depends_on:
       backend-core:
         condition: service_started
