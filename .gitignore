@@ -61,6 +61,7 @@ external/
 .env.test.local
 .env.production.local
 !.env.example
+!.env.*.example
 *.pem
 *.key
 *.crt

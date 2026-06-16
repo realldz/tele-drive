@@ -1,0 +1,7 @@
+# Fast-path nginx for the Go data-plane host (HOST-GO). Serves Telegram files
+# zero-copy on :8088 and proxies to the local telegram-bot-api. No SSL and no
+# env-var substitution are needed (the config has no ${...} placeholders), so the
+# template is copied verbatim and the stock nginx entrypoint runs it.
+FROM nginx:alpine
+
+COPY nginx-fastpath.conf.template /etc/nginx/conf.d/default.conf

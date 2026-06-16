@@ -1,0 +1,14 @@
+# Edge nginx for the control-plane host (HOST-CORE). Public reverse proxy on
+# :80/:443. Renders nginx-edge.conf.template via envsubst (adds ${GO_UPSTREAM}
+# for the cross-host data-plane target) and self-signs the app/dummy certs at
+# startup, same as the single-host image. The :8088 Telegram fast-path is NOT
+# here — it lives on the Go host (Dockerfile.fastpath).
+FROM nginx:alpine
+
+RUN apk add --no-cache openssl
+
+COPY nginx-edge.conf.template /etc/nginx/conf.d/nginx.conf.template
+COPY entrypoint-edge.sh /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

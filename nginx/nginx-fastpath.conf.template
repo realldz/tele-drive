@@ -1,0 +1,41 @@
+# ─── Telegram fast-path (HOST-GO, port 8088 internal) ───────────────────────
+# Runs on the Go data-plane host alongside telegram-bot-api. Serves downloaded
+# Telegram files zero-copy from the shared telegram-data volume and proxies API
+# calls to the local bot API. The Go transfer service reaches it at
+# http://nginx-fastpath:8088 (TELEGRAM_API_ROOT) over the host-local compose
+# network — this port is NEVER exposed publicly. No env vars / no SSL: this file
+# is copied verbatim as the nginx config (see Dockerfile.fastpath).
+
+server {
+    listen 8088;
+    server_name _;
+
+    # Serve downloaded files directly from shared volume (faster than bot API).
+    # Local Bot API returns file_path as absolute: /var/lib/telegram-bot-api/<bot_id>/...
+    # URL: /file/bot<TOKEN>/var/lib/telegram-bot-api/<bot_id>/path
+    # Strip prefix → /<bot_id>/path → serve from /var/lib/telegram-bot-api-data/<bot_id>/path
+    location /file/ {
+        root /var/lib/telegram-bot-api-data;
+        rewrite ^/file/bot[^/]+/var/lib/telegram-bot-api/(.+)$ /$1 break;
+        try_files $uri @telegram_api;
+    }
+
+    # Fallback to Telegram Bot API server
+    location @telegram_api {
+        proxy_pass http://telegram-bot-api:8081;
+        proxy_set_header Host $host;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        client_max_body_size 2000m;
+    }
+
+    # All other requests (API calls) → proxy to Telegram Bot API
+    location / {
+        proxy_pass http://telegram-bot-api:8081;
+        proxy_set_header Host $host;
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+        client_max_body_size 2000m;
+        proxy_request_buffering off;
+    }
+}

@@ -1,0 +1,135 @@
+# ─── HOST-GO (data plane) ───────────────────────────────────────────────────
+# Deploy on the high-bandwidth data-plane host: the Go transfer service, its
+# self-hosted Telegram Local Bot API, and a fast-path nginx that serves Telegram
+# files zero-copy on :8088. The control plane (NestJS core, Postgres, Redis, edge
+# nginx, frontend) runs on a SEPARATE host (see docker-compose.core.yml).
+#
+# Why split this host out: it owns ALL binary I/O (upload encrypt + Telegram
+# dispatch, S3 object data plane, ZIP assembly, download streaming) — the traffic
+# that benefits from an unmetered/high-bandwidth uplink. The control plane stays
+# small and private on the other host.
+#
+# Cross-host wiring (all values come from .env.transfer — see .env.transfer.example):
+#   CORE_HOST        host/IP of the control-plane host (NestJS gRPC + Redis target)
+#   GO_PRIVATE_IP    private-NIC IP this host binds 3001/50051 to (NOT 0.0.0.0)
+#   UPLOAD_BUFFER_NFS shared NFS path mounted as the upload buffer on BOTH hosts
+#
+# Channels leaving this host (keep them on a private network):
+#   gRPC  go ⇄ core       mTLS (certs/grpc, Phase C). Go dials CORE_HOST:50051
+#                         (NestJS server) and serves its own 50051 for NestJS.
+#   Redis go  → core      password-auth (Phase A); connects to CORE_HOST:6379
+#   purge core → go        HTTP from CORE_HOST hits GO_PRIVATE_IP:3001 (/internal/files/purge)
+#   edge  nginx → go        /files/*, S3 object I/O proxied to GO_PRIVATE_IP:3001
+#
+# Local-only channels (never leave this host):
+#   Telegram fast-path    Go → nginx-fastpath:8088 → telegram-bot-api:8081
+#
+# Start order: bring up the CORE host FIRST (Postgres/Redis/core gRPC server),
+# THEN this host — the Go service blocks up to 60s waiting for the core gRPC server.
+
+services:
+  # ─── Telegram Local Bot API Server ──────────────────────────────────
+  # Runs ON the Go host so the heavy Telegram traffic (upload + download
+  # fast-path) never crosses the inter-host link. No host port: only the
+  # fast-path nginx (same compose network) reaches it at :8081.
+  telegram-bot-api:
+    image: aiogram/telegram-bot-api:latest
+    environment:
+      TELEGRAM_API_ID: ${TELEGRAM_API_ID}
+      TELEGRAM_API_HASH: ${TELEGRAM_API_HASH}
+      TELEGRAM_LOCAL: "1"
+    volumes:
+      - telegram-data:/var/lib/telegram-bot-api
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8081"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    restart: unless-stopped
+
+  # ─── Nginx fast-path (Telegram file server, :8088 internal) ─────────
+  # Serves downloaded Telegram files zero-copy from the telegram-data volume and
+  # proxies upload/API calls to telegram-bot-api:8081. The Go service reaches it
+  # in-compose at http://nginx-fastpath:8088 (TELEGRAM_API_ROOT). It is ALSO
+  # published on the private NIC (see ports) so backend-core on CORE_HOST can
+  # reach it for S3 multipart UploadPart/Abort. Never reachable from the public LAN.
+  nginx-fastpath:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.fastpath
+    volumes:
+      - telegram-data:/var/lib/telegram-bot-api-data:ro
+    ports:
+      # Published on the PRIVATE NIC only so backend-core (on CORE_HOST) can reach
+      # the Telegram bot API across the private network for the ONE live Telegram
+      # path it still owns: S3 multipart UploadPart/Abort (s3-multipart.service.ts),
+      # which is NOT gated by S3_DATA_PLANE_OWNER. The Go service reaches this same
+      # nginx in-compose at nginx-fastpath:8088 (no host port needed for that).
+      # Firewall 8088 to CORE_HOST. Never 0.0.0.0 — it fronts the bot token.
+      - "${GO_PRIVATE_IP}:8088:8088"
+    depends_on:
+      telegram-bot-api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ─── Backend Transfer API (Go) ─────────────────────────────────
+  # The data plane. Owns upload dispatch + Telegram I/O, ZIP assembly, the S3
+  # object data plane, bandwidth enforcement, and download-while-draining (reads
+  # the shared NFS buffer). Talks to NestJS over gRPC (mTLS) and shares Redis with
+  # the control plane for the upload outstanding-counter + file events.
+  backend-transfer:
+    build: ./backend-transfer-go
+    # Shared app secrets (MASTER_SECRET, bot tokens, etc). This file must be
+    # present on the Go host too — copy backend/.env across or template it.
+    env_file:
+      - ./backend/.env
+    environment:
+      PORT: 3001
+      # Telegram fast-path lives on THIS host — keep it local (no inter-host hop).
+      TELEGRAM_API_ROOT: http://nginx-fastpath:8088
+      # Cross-host Redis: the control-plane host (Phase A password auth). Redis is
+      # bound to the core host's private NIC; firewall 6379 to this host only.
+      REDIS_URL: redis://:${REDIS_PASSWORD}@${CORE_HOST}:6379
+      UPLOAD_BUFFER_DIR: /data/upload-buffer
+      # Keep in sync with NestJS MAX_BUFFER_FILE_SIZE (control-plane host).
+      MAX_BUFFER_FILE_SIZE: ${MAX_BUFFER_FILE_SIZE:-52428800}
+      # Cross-host gRPC target: the NestJS core server on CORE_HOST. dns:/// keeps
+      # the round_robin LB (Phase #4); SAN on the core leaf cert must include CORE_HOST.
+      NESTJS_GRPC_URL: dns:///${CORE_HOST}:50051
+      GRPC_PORT: "50051"
+      # Bidirectional gRPC mTLS. Presents the backend-transfer leaf cert; both peers
+      # verify against the shared internal CA. Re-issue certs with CORE_HOST/GO_HOST
+      # in the SAN before splitting hosts (scripts/gen-grpc-certs.sh). Certs are
+      # git-ignored and mounted read-only.
+      GRPC_TLS_CERT: /certs/grpc/backend-transfer.crt
+      GRPC_TLS_KEY: /certs/grpc/backend-transfer.key
+      GRPC_TLS_CA: /certs/grpc/ca.crt
+      S3_DOMAIN: ${S3_DOMAIN:-s3.example.com}
+    volumes:
+      - ./backend/.logs:/app/.logs
+      # Shared upload buffer (NFS). Go writes chunks here; NestJS (on CORE_HOST)
+      # deletes them on abort/delete. Both hosts mount the same NFS export.
+      - ${UPLOAD_BUFFER_NFS}:/data/upload-buffer
+      - ./certs/grpc:/certs/grpc:ro
+    ports:
+      # Both ports bound to the PRIVATE NIC only (GO_PRIVATE_IP), never 0.0.0.0:
+      #   3001  — HTTP data plane. The edge nginx on CORE_HOST proxies /files/* and
+      #           S3 object I/O here; NestJS posts purge requests here. Firewall to CORE_HOST.
+      #   50051 — gRPC server. NestJS dials this (dns:///CORE-side resolves GO_HOST).
+      #           mTLS is the second layer. Firewall to CORE_HOST.
+      # The container listens on 0.0.0.0 for both; this maps only the private IP.
+      - "${GO_PRIVATE_IP}:3001:3001"
+      - "${GO_PRIVATE_IP}:50051:50051"
+    depends_on:
+      telegram-bot-api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/files/config || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+volumes:
+  telegram-data:
