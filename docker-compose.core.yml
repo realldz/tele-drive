@@ -85,7 +85,9 @@ services:
       S3_DATA_PLANE_OWNER: "go"
       BANDWIDTH_OWNER: "go"
       # Cross-host gRPC target: the Go TransferService on GO_HOST. dns:/// keeps
-      # the round_robin LB (Phase #4); SAN on the Go leaf cert must include GO_HOST.
+      # the round_robin LB (Phase #4). TLS hostname verification is pinned to the
+      # service name "backend-transfer" (grpc-transfer.client.ts), NOT GO_HOST, so
+      # the committed cert SAN works unchanged across hosts — no per-host re-issue.
       GO_TRANSFER_GRPC_URL: dns:///${GO_HOST}:50051
       GRPC_PORT: "50051"
       # Bind the gRPC server to the private NIC so the Go host can reach it while
@@ -96,8 +98,9 @@ services:
       # now it must point at GO_HOST.
       TRANSFER_API_URL: http://${GO_HOST}:3001
       # Bidirectional gRPC mTLS. Presents the backend-core leaf cert; both peers
-      # verify against the shared internal CA. Generate with scripts/gen-grpc-certs.sh
-      # and re-issue with GO_HOST/CORE_HOST in the SAN before splitting hosts.
+      # verify against the shared internal CA. Generate with scripts/gen-grpc-certs.sh.
+      # Verification is pinned to service names (backend-core / backend-transfer),
+      # so the committed cert SANs work across hosts — no per-host re-issue needed.
       GRPC_TLS_CERT: /certs/grpc/backend-core.crt
       GRPC_TLS_KEY: /certs/grpc/backend-core.key
       GRPC_TLS_CA: /certs/grpc/ca.crt

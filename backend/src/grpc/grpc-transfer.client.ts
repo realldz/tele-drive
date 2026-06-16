@@ -67,6 +67,14 @@ export class GrpcTransferClient implements OnModuleInit {
           loadBalancingConfig: [{ round_robin: {} }],
         }),
         'grpc.dns_min_time_between_resolutions_ms': 5000,
+        // Pin TLS hostname verification to the logical service name, decoupling
+        // it from the dial address. In single-host compose the dns:/// authority
+        // is already "backend-transfer" (matches the leaf cert SAN); but in the
+        // split-host topology GO_TRANSFER_GRPC_URL dials GO_HOST (an IP/DNS that
+        // is NOT in the SAN), so without this override the handshake would fail.
+        // Mirrors the Go client, which pins ServerName "backend-core". Keeps one
+        // service cert valid across every Go host/replica — no per-host SANs.
+        'grpc.ssl_target_name_override': 'backend-transfer',
       },
     },
   })

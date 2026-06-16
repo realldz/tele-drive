@@ -146,6 +146,69 @@ Configure routing in [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) d
 | View transfer logs | `docker container logs -f tele-drive-backend-transfer-1` |
 | Rebuild all | `docker compose build` |
 
+## Horizontal Scaling (multi-host)
+
+The default `docker-compose.yml` runs everything on one host. For heavy traffic you
+can split the **Go data plane** (binary I/O: upload encrypt + Telegram dispatch, S3
+object I/O, ZIP assembly, download streaming) onto its own high-bandwidth host,
+while the **control plane** (NestJS core, Postgres, Redis, edge nginx, frontend)
+stays small and private on another.
+
+```
+  public ─▶ HOST-CORE: nginx-edge :80/:443 ─┬─ backend-core (NestJS) + frontend
+                                             │  postgres / redis (private NIC)
+                                             │
+            data-plane HTTP / Redis / gRPC (mTLS) over a PRIVATE network
+                                             │
+            HOST-GO(s): backend-transfer (Go) + telegram-bot-api + nginx-fastpath
+                         (one or more hosts, round-robined by the edge)
+```
+
+Two compose files drive it:
+
+| File | Host | Brings up |
+|------|------|-----------|
+| `docker-compose.core.yml` | control-plane | postgres, redis, backend-core, nginx-edge, frontend |
+| `docker-compose.transfer.yml` | data-plane | backend-transfer (Go), telegram-bot-api, nginx-fastpath |
+
+```bash
+# On the control-plane host
+cp .env.core.example .env.core      # set GO_HOST, CORE_PRIVATE_IP, REDIS_PASSWORD, UPLOAD_BUFFER_NFS
+docker compose --env-file .env.core -f docker-compose.core.yml up -d
+
+# On the data-plane host (bring up AFTER core — Go waits up to 60s for the core gRPC server)
+cp .env.transfer.example .env.transfer   # set CORE_HOST, GO_PRIVATE_IP, SAME REDIS_PASSWORD
+docker compose --env-file .env.transfer -f docker-compose.transfer.yml up -d
+```
+
+Requirements and guarantees:
+
+- **Private network** between the hosts. Redis (password), gRPC (bidirectional
+  mTLS), and the data-plane HTTP/Telegram ports all bind private NICs only — never
+  `0.0.0.0`. Firewall each port to the peer host.
+- **Shared NFS** export mounted at `UPLOAD_BUFFER_NFS` on both hosts (download-while-
+  draining reads the upload buffer on the Go side).
+- **gRPC certs**: run `scripts/gen-grpc-certs.sh` once and copy `certs/grpc/` to both
+  hosts. mTLS hostname verification is pinned to the logical service names
+  (`backend-core` / `backend-transfer`), so the same certs work on any host/IP — no
+  per-host SANs needed.
+
+### Scaling the data plane across several Go hosts
+
+Set `GO_UPSTREAM` in `.env.core` to a comma/space-separated list; the edge
+round-robins across them with passive health ejection:
+
+```
+GO_UPSTREAM=10.0.0.2:3001,10.0.0.3:3001,10.0.0.4:3001
+```
+
+Each Go host runs its own `docker-compose.transfer.yml` and shares the control-plane
+host's Redis (chunked-upload outstanding counter + file events) and the same NFS
+buffer, so a chunked upload spread across hosts still completes correctly. The
+Go→NestJS gRPC path already round-robins via `dns:///`.
+
+Rollback is the untouched single-host `docker-compose.yml`.
+
 ## Environment Variables
 
 ### Backend (`backend/.env`)

@@ -95,12 +95,15 @@ services:
       # Keep in sync with NestJS MAX_BUFFER_FILE_SIZE (control-plane host).
       MAX_BUFFER_FILE_SIZE: ${MAX_BUFFER_FILE_SIZE:-52428800}
       # Cross-host gRPC target: the NestJS core server on CORE_HOST. dns:/// keeps
-      # the round_robin LB (Phase #4); SAN on the core leaf cert must include CORE_HOST.
+      # the round_robin LB (Phase #4). The Go client pins its TLS verification name
+      # to "backend-core" (main.go), so the core leaf cert SAN need NOT include
+      # CORE_HOST — the committed certs work cross-host unchanged.
       NESTJS_GRPC_URL: dns:///${CORE_HOST}:50051
       GRPC_PORT: "50051"
       # Bidirectional gRPC mTLS. Presents the backend-transfer leaf cert; both peers
-      # verify against the shared internal CA. Re-issue certs with CORE_HOST/GO_HOST
-      # in the SAN before splitting hosts (scripts/gen-grpc-certs.sh). Certs are
+      # verify against the shared internal CA. Both sides pin the peer's TLS name to
+      # the service name (backend-core / backend-transfer), independent of the dial
+      # host, so the committed certs work cross-host with NO SAN re-issue. Certs are
       # git-ignored and mounted read-only.
       GRPC_TLS_CERT: /certs/grpc/backend-transfer.crt
       GRPC_TLS_KEY: /certs/grpc/backend-transfer.key
