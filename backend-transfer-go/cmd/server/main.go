@@ -115,6 +115,9 @@ func main() {
 	}
 
 	// 8. Initialize Batch Reporter and Worker Pool for uploads
+	// Tune the shared outstanding-counter TTL from config before any chunk enqueues.
+	queue.SetOutstandingTTL(cfg.UploadOutstandingTTL)
+	log.Info("Configured upload outstanding-counter TTL", "ttl", cfg.UploadOutstandingTTL)
 	batchReporter := queue.NewBatchReporter(coreClient, tempStorage, rdb, log, 1*time.Second, 10)
 	defer batchReporter.Stop()
 

@@ -12,26 +12,26 @@ import (
 )
 
 type Config struct {
-	Port                     int
-	WorkerPoolSize           int
-	BandwidthCheckEnabled    bool
-	TelegramBotToken         string
-	TelegramChatID           string
-	TelegramAPIRoot          string
-	TelegramUploadBotTokens  []string
-	TelegramSendRateLimit    int
-	MaxChunkSize             int64
-	MaxBufferFileSize        int64
-	JWTSecret                string
-	MasterSecret             string
-	LogDir                   string
-	LogLevel                 string
-	CorsOrigin               string
-	RedisURL                 string
-	UploadBufferDir          string
-	NestJSGrpcURL            string
-	GrpcPort                 int
-	S3Domain                 string
+	Port                    int
+	WorkerPoolSize          int
+	BandwidthCheckEnabled   bool
+	TelegramBotToken        string
+	TelegramChatID          string
+	TelegramAPIRoot         string
+	TelegramUploadBotTokens []string
+	TelegramSendRateLimit   int
+	MaxChunkSize            int64
+	MaxBufferFileSize       int64
+	JWTSecret               string
+	MasterSecret            string
+	LogDir                  string
+	LogLevel                string
+	CorsOrigin              string
+	RedisURL                string
+	UploadBufferDir         string
+	NestJSGrpcURL           string
+	GrpcPort                int
+	S3Domain                string
 	// gRPC mTLS material. When all three are set, both the TransferService
 	// server and the CoreService client run over TLS with mutual cert auth
 	// (peers must present a cert signed by GrpcTLSCA). Empty → plaintext
@@ -45,10 +45,17 @@ type Config struct {
 	// (vs the old Pub/Sub fan-out that delivered to all). EventConsumerName is the
 	// per-instance identity used by XAUTOCLAIM to reclaim a dead instance's
 	// pending entries; it MUST be unique per instance.
-	EventConsumerGroup   string
-	EventConsumerName    string
-	EventWorkerPoolSize  int
-	EventClaimMinIdle    time.Duration
+	EventConsumerGroup  string
+	EventConsumerName   string
+	EventWorkerPoolSize int
+	EventClaimMinIdle   time.Duration
+	// UploadOutstandingTTL bounds how long a per-file chunked-upload outstanding
+	// counter (Redis key upload:outstanding:*) survives if an instance dies
+	// mid-drain (INCR done, DECR never reached). Re-armed on every INCR, so an
+	// actively-uploading file never expires under itself; it only matters as the
+	// self-heal ceiling for a crashed instance's stuck counter. Tune up if very
+	// large/slow uploads can legitimately stay outstanding longer than the default.
+	UploadOutstandingTTL time.Duration
 }
 
 func Load() *Config {
@@ -128,6 +135,15 @@ func Load() *Config {
 		claimMinIdle = 5 * time.Minute
 	}
 
+	// Self-heal ceiling for the chunked-upload outstanding counter. Default 6h is
+	// long enough for a large, slow upload to finish (the TTL re-arms on every
+	// chunk INCR) yet bounds leakage from a crashed instance's stuck counter.
+	outstandingTTLStr := getEnv("UPLOAD_OUTSTANDING_TTL", "6h")
+	outstandingTTL, err := time.ParseDuration(outstandingTTLStr)
+	if err != nil || outstandingTTL <= 0 {
+		outstandingTTL = 6 * time.Hour
+	}
+
 	// Per-instance consumer name for XAUTOCLAIM. Defaults to hostname-pid; override
 	// with INSTANCE_ID when hostnames are not unique (e.g. some orchestrators).
 	consumerName := getEnv("INSTANCE_ID", "")
@@ -167,6 +183,7 @@ func Load() *Config {
 		EventConsumerName:       consumerName,
 		EventWorkerPoolSize:     eventWorkerPoolSize,
 		EventClaimMinIdle:       claimMinIdle,
+		UploadOutstandingTTL:    outstandingTTL,
 	}
 }
 

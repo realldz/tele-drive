@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/redis/go-redis/v9"
@@ -133,5 +134,31 @@ func TestOutstandingDecrZeroIsNoop(t *testing.T) {
 	decrOutstanding(ctx, rdb, logger, fileID, 0)
 	if got := getOutstanding(ctx, rdb, logger, fileID); got != 1 {
 		t.Fatalf("decr by zero must leave counter unchanged, want 1 got %d", got)
+	}
+}
+
+// SetOutstandingTTL overrides the TTL armed on INCR; a non-positive value is ignored
+// so a misconfig keeps the safe default. Restore the default after to avoid leaking
+// state into other tests in the package.
+func TestSetOutstandingTTL(t *testing.T) {
+	defer SetOutstandingTTL(defaultOutstandingTTL)
+
+	mr, rdb, logger := newCounterTestRedis(t)
+	ctx := context.Background()
+	fileID := "file-ttl"
+
+	SetOutstandingTTL(2 * time.Hour)
+	incrOutstanding(ctx, rdb, logger, fileID)
+	ttl := mr.TTL(outstandingKey(fileID))
+	if ttl <= 0 || ttl > 2*time.Hour {
+		t.Fatalf("expected TTL ~2h after override, got %v", ttl)
+	}
+
+	// Non-positive override is ignored: the previous value stays in effect.
+	SetOutstandingTTL(0)
+	mr.FastForward(ttl + time.Second) // expire the old key
+	incrOutstanding(ctx, rdb, logger, fileID)
+	if got := mr.TTL(outstandingKey(fileID)); got <= 0 || got > 2*time.Hour {
+		t.Fatalf("non-positive override must keep prior TTL ~2h, got %v", got)
 	}
 }

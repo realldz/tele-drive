@@ -32,12 +32,28 @@ const (
 	// outstandingKeyPrefix namespaces the per-file counter keys.
 	outstandingKeyPrefix = "upload:outstanding:"
 
-	// outstandingTTL bounds counter leakage if an instance dies mid-drain (INCR
-	// done, DECR never reached). Long enough for a large, slow upload to finish;
-	// short enough that a crashed instance's stuck counter self-heals. Re-armed on
-	// every INCR so an actively-uploading file never expires under itself.
-	outstandingTTL = 6 * time.Hour
+	// defaultOutstandingTTL is the fallback self-heal ceiling when SetOutstandingTTL
+	// is never called (e.g. tests). Production overrides it from config via
+	// UPLOAD_OUTSTANDING_TTL — see SetOutstandingTTL.
+	defaultOutstandingTTL = 6 * time.Hour
 )
+
+// outstandingTTL bounds counter leakage if an instance dies mid-drain (INCR done,
+// DECR never reached). Long enough for a large, slow upload to finish; short enough
+// that a crashed instance's stuck counter self-heals. Re-armed on every INCR so an
+// actively-uploading file never expires under itself. A package var (not const) so
+// main can tune it from UPLOAD_OUTSTANDING_TTL at startup without threading the
+// value through every helper signature.
+var outstandingTTL = defaultOutstandingTTL
+
+// SetOutstandingTTL overrides the outstanding-counter TTL. Call once at startup
+// before the worker pool runs (config-driven); a non-positive value is ignored so
+// a misconfig keeps the safe default.
+func SetOutstandingTTL(ttl time.Duration) {
+	if ttl > 0 {
+		outstandingTTL = ttl
+	}
+}
 
 func outstandingKey(fileID string) string {
 	return outstandingKeyPrefix + fileID
