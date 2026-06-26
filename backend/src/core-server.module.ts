@@ -21,6 +21,7 @@ import { S3Module } from './s3/s3.module';
 import { GrpcCoreModule } from './grpc/grpc-core.module';
 import { CacheModule } from './cache/cache.module';
 import { QuotaSyncService } from './common/quota-sync.service';
+import { StaleUploadCleanupService } from './common/stale-upload-cleanup.service';
 
 @Module({
   imports: [
@@ -71,6 +72,13 @@ import { QuotaSyncService } from './common/quota-sync.service';
       useClass: RequestLoggingInterceptor,
     },
     QuotaSyncService,
+    // Stale-upload cleanup (every 6h) lives on the control plane: it mutates
+    // Postgres (rollback reserved quota, mark upload_timeout) and publishes
+    // Telegram delete events — all control-plane concerns. It was previously only
+    // registered in TransferServerModule, but that NestJS entrypoint is no longer
+    // run (the Go service is the data plane), so the cron stopped firing. Its deps
+    // (Prisma, Cache, FileLifecycleService via CoreAppModule) are all live here.
+    StaleUploadCleanupService,
   ],
 })
 export class CoreServerModule {}
