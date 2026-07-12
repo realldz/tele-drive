@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 
-import { api, fetchCurrentUser } from '@/lib/api';
+import { api, fetchCurrentUser, clearStreamCookie } from '@/lib/api';
 
 interface User {
   id: string;
@@ -158,6 +158,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     delete api.defaults.headers.common['Authorization'];
+    // Huỷ stream cookie ở đây (không ở teardownStream) — đây là lúc đúng để
+    // vô hiệu token stream dùng chung toàn domain.
+    clearStreamCookie().catch(() => {});
   }, []);
 
   return (

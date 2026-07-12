@@ -2,7 +2,6 @@ import { useState, useRef, useCallback } from 'react';
 import {
   requestStreamCookie,
   requestGuestStreamCookie,
-  clearStreamCookie,
   handleBandwidthError,
 } from '@/lib/api';
 import { useI18n } from '@/providers/i18n-context';
@@ -77,9 +76,11 @@ export function useStream(options?: UseStreamOptions): UseStreamResult {
   }, [options?.cookieFn, scheduleRefresh]);
 
   const teardownStream = useCallback(() => {
+    // Chỉ dừng timer + clear URL local. KHÔNG xoá cookie ở đây: stream_token là
+    // cookie dùng chung toàn domain (Path=/), nên xoá nó sẽ phá stream ở các tab
+    // khác đang preview. Cookie tự hết hạn theo TTL; huỷ thật sự nằm ở logout.
     clearTimer();
     setStreamUrl(null);
-    clearStreamCookie().catch(() => {});
   }, [clearTimer]);
 
   return { streamUrl, isLoading, setupStream, teardownStream };
