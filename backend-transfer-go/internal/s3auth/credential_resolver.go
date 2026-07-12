@@ -90,7 +90,7 @@ func (r *CredentialResolver) Get(ctx context.Context, accessKeyID string) (secre
 		return r.fetchFromCore(ctx, accessKeyID, reqID)
 	})
 	if shared {
-		r.logger.Debug("s3auth.cred.singleflight.shared", "accessKeyId", accessKeyID, "requestId", reqID)
+		r.logger.Debug("s3auth.cred.singleflight.shared", "accessKeyId", redactKey(accessKeyID), "requestId", reqID)
 	}
 	if ferr != nil {
 		return "", "", false, ferr

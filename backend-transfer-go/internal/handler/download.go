@@ -165,6 +165,19 @@ func clampInt64ToInt(v int64) int {
 	return int(v)
 }
 
+// clampIntToInt32 safely converts an int to int32, clamping to [0, math.MaxInt32].
+// Used for proto fields typed int32 (e.g. chunk_index) where the source is a
+// platform-dependent int that could theoretically exceed int32 on 64-bit builds.
+func clampIntToInt32(v int) int32 {
+	if v < 0 {
+		return 0
+	}
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int32(v)
+}
+
 func (h *FileHandler) IssueStreamCookie(c echo.Context) error {
 	userID := c.Get("userId").(string)
 	ttl := h.streamCookieTTL(c.Request().Context())

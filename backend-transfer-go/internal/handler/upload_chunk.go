@@ -31,7 +31,7 @@ func (h *FileHandler) persistBufferedChunk(ctx context.Context, fileID string, c
 	}
 	if _, err := h.grpcClient.ReportChunkBuffered(ctx, []*pb.BufferedChunk{{
 		FileId:         fileID,
-		ChunkIndex:     int32(chunkIndex),
+		ChunkIndex:     clampIntToInt32(chunkIndex),
 		Size:           int32(clampedSize),
 		TempStorageKey: storageKey,
 		ChunkId:        generateUUID(),

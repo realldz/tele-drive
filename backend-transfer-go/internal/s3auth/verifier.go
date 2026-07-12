@@ -152,9 +152,7 @@ func (v *Verifier) verifyHeader(ctx context.Context, req *http.Request, authHead
 	v.logger.Debug("s3auth.parse.header_ok",
 		"requestId", requestID,
 		"accessKeyId", redactKey(parsed.AccessKeyID),
-		"signedHeaders", strings.Join(parsed.SignedHeaders, ";"),
-		"region", parsed.Region,
-		"service", parsed.Service,
+		"signedHeaderCount", len(parsed.SignedHeaders),
 	)
 
 	dateTime := req.Header.Get("X-Amz-Date")
@@ -175,14 +173,14 @@ func (v *Verifier) verifyHeader(ctx context.Context, req *http.Request, authHead
 			"requestId", requestID,
 			"accessKeyId", redactKey(parsed.AccessKeyID),
 		)
-		// Dump structural debug info only; signatures and canonical request are
-		// omitted from logs to prevent credential/secret material from appearing
-		// in log sinks.
+		// Dump structural debug info only; signatures, canonical request, and
+		// header-derived fields are omitted from logs to prevent credential/secret
+		// material from appearing in log sinks.
 		v.logger.Debug("s3auth.signature.mismatch.detail",
 			"requestId", requestID,
 			"method", req.Method,
 			"url", req.URL.RequestURI(),
-			"signedHeaders", strings.Join(parsed.SignedHeaders, ";"),
+			"signedHeaderCount", len(parsed.SignedHeaders),
 		)
 		return nil, ErrSignatureMismatch
 	}
@@ -203,7 +201,7 @@ func (v *Verifier) verifyPresigned(ctx context.Context, req *http.Request, reque
 		"requestId", requestID,
 		"accessKeyId", redactKey(parsed.AccessKeyID),
 		"expiresSec", parsed.ExpiresSec,
-		"signedHeaders", strings.Join(parsed.SignedHeaders, ";"),
+		"signedHeaderCount", len(parsed.SignedHeaders),
 	)
 
 	if err := v.checkPresignedExpiry(parsed.DateTime, parsed.ExpiresSec, requestID, parsed.AccessKeyID); err != nil {
@@ -225,7 +223,7 @@ func (v *Verifier) verifyPresigned(ctx context.Context, req *http.Request, reque
 		// credential/secret material from appearing in log sinks.
 		v.logger.Debug("s3auth.signature.mismatch_presigned.detail",
 			"requestId", requestID,
-			"signedHeaders", strings.Join(parsed.SignedHeaders, ";"),
+			"signedHeaderCount", len(parsed.SignedHeaders),
 		)
 		return nil, ErrSignatureMismatch
 	}

@@ -104,7 +104,7 @@ func (h *FileHandler) streamToTelegram(
 		}
 		if _, err := h.grpcClient.ReportChunkResults(reportCtx, []*pb.ChunkResult{{
 			FileId:            fileID,
-			ChunkIndex:        int32(chunkIndex),
+			ChunkIndex:        clampIntToInt32(chunkIndex),
 			TelegramFileId:    telegramFileID,
 			TelegramMessageId: int32(clampedMsgID),
 			BotId:             botID,
