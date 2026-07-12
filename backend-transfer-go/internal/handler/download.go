@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -152,6 +153,18 @@ func (h *FileHandler) CheckSignedToken(c echo.Context) error {
 	return c.NoContent(http.StatusOK)
 }
 
+// clampInt64ToInt safely converts int64 to int, clamping to [0, math.MaxInt32]
+// to ensure the value is safe for http.Cookie.MaxAge on all platforms.
+func clampInt64ToInt(v int64) int {
+	if v < 0 {
+		return 0
+	}
+	if v > math.MaxInt32 {
+		return math.MaxInt32
+	}
+	return int(v)
+}
+
 func (h *FileHandler) IssueStreamCookie(c echo.Context) error {
 	userID := c.Get("userId").(string)
 	ttl := h.streamCookieTTL(c.Request().Context())
@@ -167,7 +180,7 @@ func (h *FileHandler) IssueStreamCookie(c echo.Context) error {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
-		MaxAge:   int(ttl),
+		MaxAge:   clampInt64ToInt(ttl),
 	}
 	c.SetCookie(cookie)
 
@@ -197,7 +210,7 @@ func (h *FileHandler) IssueGuestStreamCookie(c echo.Context) error {
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteStrictMode,
-		MaxAge:   int(ttl),
+		MaxAge:   clampInt64ToInt(ttl),
 	}
 	c.SetCookie(cookie)
 

@@ -73,8 +73,16 @@ func main() {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	// 7. Initialize gRPC client (calls NestJS Core API)
-	coreClient, err := appGrpc.NewCoreClient(cfg.NestJSGrpcURL, log)
+	// 7. Initialize gRPC client (calls NestJS Core API). When GRPC_TLS_* are set
+	// the client presents this service's leaf cert and verifies NestJS against
+	// the internal CA; ServerName "backend-core" must match the NestJS cert SAN
+	// (the dns:/// authority it dials).
+	coreClient, err := appGrpc.NewCoreClient(cfg.NestJSGrpcURL, appGrpc.CoreTLSConfig{
+		CertFile:   cfg.GrpcTLSCert,
+		KeyFile:    cfg.GrpcTLSKey,
+		CAFile:     cfg.GrpcTLSCA,
+		ServerName: "backend-core",
+	}, log)
 	if err != nil {
 		log.Error("Failed to create gRPC client", "error", err)
 		panic(err)
@@ -107,18 +115,21 @@ func main() {
 	}
 
 	// 8. Initialize Batch Reporter and Worker Pool for uploads
-	batchReporter := queue.NewBatchReporter(coreClient, tempStorage, log, 1*time.Second, 10)
+	// Tune the shared outstanding-counter TTL from config before any chunk enqueues.
+	queue.SetOutstandingTTL(cfg.UploadOutstandingTTL)
+	log.Info("Configured upload outstanding-counter TTL", "ttl", cfg.UploadOutstandingTTL)
+	batchReporter := queue.NewBatchReporter(coreClient, tempStorage, rdb, log, 1*time.Second, 10)
 	defer batchReporter.Stop()
 
 	uploadWorker := queue.NewUploadWorker(coreClient, batchReporter, tgClient, cryptoEngine, tempStorage, log)
-	workerPool := queue.NewWorkerPool(cfg.WorkerPoolSize, uploadWorker, log)
+	workerPool := queue.NewWorkerPool(cfg.WorkerPoolSize, uploadWorker, rdb, log)
 	defer workerPool.Stop()
 	log.Info("Initialized internal upload WorkerPool", "size", cfg.WorkerPoolSize)
 
 	// 9. Start gRPC server (TransferService)
 	transferServer := appGrpc.NewTransferServer(log, workerPool, batchReporter, coreClient)
 	go func() {
-		if err := appGrpc.StartGRPCServer(ctx, cfg.GrpcPort, transferServer, log); err != nil {
+		if err := appGrpc.StartGRPCServer(ctx, cfg.GrpcPort, transferServer, cfg.GrpcTLSCert, cfg.GrpcTLSKey, cfg.GrpcTLSCA, log); err != nil {
 			log.Error("gRPC server failed", "error", err)
 		}
 	}()
@@ -169,8 +180,16 @@ func main() {
 	// 10c. Initialize ZIP worker (Go-owned archive assembly)
 	zipWorker := zip.NewWorker(coreClient, downloader, tempStorage, log)
 
-	// 10d. Start Redis subscriber for async delete + ZIP events
-	redisSubscriber := queue.NewRedisSubscriber(rdb, tgClient, coreClient, zipWorker, log)
+	// 10d. Start Redis Stream consumer for async delete + ZIP events. Consumer
+	// group ensures each event is handled by exactly one Go instance (horizontal
+	// scaling); per-instance ConsumerName lets XAUTOCLAIM reclaim a dead instance's
+	// pending entries.
+	redisSubscriber := queue.NewRedisSubscriber(rdb, tgClient, coreClient, zipWorker, queue.SubscriberConfig{
+		Group:        cfg.EventConsumerGroup,
+		ConsumerName: cfg.EventConsumerName,
+		PoolSize:     cfg.EventWorkerPoolSize,
+		ClaimMinIdle: cfg.EventClaimMinIdle,
+	}, log)
 
 	redisSubscriber.Start()
 	defer redisSubscriber.Stop()

@@ -1,35 +1,61 @@
 package config
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Port                     int
-	WorkerPoolSize           int
-	BandwidthCheckEnabled    bool
-	TelegramBotToken         string
-	TelegramChatID           string
-	TelegramAPIRoot          string
-	TelegramUploadBotTokens  []string
-	TelegramSendRateLimit    int
-	MaxChunkSize             int64
-	MaxBufferFileSize        int64
-	JWTSecret                string
-	MasterSecret             string
-	LogDir                   string
-	LogLevel                 string
-	CorsOrigin               string
-	RedisURL                 string
-	UploadBufferDir          string
-	NestJSGrpcURL            string
-	GrpcPort                 int
-	S3Domain                 string
+	Port                    int
+	WorkerPoolSize          int
+	BandwidthCheckEnabled   bool
+	TelegramBotToken        string
+	TelegramChatID          string
+	TelegramAPIRoot         string
+	TelegramUploadBotTokens []string
+	TelegramSendRateLimit   int
+	MaxChunkSize            int64
+	MaxBufferFileSize       int64
+	JWTSecret               string
+	MasterSecret            string
+	LogDir                  string
+	LogLevel                string
+	CorsOrigin              string
+	RedisURL                string
+	UploadBufferDir         string
+	NestJSGrpcURL           string
+	GrpcPort                int
+	S3Domain                string
+	// gRPC mTLS material. When all three are set, both the TransferService
+	// server and the CoreService client run over TLS with mutual cert auth
+	// (peers must present a cert signed by GrpcTLSCA). Empty → plaintext
+	// (single-host bridge / local dev). SAN of each leaf must match the
+	// dns:/// authority the peer dials (backend-core / backend-transfer).
+	GrpcTLSCert string
+	GrpcTLSKey  string
+	GrpcTLSCA   string
+	// Event stream (file:events) consumer-group settings. Multiple Go instances
+	// join EventConsumerGroup so each event is delivered to exactly one instance
+	// (vs the old Pub/Sub fan-out that delivered to all). EventConsumerName is the
+	// per-instance identity used by XAUTOCLAIM to reclaim a dead instance's
+	// pending entries; it MUST be unique per instance.
+	EventConsumerGroup  string
+	EventConsumerName   string
+	EventWorkerPoolSize int
+	EventClaimMinIdle   time.Duration
+	// UploadOutstandingTTL bounds how long a per-file chunked-upload outstanding
+	// counter (Redis key upload:outstanding:*) survives if an instance dies
+	// mid-drain (INCR done, DECR never reached). Re-armed on every INCR, so an
+	// actively-uploading file never expires under itself; it only matters as the
+	// self-heal ceiling for a crashed instance's stuck counter. Tune up if very
+	// large/slow uploads can legitimately stay outstanding longer than the default.
+	UploadOutstandingTTL time.Duration
 }
 
 func Load() *Config {
@@ -94,6 +120,41 @@ func Load() *Config {
 		log.Printf("Warning: MASTER_SECRET is %d bytes, expected exactly 32 bytes", len(masterSecret))
 	}
 
+	eventWorkerPoolSizeStr := getEnv("EVENT_WORKER_POOL_SIZE", "5")
+	eventWorkerPoolSize, err := strconv.Atoi(eventWorkerPoolSizeStr)
+	if err != nil || eventWorkerPoolSize <= 0 {
+		eventWorkerPoolSize = 5
+	}
+
+	// Idle threshold before XAUTOCLAIM reclaims another instance's pending entry.
+	// Must exceed the longest expected handler runtime so a slow-but-alive instance
+	// is not robbed of its in-flight message.
+	claimMinIdleStr := getEnv("EVENT_CLAIM_MIN_IDLE", "5m")
+	claimMinIdle, err := time.ParseDuration(claimMinIdleStr)
+	if err != nil || claimMinIdle <= 0 {
+		claimMinIdle = 5 * time.Minute
+	}
+
+	// Self-heal ceiling for the chunked-upload outstanding counter. Default 6h is
+	// long enough for a large, slow upload to finish (the TTL re-arms on every
+	// chunk INCR) yet bounds leakage from a crashed instance's stuck counter.
+	outstandingTTLStr := getEnv("UPLOAD_OUTSTANDING_TTL", "6h")
+	outstandingTTL, err := time.ParseDuration(outstandingTTLStr)
+	if err != nil || outstandingTTL <= 0 {
+		outstandingTTL = 6 * time.Hour
+	}
+
+	// Per-instance consumer name for XAUTOCLAIM. Defaults to hostname-pid; override
+	// with INSTANCE_ID when hostnames are not unique (e.g. some orchestrators).
+	consumerName := getEnv("INSTANCE_ID", "")
+	if consumerName == "" {
+		host, hErr := os.Hostname()
+		if hErr != nil || host == "" {
+			host = "unknown"
+		}
+		consumerName = fmt.Sprintf("%s-%d", host, os.Getpid())
+	}
+
 	return &Config{
 		Port:                    port,
 		WorkerPoolSize:          workerPoolSize,
@@ -115,6 +176,14 @@ func Load() *Config {
 		NestJSGrpcURL:           getEnv("NESTJS_GRPC_URL", "localhost:50051"),
 		GrpcPort:                grpcPort,
 		S3Domain:                getEnv("S3_DOMAIN", "s3.example.com"),
+		GrpcTLSCert:             getEnv("GRPC_TLS_CERT", ""),
+		GrpcTLSKey:              getEnv("GRPC_TLS_KEY", ""),
+		GrpcTLSCA:               getEnv("GRPC_TLS_CA", ""),
+		EventConsumerGroup:      getEnv("EVENT_CONSUMER_GROUP", "transfer-workers"),
+		EventConsumerName:       consumerName,
+		EventWorkerPoolSize:     eventWorkerPoolSize,
+		EventClaimMinIdle:       claimMinIdle,
+		UploadOutstandingTTL:    outstandingTTL,
 	}
 }
 

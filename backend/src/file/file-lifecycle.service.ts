@@ -142,8 +142,16 @@ export class FileLifecycleService {
       botId: Number(fileRecord.botId),
     };
 
-    await this.redis.publish(
+    // XADD (not PUBLISH): consumed by a Go consumer group so exactly one
+    // transfer instance handles each event. MAXLEN ~ caps stream growth since
+    // streams persist (unlike pub/sub). See plan #1 (file:events migration).
+    await this.redis.xadd(
       'file:events',
+      'MAXLEN',
+      '~',
+      10000,
+      '*',
+      'payload',
       JSON.stringify({
         type: 'DELETE_FILE',
         payload: eventPayload,

@@ -1,10 +1,9 @@
-import { Injectable, Logger, ConflictException, Inject } from '@nestjs/common';
+import { Injectable, Logger, ConflictException } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import Redis from 'ioredis';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { FileLifecycleService } from '../file/file-lifecycle.service';
-import { REDIS_CLIENT } from '../redis';
+import { CacheService } from '../cache/cache.service';
 
 interface CleanupResult {
   deletedCount: number;
@@ -35,7 +34,7 @@ export class TrashCleanupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly fileLifecycleService: FileLifecycleService,
-    @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly cacheService: CacheService,
   ) {}
 
   private async clearCleanupFlag(userId: string): Promise<void> {
@@ -152,44 +151,6 @@ export class TrashCleanupService {
     return { accepted: true };
   }
 
-  private async publishDeleteEvent(fileRecord: any) {
-    if (process.env.ENABLE_EVENT_DRIVEN_DELETE !== 'true') {
-      await this.fileLifecycleService.purgeFilesFromTelegram([fileRecord]);
-      return;
-    }
-
-    const telegramFileIds: string[] = [];
-    if (fileRecord.telegramMessageId) {
-      telegramFileIds.push(fileRecord.telegramMessageId.toString());
-    }
-
-    if (fileRecord.isChunked && fileRecord.chunks) {
-      fileRecord.chunks.forEach(
-        (chunk: { telegramMessageId: number | null }) => {
-          if (chunk.telegramMessageId) {
-            telegramFileIds.push(chunk.telegramMessageId.toString());
-          }
-        },
-      );
-    }
-
-    const eventPayload = {
-      fileId: fileRecord.id,
-      telegramMessageIds: telegramFileIds,
-      botId: Number(fileRecord.botId),
-    };
-
-    await this.redis.publish(
-      'file:events',
-      JSON.stringify({
-        type: 'DELETE_FILE',
-        payload: eventPayload,
-      }),
-    );
-
-    this.logger.debug(`Published DELETE_FILE event for file ${fileRecord.id}`);
-  }
-
   /**
    * Internal: delete all trashed items for a user, then clear flag.
    */
@@ -206,7 +167,7 @@ export class TrashCleanupService {
 
       for (const file of trashFiles) {
         try {
-          await this.publishDeleteEvent(file);
+          await this.fileLifecycleService.publishDeleteEvent(file);
           await this.fileLifecycleService.purgeTempFiles([file]);
           await this.prisma.$transaction(async (tx) => {
             await tx.fileRecord.delete({ where: { id: file.id } });
@@ -263,6 +224,15 @@ export class TrashCleanupService {
    */
   @Cron('0 2 * * *')
   async handleTrashCleanup() {
+    const lockKey = 'cron:trash-cleanup';
+    const acquired = await this.cacheService.acquireLock(lockKey, 3600);
+    if (!acquired) {
+      this.logger.debug(
+        `Cron ${lockKey} running on another instance, skipping`,
+      );
+      return;
+    }
+
     this.logger.log('Starting trash cleanup cron job...');
 
     const cutoffDate = new Date();
@@ -286,7 +256,7 @@ export class TrashCleanupService {
 
       for (const file of expiredFiles) {
         try {
-          await this.publishDeleteEvent(file);
+          await this.fileLifecycleService.publishDeleteEvent(file);
           eventsPublished++;
           affectedUserIds.add(file.userId);
         } catch (err) {

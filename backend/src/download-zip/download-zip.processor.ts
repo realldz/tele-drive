@@ -20,6 +20,7 @@ import { TransferReadService } from '../file/transfer-read.service';
 import { SettingsService } from '../settings/settings.service';
 import { TEMP_STORAGE } from '../common/temp-storage';
 import type { TempStorage } from '../common/temp-storage/temp-storage.interface';
+import { CacheService } from '../cache/cache.service';
 import { DownloadZipJobData } from '../queue';
 import { DownloadZipService } from './download-zip.service';
 import type {
@@ -63,6 +64,7 @@ export class DownloadZipProcessor
     private readonly settingsService: SettingsService,
     private readonly downloadZipService: DownloadZipService,
     @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
+    private readonly cacheService: CacheService,
   ) {
     super();
     this.baseDir = process.env.UPLOAD_BUFFER_DIR || './.upload-buffer';
@@ -456,6 +458,18 @@ export class DownloadZipProcessor
 
   @Cron('*/5 * * * *')
   async cleanupExpiredZips(): Promise<void> {
+    // Single-flight across NestJS instances: only one runs per 5-min period.
+    // No explicit release — TTL (240s) expires before the next fire so the
+    // following period can re-acquire; mirrors the other cron lock pattern.
+    const acquired = await this.cacheService.acquireLock(
+      'cron:cleanup-expired-zips',
+      240,
+    );
+    if (!acquired) {
+      this.logger.debug('Cron cleanup-expired-zips running elsewhere, skipping');
+      return;
+    }
+
     const expired = await this.prisma.downloadJob.findMany({
       where: { status: 'ready', expiresAt: { lt: new Date() } },
     });

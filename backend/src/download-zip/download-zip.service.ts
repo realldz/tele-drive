@@ -79,8 +79,16 @@ export class DownloadZipService {
     shareToken: string | null,
   ): Promise<void> {
     if (this.zipOwnerIsGo()) {
-      await this.redis.publish(
+      // XADD (not PUBLISH): consumed by a Go consumer group so exactly one
+      // transfer instance assembles each ZIP. MAXLEN ~ caps stream growth.
+      // See plan #1 (file:events migration).
+      await this.redis.xadd(
         'file:events',
+        'MAXLEN',
+        '~',
+        10000,
+        '*',
+        'payload',
         JSON.stringify({
           type: 'CREATE_ZIP',
           payload: { jobId },
@@ -371,7 +379,13 @@ export class DownloadZipService {
       where: { id: jobId },
     });
     if (!job) {
-      return { found: false, status: '', createdAt: '', expiresAt: '', parts: [] };
+      return {
+        found: false,
+        status: '',
+        createdAt: '',
+        expiresAt: '',
+        parts: [],
+      };
     }
 
     const rawParts = (job.zipParts as unknown as ZipPart[]) || [];

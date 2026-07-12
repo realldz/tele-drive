@@ -19,39 +19,39 @@ Cloud storage powered by Telegram. Store, manage, and share files using Telegram
 ## Architecture
 
 ```
-                     ┌──────────────────┐
-       Users ──────► │    nginx :80     │
-                     │ (reverse proxy)  │
-                     └──┬────────┬──────┘
-                        │        │
-                /api/*    │        │  /*
-                         ▼        ▼
-        ┌──────────────────────┐ ┌──────────┐
-        │ Backend Core API     │ │ Frontend │
-        │ NestJS               │ │ Next.js  │
-        │  :3001               │ │  :3000   │
-        └──────────────────────┘ └──────────┘
-                     │
-                     │ /files/*, /s3/*, /api/files/*, /api/s3/*
-                     ▼
-             ┌──────────────────────┐
-             │ Backend Transfer API │
-             │ NestJS               │
-             │  :3001               │
-             └──────────┬───────────┘
-                        │
-                      ▼
-               ┌──────────────┐    ┌────────────────┐
-               │ nginx :8088  │───►│ telegram-bot-   │
-              │ (file proxy) │    │ api :8081       │
-              └──────────────┘    │ (Local Bot API) │
-                                  └────────────────┘
+                          ┌──────────────────┐
+        Users ──────────► │  nginx :80/:443  │
+                          │ (reverse proxy)  │
+                          └──┬───────────┬────┘
+            control plane    │           │   data plane
+            /api/* (most)    │           │   /files/*, /s3/*, transfer /api/files/*
+                             ▼           ▼
+        ┌──────────────────────────┐  ┌──────────────────────────┐  ┌──────────┐
+        │ Backend Core (NestJS)    │  │ Backend Transfer (Go)    │  │ Frontend │
+        │ auth, users, folders,    │◄─┤ binary I/O: upload+      │  │ Next.js  │
+        │ admin, metadata, quota   │─►│ Telegram dispatch, S3    │  │  :3000   │
+        │  :3001   gRPC :50051     │  │ data plane, ZIP, stream  │  └──────────┘
+        └─────┬──────────┬─────────┘  └────────────┬─────────────┘
+              │          │   gRPC (bidirectional mTLS)
+              ▼          ▼                          ▼
+        ┌──────────┐ ┌────────┐          ┌──────────────┐    ┌────────────────┐
+        │ Postgres │ │ Redis  │          │ nginx :8088  │───►│ telegram-bot-  │
+        │ (Prisma) │ │ (auth, │          │ (file proxy) │    │ api :8081      │
+        └──────────┘ │ quota, │          └──────────────┘    │ (Local Bot API)│
+                     │ events)│                              └────────────────┘
+                     └────────┘
 ```
+
+NestJS (control plane) and the Go transfer service (data plane) talk over gRPC with
+bidirectional mTLS; they share Redis (auth tokens, quota, the chunked-upload
+outstanding counter, and a `file:events` stream) and Postgres metadata. nginx routes
+data-plane paths straight to Go and everything else to NestJS. The Go service can be
+split onto its own host(s) for bandwidth — see [Horizontal Scaling](#horizontal-scaling-multi-host).
 
 ## Prerequisites
 
 - **Docker** and **Docker Compose** (for Docker deployment)
-- **Node.js 20+** (for local development)
+- **Node.js 20+** and **Go 1.22+** (for local development — NestJS control plane + Go data plane)
 - **Telegram Bot** — create via [@BotFather](https://t.me/BotFather)
 - **Telegram API credentials** — get `api_id` and `api_hash` from [my.telegram.org](https://my.telegram.org)
 - **Telegram Channel/Group** — add bot as admin, get the chat ID
@@ -113,11 +113,15 @@ docker compose up -d
 
 Access at [http://localhost](http://localhost).
 
-Compose now runs two backend containers internally:
-- `backend-core` for auth, users, settings, folders, and admin APIs
-- `backend-transfer` for `/files/*`, `/s3/*`, and transfer-heavy `/api/files/*` paths
+Compose runs the full stack internally: two app backends plus Postgres, Redis, and
+the Telegram Local Bot API:
+- `backend-core` (NestJS) — auth, users, settings, folders, admin, metadata, quota
+- `backend-transfer` (Go) — the binary data plane: `/files/*`, `/s3/*`, and
+  transfer-heavy `/api/files/*` (upload encrypt + Telegram dispatch, S3 object I/O,
+  ZIP assembly, download streaming)
 
-Public URLs stay the same because nginx routes requests to the right backend internally.
+The two talk over gRPC (mTLS) and share Redis + Postgres. Public URLs stay the same
+because nginx routes each request to the right backend internally.
 
 #### Option B: Cloudflare Tunnel (no port exposure)
 
@@ -145,6 +149,69 @@ Configure routing in [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) d
 | View core logs | `docker container logs -f tele-drive-backend-core-1` |
 | View transfer logs | `docker container logs -f tele-drive-backend-transfer-1` |
 | Rebuild all | `docker compose build` |
+
+## Horizontal Scaling (multi-host)
+
+The default `docker-compose.yml` runs everything on one host. For heavy traffic you
+can split the **Go data plane** (binary I/O: upload encrypt + Telegram dispatch, S3
+object I/O, ZIP assembly, download streaming) onto its own high-bandwidth host,
+while the **control plane** (NestJS core, Postgres, Redis, edge nginx, frontend)
+stays small and private on another.
+
+```
+  public ─▶ HOST-CORE: nginx-edge :80/:443 ─┬─ backend-core (NestJS) + frontend
+                                             │  postgres / redis (private NIC)
+                                             │
+            data-plane HTTP / Redis / gRPC (mTLS) over a PRIVATE network
+                                             │
+            HOST-GO(s): backend-transfer (Go) + telegram-bot-api + nginx-fastpath
+                         (one or more hosts, round-robined by the edge)
+```
+
+Two compose files drive it:
+
+| File | Host | Brings up |
+|------|------|-----------|
+| `docker-compose.core.yml` | control-plane | postgres, redis, backend-core, nginx-edge, frontend |
+| `docker-compose.transfer.yml` | data-plane | backend-transfer (Go), telegram-bot-api, nginx-fastpath |
+
+```bash
+# On the control-plane host
+cp .env.core.example .env.core      # set GO_HOST, CORE_PRIVATE_IP, REDIS_PASSWORD, UPLOAD_BUFFER_NFS
+docker compose --env-file .env.core -f docker-compose.core.yml up -d
+
+# On the data-plane host (bring up AFTER core — Go waits up to 60s for the core gRPC server)
+cp .env.transfer.example .env.transfer   # set CORE_HOST, GO_PRIVATE_IP, SAME REDIS_PASSWORD
+docker compose --env-file .env.transfer -f docker-compose.transfer.yml up -d
+```
+
+Requirements and guarantees:
+
+- **Private network** between the hosts. Redis (password), gRPC (bidirectional
+  mTLS), and the data-plane HTTP/Telegram ports all bind private NICs only — never
+  `0.0.0.0`. Firewall each port to the peer host.
+- **Shared NFS** export mounted at `UPLOAD_BUFFER_NFS` on both hosts (download-while-
+  draining reads the upload buffer on the Go side).
+- **gRPC certs**: run `scripts/gen-grpc-certs.sh` once and copy `certs/grpc/` to both
+  hosts. mTLS hostname verification is pinned to the logical service names
+  (`backend-core` / `backend-transfer`), so the same certs work on any host/IP — no
+  per-host SANs needed.
+
+### Scaling the data plane across several Go hosts
+
+Set `GO_UPSTREAM` in `.env.core` to a comma/space-separated list; the edge
+round-robins across them with passive health ejection:
+
+```
+GO_UPSTREAM=10.0.0.2:3001,10.0.0.3:3001,10.0.0.4:3001
+```
+
+Each Go host runs its own `docker-compose.transfer.yml` and shares the control-plane
+host's Redis (chunked-upload outstanding counter + file events) and the same NFS
+buffer, so a chunked upload spread across hosts still completes correctly. The
+Go→NestJS gRPC path already round-robins via `dns:///`.
+
+Rollback is the untouched single-host `docker-compose.yml`.
 
 ## Environment Variables
 
@@ -245,7 +312,9 @@ Admins can change `MAX_CONCURRENT_CHUNKS` in the **Admin Dashboard → System Se
 
 ## Tech Stack
 
-- **Backend**: [NestJS](https://nestjs.com/) + [Prisma](https://prisma.io/) + PostgreSQL + [Telegraf](https://telegraf.js.org/)
+- **Control plane**: [NestJS](https://nestjs.com/) + [Prisma](https://prisma.io/) + PostgreSQL + [Telegraf](https://telegraf.js.org/)
+- **Data plane**: [Go](https://go.dev/) ([Echo](https://echo.labstack.com/)) — binary upload/download, S3 object I/O, ZIP assembly
+- **Inter-service**: gRPC (bidirectional mTLS) + Redis (shared auth/quota/events)
 - **Frontend**: [Next.js 16](https://nextjs.org/) + [Tailwind CSS](https://tailwindcss.com/) + [Xgplayer](https://h5player.bytedance.com/) + [react-pdf](https://github.com/wojtekmaj/react-pdf)
 - **Infrastructure**: Docker + nginx + [Telegram Local Bot API](https://github.com/aiogram/telegram-bot-api) + optional [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-apps/)
 

@@ -1,0 +1,174 @@
+# ─── HOST-CORE (control plane) ──────────────────────────────────────────────
+# Deploy on the control-plane host: NestJS core API, Postgres, Redis, the edge
+# nginx (public :80/:443), and the frontend. The Go data plane runs on a
+# SEPARATE host (see docker-compose.transfer.yml).
+#
+# Cross-host wiring (all values come from .env.core — see .env.core.example):
+#   GO_HOST            host/IP of the Go data-plane host (gRPC + HTTP target)
+#   CORE_PRIVATE_IP    private-NIC IP this host binds Redis to (NOT 0.0.0.0)
+#   UPLOAD_BUFFER_NFS  shared NFS path mounted as the upload buffer on BOTH hosts
+#
+# Channels leaving this host (keep them on a private network):
+#   gRPC  core ⇄ go        mTLS (certs/grpc, Phase C)
+#   Redis go  →  core      password-auth (Phase A); bound to CORE_PRIVATE_IP only
+#   purge core →  go        HTTP to GO_HOST:3001 (TRANSFER_API_URL)
+#   edge  nginx → go        /files/*, S3 object data-plane proxied to GO_HOST:3001
+#
+# Start order: bring this host up first (Postgres/Redis/core gRPC server), THEN
+# the Go host — the Go service blocks up to 60s waiting for the core gRPC server.
+
+services:
+  # ─── PostgreSQL ─────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: tele_drive
+      POSTGRES_USER: tele_drive
+      POSTGRES_PASSWORD: tele_drive
+    ports:
+      # Loopback-only: only NestJS (same host) and host-local psql/GUI reach it.
+      # Go never connects to Postgres — it goes through the core gRPC server.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tele_drive -d tele_drive"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
+  # ─── Redis ──────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    # Bound to the PRIVATE NIC only (CORE_PRIVATE_IP), never 0.0.0.0, so the Go
+    # host can reach it over the private network while it stays invisible to the
+    # public LAN. Auth (Phase A) is the second layer. Firewall 6379 to GO_HOST.
+    ports:
+      - "${CORE_PRIVATE_IP}:6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+    restart: unless-stopped
+
+  # ─── Backend Core API (NestJS) ─────────────────────────────────────
+  backend-core:
+    build: ./backend
+    env_file:
+      - ./backend/.env
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DATABASE_URL: postgresql://tele_drive:tele_drive@postgres:5432/tele_drive
+      # Cross-host Telegram fast-path on the Go host. NestJS core keeps ONE live
+      # Telegram path: S3 multipart UploadPart/Abort (s3-multipart.service.ts),
+      # which is NOT gated by S3_DATA_PLANE_OWNER. Without this it would fall back
+      # to the public api.telegram.org and break large S3 multipart uploads.
+      # Points at nginx-fastpath on the Go host (published on GO_HOST:8088).
+      TELEGRAM_API_ROOT: http://${GO_HOST}:8088
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
+      UPLOAD_BUFFER_DIR: /data/upload-buffer
+      IS_TRANSFER_SERVICE: "false"
+      # Data-plane ownership: Go owns heavy I/O (upload dispatch + ZIP assembly +
+      # S3 object data plane + bandwidth). NestJS keeps only the control plane.
+      UPLOAD_DISPATCH_OWNER: "go"
+      ZIP_OWNER: "go"
+      UPLOAD_IO_OWNER: "go"
+      S3_DATA_PLANE_OWNER: "go"
+      BANDWIDTH_OWNER: "go"
+      # Cross-host gRPC target: the Go TransferService on GO_HOST. dns:/// keeps
+      # the round_robin LB (Phase #4). TLS hostname verification is pinned to the
+      # service name "backend-transfer" (grpc-transfer.client.ts), NOT GO_HOST, so
+      # the committed cert SAN works unchanged across hosts — no per-host re-issue.
+      GO_TRANSFER_GRPC_URL: dns:///${GO_HOST}:50051
+      GRPC_PORT: "50051"
+      # Bind the gRPC server to the private NIC so the Go host can reach it while
+      # it stays invisible to the public LAN. The container listens on
+      # 0.0.0.0:50051 (main-core.ts); this maps only the private IP to it.
+      # Cross-host purge: NestJS delegates Telegram deletion to the Go host over
+      # HTTP (file-lifecycle.service.ts). Default targeted the in-compose service;
+      # now it must point at GO_HOST.
+      TRANSFER_API_URL: http://${GO_HOST}:3001
+      # Bidirectional gRPC mTLS. Presents the backend-core leaf cert; both peers
+      # verify against the shared internal CA. Generate with scripts/gen-grpc-certs.sh.
+      # Verification is pinned to service names (backend-core / backend-transfer),
+      # so the committed cert SANs work across hosts — no per-host re-issue needed.
+      GRPC_TLS_CERT: /certs/grpc/backend-core.crt
+      GRPC_TLS_KEY: /certs/grpc/backend-core.key
+      GRPC_TLS_CA: /certs/grpc/ca.crt
+      S3_DOMAIN: ${S3_DOMAIN:-s3.example.com}
+    volumes:
+      - ./backend/.logs:/app/.logs
+      # Shared upload buffer (NFS). Go writes chunks here; NestJS deletes them on
+      # abort/delete and reads directory size for stats. Both hosts mount the same
+      # NFS export at UPLOAD_BUFFER_NFS.
+      - ${UPLOAD_BUFFER_NFS}:/data/upload-buffer
+      - ./certs/grpc:/certs/grpc:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3001/v1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    command: ["sh", "-c", "npx prisma db push --skip-generate && node dist/main-core.js"]
+    ports:
+      # gRPC server (50051) bound to the PRIVATE NIC only so the Go host reaches
+      # it over the private network — never the public LAN. mTLS (Phase C) is the
+      # second layer. Firewall 50051 to GO_HOST. HTTP 3001 is NOT exposed: all
+      # public traffic enters through nginx-edge.
+      - "${CORE_PRIVATE_IP}:50051:50051"
+
+  # ─── Nginx edge (public reverse proxy) ──────────────────────────────
+  # Edge only: public :80/:443. The Telegram fast-path (:8088) lives on the Go
+  # host. Data-plane routes (/files/*, S3 object I/O) proxy across to GO_HOST.
+  nginx-edge:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.edge
+    ports:
+      - "${NGINX_PORT:-80}:80"
+      - "${NGINX_SSL_PORT:-443}:443"
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl:rw
+    environment:
+      - APP_DOMAIN=${APP_DOMAIN:-}
+      - S3_DOMAIN=${S3_DOMAIN:-s3.example.com}
+      - SSL_CERT_FILE=${SSL_CERT_FILE:-cert.pem}
+      - SSL_KEY_FILE=${SSL_KEY_FILE:-key.pem}
+      # Cross-host data-plane upstream(s): the Go transfer service host(s). Defaults
+      # to the single GO_HOST; set GO_UPSTREAM in .env.core to a comma/space list
+      # (e.g. "10.0.0.2:3001,10.0.0.3:3001") to round_robin the edge across several
+      # Go hosts. entrypoint-edge.sh expands it into the go_data_plane upstream block.
+      - GO_UPSTREAM=${GO_UPSTREAM:-${GO_HOST}:3001}
+    depends_on:
+      backend-core:
+        condition: service_started
+      frontend:
+        condition: service_started
+    restart: unless-stopped
+
+  # ─── Frontend (Next.js) ────────────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+        NEXT_PUBLIC_S3_DOMAIN: ${S3_DOMAIN:-}
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:

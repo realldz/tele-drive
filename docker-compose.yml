@@ -7,7 +7,9 @@ services:
       POSTGRES_USER: tele_drive
       POSTGRES_PASSWORD: tele_drive
     ports:
-      - "5432:5432"
+      # Loopback-only: reachable from the host (psql/GUI dev) but NOT from the LAN.
+      # Containers reach Postgres over the Docker bridge at postgres:5432 regardless.
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -21,16 +23,20 @@ services:
   # ─── Redis ──────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
-    ports:
-      - "6379:6379"
+    command: redis-server --requirepass ${REDIS_PASSWORD} --appendonly yes --maxmemory 256mb --maxmemory-policy noeviction
+    # No host port: Redis holds auth tokens, quota, and the upload outstanding
+    # counter — never expose it to the host/LAN. Containers reach it over the
+    # Docker bridge at redis:6379. Debug from host via:
+    #   docker compose exec redis redis-cli -a "$REDIS_PASSWORD"
     volumes:
       - redis-data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
       interval: 10s
       timeout: 5s
       retries: 5
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
     restart: unless-stopped
 
   # ─── Telegram Local Bot API Server ──────────────────────────────────
@@ -85,7 +91,7 @@ services:
       PORT: 3001
       DATABASE_URL: postgresql://tele_drive:tele_drive@postgres:5432/tele_drive
       TELEGRAM_API_ROOT: http://nginx:8088
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       UPLOAD_BUFFER_DIR: /data/upload-buffer
       IS_TRANSFER_SERVICE: "false"
       # Data-plane ownership: Go transfer service owns heavy I/O (upload dispatch + ZIP assembly).
@@ -106,12 +112,20 @@ services:
       # BandwidthInterceptor short-circuits to pass-through on every route it
       # decorates. Set to "nest" to restore in-process enforcement (legacy path).
       BANDWIDTH_OWNER: "go"
-      GO_TRANSFER_GRPC_URL: backend-transfer:50051
+      GO_TRANSFER_GRPC_URL: dns:///backend-transfer:50051
       GRPC_PORT: "50051"
+      # Bidirectional gRPC mTLS. This service presents the backend-core leaf cert
+      # (SAN backend-core, matched by the Go client's dns:/// authority) and both
+      # peers verify each other against the shared internal CA. Generate certs
+      # with scripts/gen-grpc-certs.sh; certs are git-ignored and mounted read-only.
+      GRPC_TLS_CERT: /certs/grpc/backend-core.crt
+      GRPC_TLS_KEY: /certs/grpc/backend-core.key
+      GRPC_TLS_CA: /certs/grpc/ca.crt
       S3_DOMAIN: ${S3_DOMAIN:-s3.example.com}
     volumes:
       - ./backend/.logs:/app/.logs
       - upload-buffer:/data/upload-buffer
+      - ./certs/grpc:/certs/grpc:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -137,20 +151,28 @@ services:
       # This service is the data plane: it owns upload dispatch + ZIP assembly
       # (see UPLOAD_DISPATCH_OWNER / ZIP_OWNER on backend-core).
       TELEGRAM_API_ROOT: http://nginx:8088
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       UPLOAD_BUFFER_DIR: /data/upload-buffer
       # Files at or below this size are buffered to disk (enables retry +
       # concurrency); larger files stream straight to Telegram (no RAM/disk).
       # Keep in sync with NestJS MAX_BUFFER_FILE_SIZE.
       MAX_BUFFER_FILE_SIZE: ${MAX_BUFFER_FILE_SIZE:-52428800}
-      NESTJS_GRPC_URL: backend-core:50051
+      NESTJS_GRPC_URL: dns:///backend-core:50051
       GRPC_PORT: "50051"
+      # Bidirectional gRPC mTLS. This service presents the backend-transfer leaf
+      # cert (SAN backend-transfer, matched by the NestJS client's dns:/// authority)
+      # and both peers verify each other against the shared internal CA. Certs are
+      # git-ignored and mounted read-only; generate with scripts/gen-grpc-certs.sh.
+      GRPC_TLS_CERT: /certs/grpc/backend-transfer.crt
+      GRPC_TLS_KEY: /certs/grpc/backend-transfer.key
+      GRPC_TLS_CA: /certs/grpc/ca.crt
       # Host filter for the S3 data-plane routes (GET/PUT/HEAD object). Requests
       # are only treated as S3 API calls when Host matches this domain.
       S3_DOMAIN: ${S3_DOMAIN:-s3.example.com}
     volumes:
       - ./backend/.logs:/app/.logs
       - upload-buffer:/data/upload-buffer
+      - ./certs/grpc:/certs/grpc:ro
     depends_on:
       telegram-bot-api:
         condition: service_healthy

@@ -21,6 +21,16 @@ import (
 // collide with keys from other packages.
 type ctxKey string
 
+// redactKey masks an AWS access key ID for safe log output, showing only the
+// first 4 characters followed by "****" to aid debugging without leaking the
+// full credential identifier.
+func redactKey(k string) string {
+	if len(k) <= 4 {
+		return "****"
+	}
+	return k[:4] + "****"
+}
+
 // requestIDKey carries the per-request correlation ID into the CredentialLookup
 // impl so its cache/gRPC logs line up with the HTTP access log.
 const requestIDKey ctxKey = "requestId"
@@ -125,7 +135,7 @@ func (v *Verifier) Verify(ctx context.Context, req *http.Request, requestID stri
 	v.logger.Debug("s3auth.verify.result",
 		"requestId", requestID,
 		"userId", result.UserID,
-		"accessKeyId", result.AccessKeyID,
+		"accessKeyId", redactKey(result.AccessKeyID),
 		"presigned", result.Presigned,
 		"durationMs", dur.Milliseconds(),
 	)
@@ -141,7 +151,7 @@ func (v *Verifier) verifyHeader(ctx context.Context, req *http.Request, authHead
 	}
 	v.logger.Debug("s3auth.parse.header_ok",
 		"requestId", requestID,
-		"accessKeyId", parsed.AccessKeyID,
+		"accessKeyId", redactKey(parsed.AccessKeyID),
 		"signedHeaders", strings.Join(parsed.SignedHeaders, ";"),
 		"region", parsed.Region,
 		"service", parsed.Service,
@@ -163,23 +173,21 @@ func (v *Verifier) verifyHeader(ctx context.Context, req *http.Request, authHead
 	if !hmac.Equal([]byte(expected), []byte(parsed.Signature)) {
 		v.logger.Warn("s3auth.signature.mismatch",
 			"requestId", requestID,
-			"accessKeyId", parsed.AccessKeyID,
+			"accessKeyId", redactKey(parsed.AccessKeyID),
 		)
-		// Dump full canonicalRequest only at debug to aid troubleshooting; mirrors
-		// the NestJS [S3-AUTH-DEBUG] line so log diffing across services is easy.
+		// Dump structural debug info only; signatures and canonical request are
+		// omitted from logs to prevent credential/secret material from appearing
+		// in log sinks.
 		v.logger.Debug("s3auth.signature.mismatch.detail",
 			"requestId", requestID,
 			"method", req.Method,
 			"url", req.URL.RequestURI(),
 			"signedHeaders", strings.Join(parsed.SignedHeaders, ";"),
-			"canonicalRequest", canonical,
-			"expectedSig", expected,
-			"clientSig", parsed.Signature,
 		)
 		return nil, ErrSignatureMismatch
 	}
 
-	v.logger.Debug("s3auth.signature.match", "requestId", requestID, "accessKeyId", parsed.AccessKeyID)
+	v.logger.Debug("s3auth.signature.match", "requestId", requestID, "accessKeyId", redactKey(parsed.AccessKeyID))
 	return &VerifyResult{UserID: userID, AccessKeyID: parsed.AccessKeyID, Presigned: false}, nil
 }
 
@@ -193,7 +201,7 @@ func (v *Verifier) verifyPresigned(ctx context.Context, req *http.Request, reque
 	}
 	v.logger.Debug("s3auth.parse.presigned_ok",
 		"requestId", requestID,
-		"accessKeyId", parsed.AccessKeyID,
+		"accessKeyId", redactKey(parsed.AccessKeyID),
 		"expiresSec", parsed.ExpiresSec,
 		"signedHeaders", strings.Join(parsed.SignedHeaders, ";"),
 	)
@@ -212,17 +220,17 @@ func (v *Verifier) verifyPresigned(ctx context.Context, req *http.Request, reque
 
 	if !hmac.Equal([]byte(expected), []byte(parsed.Signature)) {
 		v.logger.Warn("s3auth.signature.mismatch_presigned",
-			"requestId", requestID, "accessKeyId", parsed.AccessKeyID)
+			"requestId", requestID, "accessKeyId", redactKey(parsed.AccessKeyID))
+		// Signatures and canonical request omitted from logs to prevent
+		// credential/secret material from appearing in log sinks.
 		v.logger.Debug("s3auth.signature.mismatch_presigned.detail",
 			"requestId", requestID,
-			"canonicalRequest", canonical,
-			"expectedSig", expected,
-			"clientSig", parsed.Signature,
+			"signedHeaders", strings.Join(parsed.SignedHeaders, ";"),
 		)
 		return nil, ErrSignatureMismatch
 	}
 
-	v.logger.Debug("s3auth.signature.match", "requestId", requestID, "accessKeyId", parsed.AccessKeyID)
+	v.logger.Debug("s3auth.signature.match", "requestId", requestID, "accessKeyId", redactKey(parsed.AccessKeyID))
 	return &VerifyResult{UserID: userID, AccessKeyID: parsed.AccessKeyID, Presigned: true}, nil
 }
 
@@ -230,27 +238,27 @@ func (v *Verifier) verifyPresigned(ctx context.Context, req *http.Request, reque
 // for hit / miss / inactive / error so Phase 3 cache stats can be reconstructed
 // from logs alone if needed.
 func (v *Verifier) resolveCredential(ctx context.Context, accessKeyID, requestID string) (secret string, userID string, err error) {
-	v.logger.Debug("s3auth.cred.lookup.start", "requestId", requestID, "accessKeyId", accessKeyID)
+	v.logger.Debug("s3auth.cred.lookup.start", "requestId", requestID, "accessKeyId", redactKey(accessKeyID))
 
 	secret, userID, active, err := v.lookup.Get(ctx, accessKeyID)
 	if err != nil {
 		if err == ErrCredentialNotFound {
 			v.logger.Warn("s3auth.cred.lookup.miss",
-				"requestId", requestID, "accessKeyId", accessKeyID)
+				"requestId", requestID, "accessKeyId", redactKey(accessKeyID))
 			return "", "", err
 		}
 		v.logger.Error("s3auth.cred.lookup.error",
-			"requestId", requestID, "accessKeyId", accessKeyID, "error", err.Error())
+			"requestId", requestID, "accessKeyId", redactKey(accessKeyID), "error", err.Error())
 		return "", "", err
 	}
 	if !active {
 		v.logger.Warn("s3auth.cred.lookup.inactive",
-			"requestId", requestID, "accessKeyId", accessKeyID, "userId", userID)
+			"requestId", requestID, "accessKeyId", redactKey(accessKeyID), "userId", userID)
 		return "", "", ErrCredentialInactive
 	}
 
 	v.logger.Debug("s3auth.cred.lookup.hit",
-		"requestId", requestID, "accessKeyId", accessKeyID, "userId", userID)
+		"requestId", requestID, "accessKeyId", redactKey(accessKeyID), "userId", userID)
 	return secret, userID, nil
 }
 
@@ -260,23 +268,23 @@ func (v *Verifier) resolveCredential(ctx context.Context, accessKeyID, requestID
 func (v *Verifier) checkSkew(dateTime, requestID, accessKeyID string) error {
 	if len(dateTime) != 16 {
 		v.logger.Warn("s3auth.skew.bad_date_format",
-			"requestId", requestID, "accessKeyId", accessKeyID, "xAmzDate", dateTime)
+			"requestId", requestID, "accessKeyId", redactKey(accessKeyID), "xAmzDate", dateTime)
 		return ErrMalformed
 	}
 	t, err := parseAmzDate(dateTime)
 	if err != nil {
 		v.logger.Warn("s3auth.skew.bad_date_parse",
-			"requestId", requestID, "accessKeyId", accessKeyID, "xAmzDate", dateTime, "error", err.Error())
+			"requestId", requestID, "accessKeyId", redactKey(accessKeyID), "xAmzDate", dateTime, "error", err.Error())
 		return ErrMalformed
 	}
 	skew := absDuration(v.now().Sub(t))
 	if skew > maxClockSkew {
 		v.logger.Warn("s3auth.skew.too_old",
-			"requestId", requestID, "accessKeyId", accessKeyID, "skewSeconds", int64(skew.Seconds()))
+			"requestId", requestID, "accessKeyId", redactKey(accessKeyID), "skewSeconds", int64(skew.Seconds()))
 		return ErrSkewTooLarge
 	}
 	v.logger.Debug("s3auth.skew.ok",
-		"requestId", requestID, "accessKeyId", accessKeyID, "skewSeconds", int64(skew.Seconds()))
+		"requestId", requestID, "accessKeyId", redactKey(accessKeyID), "skewSeconds", int64(skew.Seconds()))
 	return nil
 }
 
@@ -285,17 +293,17 @@ func (v *Verifier) checkPresignedExpiry(dateTime string, expiresSec int, request
 	t, err := parseAmzDate(dateTime)
 	if err != nil {
 		v.logger.Warn("s3auth.presigned.bad_date",
-			"requestId", requestID, "accessKeyId", accessKeyID, "xAmzDate", dateTime)
+			"requestId", requestID, "accessKeyId", redactKey(accessKeyID), "xAmzDate", dateTime)
 		return ErrMalformed
 	}
 	expiresAt := t.Add(time.Duration(expiresSec) * time.Second)
 	if v.now().After(expiresAt) {
 		v.logger.Warn("s3auth.presigned.expired",
-			"requestId", requestID, "accessKeyId", accessKeyID, "expiresAt", expiresAt.UTC().Format(time.RFC3339))
+			"requestId", requestID, "accessKeyId", redactKey(accessKeyID), "expiresAt", expiresAt.UTC().Format(time.RFC3339))
 		return ErrExpired
 	}
 	v.logger.Debug("s3auth.presigned.ok",
-		"requestId", requestID, "accessKeyId", accessKeyID, "expiresAt", expiresAt.UTC().Format(time.RFC3339))
+		"requestId", requestID, "accessKeyId", redactKey(accessKeyID), "expiresAt", expiresAt.UTC().Format(time.RFC3339))
 	return nil
 }
 
