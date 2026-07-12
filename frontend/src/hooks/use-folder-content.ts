@@ -68,6 +68,11 @@ export function useFolderContent(token: string | null) {
     nextFolderCursor.current = null;
     setHasMoreFolders(true);
     setHasMoreFiles(true);
+    // Xoá nội dung thư mục cũ ngay khi đổi folder — nếu giữ lại, điều kiện
+    // spinner (list rỗng) fail và dashboard chỉ hiện dòng "Loading..." ở đáy.
+    // Clear để state rỗng → spinner toàn trang hiện nhất quán trong lúc fetch.
+    setFolders([]);
+    setFiles([]);
   }, [currentFolderId]);
 
   const fetchContent = useCallback(async (isLoadMoreCall = false) => {
