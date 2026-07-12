@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math"
 	"time"
 
 	"github.com/labstack/echo/v4"
@@ -90,14 +91,25 @@ func (h *FileHandler) streamToTelegram(
 		// Chunk completion → NestJS upserts FileChunk
 		reportCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
+		// proto ChunkResult.{size,telegram_message_id} are int32; clamp to avoid
+		// overflow. Telegram message IDs and chunk sizes stay well below 2^31 in
+		// practice, but an explicit clamp is safer than a silent truncation.
+		clampedSize := counter.count
+		if clampedSize > math.MaxInt32 {
+			clampedSize = math.MaxInt32
+		}
+		clampedMsgID := telegramMessageID
+		if clampedMsgID > math.MaxInt32 {
+			clampedMsgID = math.MaxInt32
+		}
 		if _, err := h.grpcClient.ReportChunkResults(reportCtx, []*pb.ChunkResult{{
 			FileId:            fileID,
 			ChunkIndex:        int32(chunkIndex),
 			TelegramFileId:    telegramFileID,
-			TelegramMessageId: int32(telegramMessageID),
+			TelegramMessageId: int32(clampedMsgID),
 			BotId:             botID,
 			EncryptionIv:      ivHex,
-			Size:              int32(counter.count),
+			Size:              int32(clampedSize),
 			Etag:              etag,
 			ChunkId:           generateUUID(),
 		}}); err != nil {
@@ -123,10 +135,14 @@ func (h *FileHandler) streamToTelegram(
 	// Non-chunked file completion → NestJS completes FileRecord
 	reportCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	clampedNonChunkedMsgID := telegramMessageID
+	if clampedNonChunkedMsgID > math.MaxInt32 {
+		clampedNonChunkedMsgID = math.MaxInt32
+	}
 	if err := h.grpcClient.ReportFileComplete(reportCtx, &pb.ReportFileCompleteRequest{
 		FileId:            fileID,
 		TelegramFileId:    telegramFileID,
-		TelegramMessageId: int32(telegramMessageID),
+		TelegramMessageId: int32(clampedNonChunkedMsgID),
 		BotId:             botID,
 		EncryptionIv:      ivHex,
 		Size:              counter.count,

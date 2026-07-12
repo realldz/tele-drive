@@ -112,23 +112,23 @@ func (r *CredentialResolver) readCache(ctx context.Context, accessKeyID, reqID s
 	}
 	if err != nil {
 		r.logger.Error("s3auth.cred.cache.redis_error",
-			"accessKeyId", accessKeyID, "error", err.Error(), "requestId", reqID)
+			"accessKeyId", redactKey(accessKeyID), "error", err.Error(), "requestId", reqID)
 		return nil, false
 	}
 
 	var cred CachedCredential
 	if jerr := json.Unmarshal([]byte(raw), &cred); jerr != nil {
 		r.logger.Warn("s3auth.cred.cache.corrupt",
-			"accessKeyId", accessKeyID, "error", jerr.Error(), "requestId", reqID)
+			"accessKeyId", redactKey(accessKeyID), "error", jerr.Error(), "requestId", reqID)
 		return nil, false
 	}
 
 	if !cred.Found {
 		r.logger.Debug("s3auth.cred.cache.hit_tombstone",
-			"accessKeyId", accessKeyID, "requestId", reqID)
+			"accessKeyId", redactKey(accessKeyID), "requestId", reqID)
 	} else {
 		r.logger.Debug("s3auth.cred.cache.hit",
-			"accessKeyId", accessKeyID, "userId", cred.UserID, "isActive", cred.IsActive, "requestId", reqID)
+			"accessKeyId", redactKey(accessKeyID), "userId", cred.UserID, "isActive", cred.IsActive, "requestId", reqID)
 	}
 	return &cred, true
 }
@@ -137,12 +137,12 @@ func (r *CredentialResolver) readCache(ctx context.Context, accessKeyID, reqID s
 // cache. NestJS returns Found=false (not a gRPC NotFound status) for unknown
 // keys, so we inspect the response flag, not status.Code.
 func (r *CredentialResolver) fetchFromCore(ctx context.Context, accessKeyID, reqID string) (*CachedCredential, error) {
-	r.logger.Info("s3auth.cred.cache.miss", "accessKeyId", accessKeyID, "requestId", reqID)
+	r.logger.Info("s3auth.cred.cache.miss", "accessKeyId", redactKey(accessKeyID), "requestId", reqID)
 
 	resp, err := r.core.GetS3Credential(ctx, accessKeyID)
 	if err != nil {
 		r.logger.Error("s3auth.cred.grpc.error",
-			"accessKeyId", accessKeyID, "error", err.Error(), "requestId", reqID)
+			"accessKeyId", redactKey(accessKeyID), "error", err.Error(), "requestId", reqID)
 		return nil, err
 	}
 
@@ -150,7 +150,7 @@ func (r *CredentialResolver) fetchFromCore(ctx context.Context, accessKeyID, req
 		tomb := &CachedCredential{AccessKeyID: accessKeyID, Found: false}
 		r.writeCache(ctx, tomb, credTombstoneTTL, reqID)
 		r.logger.Warn("s3auth.cred.grpc.not_found",
-			"accessKeyId", accessKeyID, "requestId", reqID)
+			"accessKeyId", redactKey(accessKeyID), "requestId", reqID)
 		return tomb, nil
 	}
 
@@ -163,7 +163,7 @@ func (r *CredentialResolver) fetchFromCore(ctx context.Context, accessKeyID, req
 	}
 	r.writeCache(ctx, cred, credActiveTTL, reqID)
 	r.logger.Info("s3auth.cred.grpc.fetched",
-		"accessKeyId", accessKeyID, "userId", cred.UserID, "isActive", cred.IsActive,
+		"accessKeyId", redactKey(accessKeyID), "userId", cred.UserID, "isActive", cred.IsActive,
 		"ttlSec", int(credActiveTTL.Seconds()), "requestId", reqID)
 	return cred, nil
 }
@@ -174,11 +174,11 @@ func (r *CredentialResolver) writeCache(ctx context.Context, cred *CachedCredent
 	payload, err := json.Marshal(cred)
 	if err != nil {
 		r.logger.Error("s3auth.cred.cache.marshal_error",
-			"accessKeyId", cred.AccessKeyID, "error", err.Error(), "requestId", reqID)
+			"accessKeyId", redactKey(cred.AccessKeyID), "error", err.Error(), "requestId", reqID)
 		return
 	}
 	if err := r.rdb.Set(ctx, credCacheKeyPrefix+cred.AccessKeyID, payload, ttl).Err(); err != nil {
 		r.logger.Error("s3auth.cred.cache.write_error",
-			"accessKeyId", cred.AccessKeyID, "error", err.Error(), "requestId", reqID)
+			"accessKeyId", redactKey(cred.AccessKeyID), "error", err.Error(), "requestId", reqID)
 	}
 }

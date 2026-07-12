@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strconv"
 
@@ -22,10 +23,16 @@ import (
 // row at receive time. Plaintext is buffered to disk, so no IV/etag is needed
 // here; the worker fills those in on completion.
 func (h *FileHandler) persistBufferedChunk(ctx context.Context, fileID string, chunkIndex int, size int64, storageKey string) {
+	// proto ChunkResult.size is int32; clamp to avoid overflow on chunks
+	// larger than 2 GiB (theoretical — current chunk ceiling is well below this).
+	clampedSize := size
+	if clampedSize > math.MaxInt32 {
+		clampedSize = math.MaxInt32
+	}
 	if _, err := h.grpcClient.ReportChunkBuffered(ctx, []*pb.BufferedChunk{{
 		FileId:         fileID,
 		ChunkIndex:     int32(chunkIndex),
-		Size:           int32(size),
+		Size:           int32(clampedSize),
 		TempStorageKey: storageKey,
 		ChunkId:        generateUUID(),
 	}}); err != nil {

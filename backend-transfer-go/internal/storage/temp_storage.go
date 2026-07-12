@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type TempStorage struct {
@@ -19,8 +20,23 @@ func NewTempStorage(baseDir string) (*TempStorage, error) {
 	return &TempStorage{baseDir: baseDir}, nil
 }
 
+// safeJoin resolves key relative to baseDir and rejects any path that would
+// escape outside baseDir (path traversal guard).
+func (s *TempStorage) safeJoin(key string) (string, error) {
+	// filepath.Clean removes ".." components; Join then re-anchors to baseDir.
+	resolved := filepath.Join(s.baseDir, filepath.Clean("/"+key))
+	if !strings.HasPrefix(resolved, filepath.Clean(s.baseDir)+string(filepath.Separator)) &&
+		resolved != filepath.Clean(s.baseDir) {
+		return "", fmt.Errorf("storage: key %q escapes base directory", key)
+	}
+	return resolved, nil
+}
+
 func (s *TempStorage) Write(key string, data io.Reader) (int64, error) {
-	filePath := filepath.Join(s.baseDir, key)
+	filePath, err := s.safeJoin(key)
+	if err != nil {
+		return 0, err
+	}
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return 0, err
 	}
@@ -35,7 +51,10 @@ func (s *TempStorage) Write(key string, data io.Reader) (int64, error) {
 }
 
 func (s *TempStorage) WriteWithTimeout(ctx context.Context, key string, data io.Reader) (int64, error) {
-	filePath := filepath.Join(s.baseDir, key)
+	filePath, err := s.safeJoin(key)
+	if err != nil {
+		return 0, err
+	}
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return 0, err
 	}
@@ -62,7 +81,10 @@ func (cr *contextReader) Read(p []byte) (int, error) {
 }
 
 func (s *TempStorage) WriteBytes(key string, data []byte) error {
-	filePath := filepath.Join(s.baseDir, key)
+	filePath, err := s.safeJoin(key)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return err
 	}
@@ -72,7 +94,10 @@ func (s *TempStorage) WriteBytes(key string, data []byte) error {
 // Create opens a writable file for the given key, creating parent dirs.
 // The caller is responsible for closing the returned file.
 func (s *TempStorage) Create(key string) (*os.File, error) {
-	filePath := filepath.Join(s.baseDir, key)
+	filePath, err := s.safeJoin(key)
+	if err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(filePath), 0755); err != nil {
 		return nil, err
 	}
@@ -80,12 +105,18 @@ func (s *TempStorage) Create(key string) (*os.File, error) {
 }
 
 func (s *TempStorage) Read(key string) (io.ReadCloser, error) {
-	filePath := filepath.Join(s.baseDir, key)
+	filePath, err := s.safeJoin(key)
+	if err != nil {
+		return nil, err
+	}
 	return os.Open(filePath)
 }
 
 func (s *TempStorage) ReadRange(key string, offset, length int64) (io.ReadCloser, error) {
-	filePath := filepath.Join(s.baseDir, key)
+	filePath, err := s.safeJoin(key)
+	if err != nil {
+		return nil, err
+	}
 	file, err := os.Open(filePath)
 	if err != nil {
 		return nil, err
@@ -116,8 +147,11 @@ func (l *limitReadCloser) Close() error {
 }
 
 func (s *TempStorage) Delete(key string) error {
-	filePath := filepath.Join(s.baseDir, key)
-	err := os.Remove(filePath)
+	filePath, err := s.safeJoin(key)
+	if err != nil {
+		return err
+	}
+	err = os.Remove(filePath)
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -125,8 +159,11 @@ func (s *TempStorage) Delete(key string) error {
 }
 
 func (s *TempStorage) Exists(key string) bool {
-	filePath := filepath.Join(s.baseDir, key)
-	_, err := os.Stat(filePath)
+	filePath, err := s.safeJoin(key)
+	if err != nil {
+		return false
+	}
+	_, err = os.Stat(filePath)
 	return err == nil
 }
 
