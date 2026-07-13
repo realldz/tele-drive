@@ -123,3 +123,6 @@ ck.md
 # Plans Configuration
 plans/**/*
 !plans/templates/*
+
+# Wizard installer scratch handoff (bash consumes then deletes it)
+.installer-plan.json
