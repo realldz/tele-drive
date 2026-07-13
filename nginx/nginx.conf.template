@@ -277,7 +277,8 @@ server {
     # Direct file/stream routes used by signed download links and media streaming
     location /files/ {
         rewrite ^/files/(.*) /v1/transfer/$1 break;
-        proxy_pass http://backend-transfer:3001;
+        set $transfer_upstream backend-transfer;
+        proxy_pass http://$transfer_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -349,6 +350,10 @@ server {
 
     access_log /var/log/nginx/s3_access.log s3_split;
 
+    # Docker embedded DNS — re-resolve service names per request so
+    # `docker compose --scale backend-transfer=N` load-balances across replicas.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
     # Bucket-only paths ("/", "/<bucket>", "/<bucket>/") → NestJS control plane.
     # Covers ListBuckets, ListObjects, CreateBucket, HeadBucket, DeleteBucket,
     # DeleteObjects (POST ?delete). No object key, so never data-plane.
@@ -384,8 +389,9 @@ server {
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
 
+        set $transfer_upstream backend-transfer;
         if ($s3_object_upstream = "data") {
-            proxy_pass http://backend-transfer:3001;
+            proxy_pass http://$transfer_upstream:3001$request_uri;
             break;
         }
         proxy_pass http://backend-core:3001;
@@ -394,7 +400,8 @@ server {
     # Redirect target for data I/O — goes to Go transfer service
     location /transfer {
         rewrite ^/transfer/(.*) /v1/transfer/$1 break;
-        proxy_pass http://backend-transfer:3001;
+        set $transfer_upstream backend-transfer;
+        proxy_pass http://$transfer_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -408,7 +415,8 @@ server {
     # Public URLs — goes to Go transfer service
     location /public {
         rewrite ^/public/(.*) /v1/transfer/public/$1 break;
-        proxy_pass http://backend-transfer:3001;
+        set $transfer_upstream backend-transfer;
+        proxy_pass http://$transfer_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
