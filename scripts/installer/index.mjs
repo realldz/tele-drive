@@ -11,7 +11,6 @@ import { parseArgs } from './lib/args.mjs';
 import { fieldsFor, validateValues } from './lib/env-schema.mjs';
 import { ensureRedisPassword } from './lib/secrets.mjs';
 import { parseEnv, getValue, renderEnv } from './lib/env-file.mjs';
-import { resolveTopology } from './lib/topology.mjs';
 import { buildPlan } from './lib/plan.mjs';
 import { promptTopology, promptScale, promptFields } from './lib/prompts.mjs';
 
@@ -23,7 +22,7 @@ function atomicWrite(path, content) {
   const dir = dirname(path);
   if (dir && dir !== '.' && !existsSync(dir)) mkdirSync(dir, { recursive: true });
   const tmp = `${path}.tmp-${process.pid}`;
-  writeFileSync(tmp, content);
+  writeFileSync(tmp, content, { mode: 0o600 });
   renameSync(tmp, path);
 }
 

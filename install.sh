@@ -38,6 +38,27 @@ NEED_CERTS="$(read_plan needCerts)"
 ROLE="$(read_plan role)"
 log "Plan: compose=$COMPOSE_FILE role=$ROLE build=$BUILD scale=${SCALE_TRANSFER:-none}"
 
+# Multi-host (core/go) needs cross-host coordination a single-host script
+# cannot perform: the gRPC CA must be shared across hosts and REDIS_PASSWORD
+# must match. Print the exact deploy command + steps and hand off, rather
+# than running compose (which would mint a divergent CA and mis-resolve the
+# per-role env vars). Only mono/scale are auto-deployed below.
+if [ "$ROLE" = "core" ] || [ "$ROLE" = "go" ]; then
+  if [ "$ROLE" = "core" ]; then ENV_FILE=".env.core"; else ENV_FILE=".env.transfer"; fi
+  BUILD_FLAG=""
+  [ "$BUILD" = "true" ] && BUILD_FLAG=" --build"
+  log "Multi-host ($ROLE) config written. install.sh does NOT deploy multi-host automatically."
+  printf '\n  Complete the multi-host deploy manually on THIS host:\n\n'
+  printf '  1. gRPC certs must share one CA across both hosts:\n'
+  printf '       - On the CORE host only: ./scripts/gen-grpc-certs.sh\n'
+  printf '       - Copy certs/grpc/* from the core host to this host (identical CA + trust).\n'
+  printf '  2. REDIS_PASSWORD in %s must match the value on the other host.\n' "$ENV_FILE"
+  printf '  3. Bring up the stack:\n'
+  printf '       docker compose --env-file %s -f %s up -d%s\n\n' "$ENV_FILE" "$COMPOSE_FILE" "$BUILD_FLAG"
+  rm -f "$PLAN_FILE"
+  exit 0
+fi
+
 # 4. Certs (idempotent — regenerate only if incomplete).
 certs_complete() {
   [ -f "$CERT_DIR/ca.crt" ] \
