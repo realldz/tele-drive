@@ -132,6 +132,11 @@ export class TelegramService implements OnModuleInit {
   /** Base delay in ms for exponential backoff (used when no Retry-After is provided) */
   private readonly BASE_DELAY_MS = 1000;
 
+  /** Max retry attempts for main bot getMe() at boot (Local Bot API may lag) */
+  private readonly INIT_MAX_RETRIES = 10;
+  /** Cap for init backoff delay so boot retries settle at a steady interval */
+  private readonly INIT_MAX_DELAY_MS = 15_000;
+
   /** In-memory cache: telegramFileId → { url, expiry } */
   private readonly fileLinkCache = new Map<
     string,
@@ -200,34 +205,83 @@ export class TelegramService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
-    // Gọi getMe() cho tất cả bots để lấy numeric ID
-    const results = await Promise.allSettled(
-      this.initBots.map((botClient) => botClient.getMe()),
-    );
-
     const mainToken: string = (
       this.bot.telegram as unknown as { token: string }
     ).token;
 
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
+    // Main bot MUST initialize — retry getMe() (Local Bot API server may not be
+    // up yet at boot). Fail-fast if it never comes up, so the service does not
+    // boot into a broken state where mainBotId stays 0 and every recovery 500s.
+    const mainBot = this.initBots[0];
+    const mainMe = await this.getMeWithRetry(mainBot, 'main bot');
+    const mainBotId = BigInt(mainMe.id);
+    this.botMap.set(mainBotId, mainBot);
+    this.botTokenMap.set(mainBotId, mainToken);
+    this.botIdList.push(mainBotId);
+    this.mainBotId = mainBotId;
+    this.logger.log(
+      `Bot 0 (main): id=${mainBotId}, username=@${mainMe.username}`,
+    );
+
+    // Extra upload bots are best-effort — a failure here only reduces upload
+    // throughput; downloads/recovery still work via the main bot.
+    const extraResults = await Promise.allSettled(
+      this.initBots.slice(1).map((botClient) => botClient.getMe()),
+    );
+    for (let i = 0; i < extraResults.length; i++) {
+      const result = extraResults[i];
       if (result.status === 'fulfilled') {
         const botId = BigInt(result.value.id);
-        const token = i === 0 ? mainToken : this.extraTokens[i - 1];
-        this.botMap.set(botId, this.initBots[i]);
-        this.botTokenMap.set(botId, token);
+        this.botMap.set(botId, this.initBots[i + 1]);
+        this.botTokenMap.set(botId, this.extraTokens[i]);
         this.botIdList.push(botId);
-        if (i === 0) this.mainBotId = botId;
         this.logger.log(
-          `Bot ${i}: id=${botId}, username=@${result.value.username}`,
+          `Bot ${i + 1}: id=${botId}, username=@${result.value.username}`,
         );
       } else {
-        this.logger.error(`Failed to getMe() for bot ${i}: ${result.reason}`);
+        this.logger.error(
+          `Failed to getMe() for bot ${i + 1}: ${result.reason}`,
+        );
       }
     }
 
     this.logger.log(
       `Bot ID map ready: ${this.botIdList.length} bot(s) [${this.botIdList.join(', ')}]`,
+    );
+  }
+
+  /**
+   * Retry getMe() with exponential backoff until it succeeds or attempts run out.
+   * Boot-time failures are usually the Local Bot API server not being ready yet
+   * (ECONNREFUSED), so we retry regardless of isRetryable() and throw on exhaustion.
+   */
+  private async getMeWithRetry(
+    botClient: Telegram,
+    label: string,
+  ): Promise<{ id: number; username?: string }> {
+    let lastError: any;
+    for (let attempt = 0; attempt <= this.INIT_MAX_RETRIES; attempt++) {
+      try {
+        return await botClient.getMe();
+      } catch (err: any) {
+        lastError = err;
+        if (attempt < this.INIT_MAX_RETRIES) {
+          const delay = Math.min(
+            this.BASE_DELAY_MS * Math.pow(2, attempt),
+            this.INIT_MAX_DELAY_MS,
+          );
+          this.logger.warn(
+            `getMe() for ${label} failed ` +
+              `(attempt ${attempt + 1}/${this.INIT_MAX_RETRIES + 1}), ` +
+              `retrying in ${delay}ms: ${err.code || err.message}`,
+          );
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+    }
+    throw new Error(
+      `Telegram ${label} failed to initialize after ` +
+        `${this.INIT_MAX_RETRIES + 1} attempts: ${lastError?.message ?? lastError}`,
     );
   }
 

@@ -79,6 +79,14 @@ services:
         condition: service_started
       frontend:
         condition: service_started
+    healthcheck:
+      # :8088 is the internal Telegram proxy backend uses as TELEGRAM_API_ROOT.
+      # Backend reaches Telegram only through this port, so gate readiness on it.
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8088"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     restart: unless-stopped
 
   # ─── Backend Core API (NestJS) ─────────────────────────────────────
