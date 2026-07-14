@@ -303,7 +303,8 @@ server {
 
     # Public S3 object access (no auth required)
     location /public/ {
-        proxy_pass http://backend-core:3001;
+        set $core_upstream backend-core;
+        proxy_pass http://$core_upstream:3001$request_uri;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -335,7 +336,8 @@ server {
 
     # Frontend — default route
     location / {
-        proxy_pass http://frontend:3000;
+        set $frontend_upstream frontend;
+        proxy_pass http://$frontend_upstream:3000$request_uri;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
