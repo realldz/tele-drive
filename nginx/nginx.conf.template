@@ -447,6 +447,10 @@ server {
     listen 8088;
     server_name _;
 
+    # Docker embedded DNS — resolve telegram-bot-api lazily so nginx starts
+    # without requiring the bot API container to exist yet.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
     # Serve downloaded files directly from shared volume (faster than bot API)
     # Local Bot API returns file_path as absolute: /var/lib/telegram-bot-api/<bot_id>/...
     # URL: /file/bot<TOKEN>/var/lib/telegram-bot-api/<bot_id>/path
@@ -459,7 +463,8 @@ server {
 
     # Fallback to Telegram Bot API server
     location @telegram_api {
-        proxy_pass http://telegram-bot-api:8081;
+        set $telegram_upstream telegram-bot-api;
+        proxy_pass http://$telegram_upstream:8081$request_uri;
         proxy_set_header Host $host;
         proxy_read_timeout 600s;
         proxy_send_timeout 600s;
@@ -468,7 +473,8 @@ server {
 
     # All other requests (API calls) → proxy to Telegram Bot API
     location / {
-        proxy_pass http://telegram-bot-api:8081;
+        set $telegram_upstream telegram-bot-api;
+        proxy_pass http://$telegram_upstream:8081$request_uri;
         proxy_set_header Host $host;
         proxy_read_timeout 600s;
         proxy_send_timeout 600s;
