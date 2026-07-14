@@ -186,8 +186,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      # started (not healthy): backend-core only becomes healthy after its
+      # onModuleInit getMe() succeeds via nginx:8088 — but nginx depends on
+      # backend-transfer being up, which would depend on core being healthy.
+      # That 3-way cycle deadlocks boot. Go retries the gRPC link to NestJS
+      # (30 attempts) and fetches all metadata over gRPC, so it is safe to
+      # start before core is fully initialized.
       backend-core:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3001/files/config || exit 1"]
       interval: 10s
