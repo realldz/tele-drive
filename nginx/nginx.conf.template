@@ -108,8 +108,9 @@ server {
 
     # Upload metadata endpoints (simple upload, init, complete, abort, status) -> NestJS
     location ~ ^/api/v1/transfer/upload$ {
+        set $core_upstream backend-core;
         rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://backend-core:3001;
+        proxy_pass http://$core_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -122,8 +123,9 @@ server {
     }
 
     location ~ ^/api/v1/transfer/upload/init$ {
+        set $core_upstream backend-core;
         rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://backend-core:3001;
+        proxy_pass http://$core_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -136,8 +138,9 @@ server {
     }
 
     location ~ ^/api/v1/transfer/upload/[^/]+/(complete|abort|status)$ {
+        set $core_upstream backend-core;
         rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://backend-core:3001;
+        proxy_pass http://$core_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -172,8 +175,9 @@ server {
     # Regex locations take priority over the transfer prefix block regardless of
     # order. Mirrors the upload metadata exception above.
     location ~ ^/api/v1/transfer/download-zip(/shared|/[^/]+/status)?$ {
+        set $core_upstream backend-core;
         rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://backend-core:3001;
+        proxy_pass http://$core_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -221,8 +225,9 @@ server {
 
     # Core API routes exposed behind /api
     location /api/folders {
+        set $core_upstream backend-core;
         rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://backend-core:3001;
+        proxy_pass http://$core_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -234,8 +239,9 @@ server {
     }
 
     location /api/folders/ {
+        set $core_upstream backend-core;
         rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://backend-core:3001;
+        proxy_pass http://$core_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -248,8 +254,9 @@ server {
 
     # Backend API — strip /api prefix and proxy to backend
     location /api/ {
+        set $core_upstream backend-core;
         rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://backend-core:3001;
+        proxy_pass http://$core_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -311,8 +318,9 @@ server {
 
     # Public S3 object access via /api (no auth required)
     location /api/public/ {
+        set $core_upstream backend-core;
         rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://backend-core:3001;
+        proxy_pass http://$core_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
