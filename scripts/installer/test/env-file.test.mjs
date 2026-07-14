@@ -33,6 +33,22 @@ test('value containing = is preserved on parse', () => {
   assert.equal(getValue(parsed, 'URL'), 'redis://:p=w@h:6379');
 });
 
+test('surrounding double quotes are stripped from parsed value', () => {
+  const parsed = parseEnv('SECRET="0123456789abcdef0123456789abcdef"\n');
+  assert.equal(getValue(parsed, 'SECRET'), '0123456789abcdef0123456789abcdef');
+});
+
+test('surrounding single quotes are stripped from parsed value', () => {
+  const parsed = parseEnv("URL='postgresql://u:p@h:5432/db'\n");
+  assert.equal(getValue(parsed, 'URL'), 'postgresql://u:p@h:5432/db');
+});
+
+test('unbalanced or inner quotes are left intact', () => {
+  assert.equal(getValue(parseEnv('A="unbalanced\n'), 'A'), '"unbalanced');
+  assert.equal(getValue(parseEnv('B=say "hi"\n'), 'B'), 'say "hi"');
+  assert.equal(getValue(parseEnv('C=""\n'), 'C'), '');
+});
+
 test('empty input renders only appended keys with trailing newline', () => {
   const parsed = parseEnv('');
   assert.equal(renderEnv(parsed, { A: '1', B: '2' }), 'A=1\nB=2\n');

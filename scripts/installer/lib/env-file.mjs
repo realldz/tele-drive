@@ -4,11 +4,24 @@
 
 const KV_RE = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/;
 
+// Strip a single matched pair of surrounding quotes (" or ') so a stored
+// MASTER_SECRET="…32…" reads back as 32 chars, not 34. Unbalanced or inner
+// quotes are left untouched.
+function unquote(value) {
+  if (value.length >= 2) {
+    const q = value[0];
+    if ((q === '"' || q === "'") && value[value.length - 1] === q) {
+      return value.slice(1, -1);
+    }
+  }
+  return value;
+}
+
 export function parseEnv(text) {
   const rawLines = text.length === 0 ? [] : text.replace(/\n$/, '').split('\n');
   const lines = rawLines.map((raw) => {
     const m = raw.match(KV_RE);
-    if (m) return { raw, key: m[1], value: m[2] };
+    if (m) return { raw, key: m[1], value: unquote(m[2]) };
     return { raw, key: null, value: null };
   });
   return { lines };
