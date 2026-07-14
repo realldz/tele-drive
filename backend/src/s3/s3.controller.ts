@@ -30,6 +30,7 @@ import type { Response } from 'express';
 import { Readable, Transform } from 'stream';
 import * as crypto from 'crypto';
 import { wrapRequestStream } from './s3-stream.utils';
+import { resolveMimeType } from '../common/utils/resolve-mime-type';
 import { SkipThrottle } from '@nestjs/throttler';
 import { UseInterceptors } from '@nestjs/common';
 import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
@@ -468,8 +469,11 @@ export class S3Controller {
 
     // --- CreateMultipartUpload ---
     if ('uploads' in req.query) {
-      const contentType =
-        (req.headers['content-type'] as string) || 'application/octet-stream';
+      const filename = key.split('/').pop() || key;
+      const contentType = resolveMimeType(
+        filename,
+        req.headers['content-type'],
+      );
       try {
         this.logger.debug(
           `S3 CreateMultipartUpload: ${userId}, ${bucket}, ${key}, ${contentType}`,
@@ -748,11 +752,9 @@ export class S3Controller {
     contentLength: number,
     res: Response,
   ) {
-    const contentType =
-      (req.headers['content-type'] as string) || 'application/octet-stream';
-    // Content-MD5 header (base64-encoded MD5 of body sent by client)
     const contentMd5Header = req.headers['content-md5'] as string | undefined;
     const filename = key.split('/').pop() || key;
+    const contentType = resolveMimeType(filename, req.headers['content-type']);
 
     this.logger.log(
       `S3 PutObject: s3://${bucket}/${key} (${contentLength} bytes, userId: ${userId})`,
@@ -976,13 +978,12 @@ export class S3Controller {
     req: S3AuthenticatedRequest,
     res: Response,
   ) {
-    const contentType =
-      (req.headers['content-type'] as string) || 'application/octet-stream';
     const contentLengthHeader = req.headers['content-length'];
     const contentLength = contentLengthHeader
       ? parseInt(contentLengthHeader, 10)
       : 0;
     const filename = key.split('/').pop() || key;
+    const contentType = resolveMimeType(filename, req.headers['content-type']);
 
     this.logger.log(
       `S3 PutObject redirect: s3://${bucket}/${key} (${contentLength} bytes, userId: ${userId})`,

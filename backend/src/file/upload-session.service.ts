@@ -24,6 +24,7 @@ import {
 
 import { UploadBufferService } from './upload-buffer.service';
 import { GrpcTransferClient } from '../grpc/grpc-transfer.client';
+import { resolveMimeType } from '../common/utils/resolve-mime-type';
 
 // When 'go', the Go transfer service owns all binary ingestion. The in-process
 // direct-upload fallbacks here are disabled. Set to 'nest' to restore them.
@@ -145,7 +146,7 @@ export class UploadSessionService {
       data: {
         filename: targetFilename,
         size: file.size,
-        mimeType: file.mimetype,
+        mimeType: resolveMimeType(targetFilename, file.mimetype),
         telegramFileId: null,
         telegramMessageId: null,
         isChunked: false,
@@ -278,7 +279,7 @@ export class UploadSessionService {
       data: {
         filename: targetFilename,
         size,
-        mimeType,
+        mimeType: resolveMimeType(targetFilename, mimeType),
         telegramFileId: null,
         telegramMessageId: null,
         isChunked: true,

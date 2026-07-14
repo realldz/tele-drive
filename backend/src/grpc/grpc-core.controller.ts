@@ -7,6 +7,7 @@ import { DownloadZipService } from '../download-zip/download-zip.service';
 import { S3AuthService } from '../s3/s3-auth.service';
 import { S3Service } from '../s3/s3.service';
 import { CryptoService } from '../crypto/crypto.service';
+import { resolveMimeType } from '../common/utils/resolve-mime-type';
 import { randomUUID } from 'crypto';
 
 @Controller()
@@ -438,7 +439,7 @@ export class GrpcCoreController {
       data: {
         filename,
         size: BigInt(data.contentLength),
-        mimeType: data.mimeType || 'application/octet-stream',
+        mimeType: resolveMimeType(filename, data.mimeType),
         status: 'uploading',
         isEncrypted: true,
         encryptionAlgo: 'aes-256-ctr',
