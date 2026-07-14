@@ -88,8 +88,11 @@ server {
 
     # Folder share download/stream routes -> Go Transfer
     location ~ ^/api/v1/folders/share/[^/]+/(download|stream)/[^/]+$ {
-        rewrite ^/api/(.*) /$1 break;
+        # set MUST precede rewrite: `rewrite ... break` halts the rewrite phase
+        # (which includes `set`), so a `set` placed after it never runs and
+        # $transfer_upstream stays empty -> proxy_pass http://:3001 -> 500.
         set $transfer_upstream backend-transfer;
+        rewrite ^/api/(.*) /$1 break;
         proxy_pass http://$transfer_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -148,8 +151,8 @@ server {
 
     # Transfer API routes (new canonical paths) -> Go Transfer
     location /api/v1/transfer/ {
-        rewrite ^/api/v1/transfer/(.*) /v1/transfer/$1 break;
         set $transfer_upstream backend-transfer;
+        rewrite ^/api/v1/transfer/(.*) /v1/transfer/$1 break;
         proxy_pass http://$transfer_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -184,8 +187,8 @@ server {
 
     # Legacy file API routes (non-upload) -> Go Transfer
     location ~ ^/api/v1/files/(config|buffer-status|stream-cookie|d/[^/]+|stream/[^/]+|share/stream/[^/]+|share/[^/]+/download-token|[^/]+/download-token)($|/|\?) {
-        rewrite ^/api/v1/files/(.*) /v1/transfer/$1 break;
         set $transfer_upstream backend-transfer;
+        rewrite ^/api/v1/files/(.*) /v1/transfer/$1 break;
         proxy_pass http://$transfer_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -201,8 +204,8 @@ server {
 
     # Legacy file API routes (unversioned backward compatibility) -> Go Transfer
     location ~ ^/api/files/(config|buffer-status|stream-cookie|d/[^/]+|stream/[^/]+|share/stream/[^/]+|share/[^/]+/download-token|[^/]+/download-token)($|/|\?) {
-        rewrite ^/api/files/(.*) /v1/transfer/$1 break;
         set $transfer_upstream backend-transfer;
+        rewrite ^/api/files/(.*) /v1/transfer/$1 break;
         proxy_pass http://$transfer_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -276,8 +279,8 @@ server {
 
     # Direct file/stream routes used by signed download links and media streaming
     location /files/ {
-        rewrite ^/files/(.*) /v1/transfer/$1 break;
         set $transfer_upstream backend-transfer;
+        rewrite ^/files/(.*) /v1/transfer/$1 break;
         proxy_pass http://$transfer_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -399,8 +402,8 @@ server {
 
     # Redirect target for data I/O — goes to Go transfer service
     location /transfer {
-        rewrite ^/transfer/(.*) /v1/transfer/$1 break;
         set $transfer_upstream backend-transfer;
+        rewrite ^/transfer/(.*) /v1/transfer/$1 break;
         proxy_pass http://$transfer_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -414,8 +417,8 @@ server {
 
     # Public URLs — goes to Go transfer service
     location /public {
-        rewrite ^/public/(.*) /v1/transfer/public/$1 break;
         set $transfer_upstream backend-transfer;
+        rewrite ^/public/(.*) /v1/transfer/public/$1 break;
         proxy_pass http://$transfer_upstream:3001;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
