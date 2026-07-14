@@ -25,7 +25,7 @@ export class QuotaSyncService {
       const results = await this.prisma.$queryRaw<
         { userId: string; actual_used: bigint }[]
       >`
-        SELECT "userId", COALESCE(SUM(size), 0) as actual_used
+        SELECT "userId", COALESCE(SUM(size), 0)::bigint as actual_used
         FROM "FileRecord"
         WHERE "deletedAt" IS NULL AND status = 'complete'
         GROUP BY "userId"
