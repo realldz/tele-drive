@@ -70,15 +70,6 @@ services:
       - S3_DOMAIN=${S3_DOMAIN:-s3.example.com}
       - SSL_CERT_FILE=${SSL_CERT_FILE:-cert.pem}
       - SSL_KEY_FILE=${SSL_KEY_FILE:-key.pem}
-    depends_on:
-      telegram-bot-api:
-        condition: service_healthy
-      backend-core:
-        condition: service_started
-      backend-transfer:
-        condition: service_started
-      frontend:
-        condition: service_started
     healthcheck:
       # :8088 is the internal Telegram proxy backend uses as TELEGRAM_API_ROOT.
       # Backend reaches Telegram only through this port, so gate readiness on it.
@@ -138,7 +129,7 @@ services:
       postgres:
         condition: service_healthy
       telegram-bot-api:
-        condition: service_healthy
+        condition: service_started
       redis:
         condition: service_healthy
     healthcheck:
@@ -183,7 +174,7 @@ services:
       - ./certs/grpc:/certs/grpc:ro
     depends_on:
       telegram-bot-api:
-        condition: service_healthy
+        condition: service_started
       redis:
         condition: service_healthy
       # started (not healthy): backend-core only becomes healthy after its
