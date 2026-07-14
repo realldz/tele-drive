@@ -179,11 +179,20 @@ func clampIntToInt32(v int) int32 {
 }
 
 func (h *FileHandler) IssueStreamCookie(c echo.Context) error {
-	userID := c.Get("userId").(string)
+	userID, ok := c.Get("userId").(string)
+	if !ok || userID == "" {
+		// authMiddleware always sets userId before this handler runs; a miss here
+		// means the middleware chain was misconfigured. Surface a clear 401 rather
+		// than panicking on the type assertion (which would become an opaque 500).
+		h.logger.Error("stream_cookie.issue.no_user_id", "requestId", c.Response().Header().Get("X-Request-ID"))
+		return c.JSON(http.StatusUnauthorized, map[string]string{"message": "Unauthorized"})
+	}
+
 	ttl := h.streamCookieTTL(c.Request().Context())
 	token, err := h.cryptoEngine.CreateStreamCookieToken(userID, ttl)
 	if err != nil {
-		return err
+		h.logger.Error("stream_cookie.issue.token_error", "userId", userID, "ttl", ttl, "error", err.Error())
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Failed to issue stream cookie"})
 	}
 
 	cookie := &http.Cookie{
@@ -197,6 +206,7 @@ func (h *FileHandler) IssueStreamCookie(c echo.Context) error {
 	}
 	c.SetCookie(cookie)
 
+	h.logger.Info("stream_cookie.issued", "userId", userID, "ttl", ttl)
 	expiresAt := formatISO8601(time.Now().Add(time.Duration(ttl) * time.Second))
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"expiresAt": expiresAt,
@@ -206,14 +216,15 @@ func (h *FileHandler) IssueStreamCookie(c echo.Context) error {
 
 func (h *FileHandler) IssueGuestStreamCookie(c echo.Context) error {
 	subject := "guest:" + c.RealIP()
-	if uID := c.Get("userId"); uID != nil && uID.(string) != "" {
-		subject = uID.(string)
+	if uID, ok := c.Get("userId").(string); ok && uID != "" {
+		subject = uID
 	}
 
 	ttl := h.streamCookieTTL(c.Request().Context())
 	token, err := h.cryptoEngine.CreateStreamCookieToken(subject, ttl)
 	if err != nil {
-		return err
+		h.logger.Error("stream_cookie.guest.token_error", "subject", subject, "ttl", ttl, "error", err.Error())
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "Failed to issue stream cookie"})
 	}
 
 	cookie := &http.Cookie{
@@ -227,6 +238,7 @@ func (h *FileHandler) IssueGuestStreamCookie(c echo.Context) error {
 	}
 	c.SetCookie(cookie)
 
+	h.logger.Info("stream_cookie.guest.issued", "subject", subject, "ttl", ttl)
 	expiresAt := formatISO8601(time.Now().Add(time.Duration(ttl) * time.Second))
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"expiresAt": expiresAt,
@@ -244,6 +256,7 @@ func (h *FileHandler) ClearStreamCookie(c echo.Context) error {
 		MaxAge:   -1,
 	}
 	c.SetCookie(cookie)
+	h.logger.Info("stream_cookie.cleared")
 	return c.JSON(http.StatusOK, map[string]bool{"success": true})
 }
 
