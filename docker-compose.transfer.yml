@@ -73,6 +73,38 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # ─── Nginx public data-plane (transfer domain, :80/:443 PUBLIC) ─────
+  # The ONLY service on this host published to the PUBLIC NIC. Terminates TLS for
+  # the standalone transfer domain (${TRANSFER_DOMAIN}) and proxies /files/*,
+  # /transfer/*, /public/* to backend-transfer:3001 in-compose — clients hit the
+  # Go host DIRECTLY, bypassing the edge nginx on CORE_HOST (no cross-host hop).
+  #
+  # SEPARATE from nginx-fastpath (:8088 internal, fronts the Telegram bot token —
+  # NEVER public). Firewall: only 80/443 here face the internet; backend-transfer
+  # 3001 and gRPC 50051 stay bound to the private NIC (GO_PRIVATE_IP).
+  #
+  # CORS is owned by the Go service (Phase 2), not set here — no double headers.
+  # DNS: point ${TRANSFER_DOMAIN} at this host's PUBLIC IP. TLS: mount a real cert
+  # for the transfer domain in ./nginx/ssl (${SSL_CERT_FILE}/${SSL_KEY_FILE}); the
+  # entrypoint self-signs a fallback if absent (dev/first-boot only).
+  nginx-public:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile.transfer-public
+    environment:
+      TRANSFER_DOMAIN: ${TRANSFER_DOMAIN:-_}
+      SSL_CERT_FILE: ${SSL_CERT_FILE:-cert.pem}
+      SSL_KEY_FILE: ${SSL_KEY_FILE:-key.pem}
+    volumes:
+      - ./nginx/ssl:/etc/nginx/ssl
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      backend-transfer:
+        condition: service_healthy
+    restart: unless-stopped
+
   # ─── Backend Transfer API (Go) ─────────────────────────────────
   # The data plane. Owns upload dispatch + Telegram I/O, ZIP assembly, the S3
   # object data plane, bandwidth enforcement, and download-while-draining (reads

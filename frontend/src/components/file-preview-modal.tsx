@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { X, Download, Loader2, FileIcon } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
 import { useI18n } from '@/providers/i18n-context';
-import { API_URL, api, requestDownloadToken, getStreamUrl, getApiErrorMessage, parseBandwidthError } from '@/lib/api';
+import { api, requestDownloadToken, getStreamUrl, getApiErrorMessage, parseBandwidthError, resolveTransferLink } from '@/lib/api';
 import { useStream } from '@/hooks/use-stream';
 import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
@@ -77,7 +77,7 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
       const { url } = await requestDownloadToken(fileInfo.id);
       toast(t('dashboard.downloadStarted'), { icon: '⬇️', duration: 2000 });
       const link = document.createElement('a');
-      link.href = API_URL + url;
+      link.href = resolveTransferLink(url);
       link.setAttribute('download', fileInfo.filename);
       document.body.appendChild(link);
       link.click();

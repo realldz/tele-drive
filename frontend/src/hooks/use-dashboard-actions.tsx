@@ -6,7 +6,7 @@ import toast from 'react-hot-toast';
 import {
   createFolder, deleteFolder, restoreFolder, deleteFile, restoreFile,
   abortUpload, requestDownloadToken, moveItem, formatBandwidthResetTime,
-  API_URL, isConflictError, parseConflictResponse, retryBuffer,
+  resolveTransferLink, isConflictError, parseConflictResponse, retryBuffer,
 } from '@/lib/api';
 import { LOCALE_DATE_MAP, type Locale } from '@/providers/i18n-context';
 import { TOAST_SHORT_MS, TOAST_LONG_MS, DOWNLOAD_CLEANUP_DELAY_MS } from '@/lib/constants';
@@ -126,7 +126,7 @@ export function useDashboardActions({
     try {
       const { url } = await requestDownloadToken(fileId);
       const link = document.createElement('a');
-      link.href = API_URL + url;
+      link.href = resolveTransferLink(url);
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();

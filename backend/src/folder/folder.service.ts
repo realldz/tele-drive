@@ -14,6 +14,7 @@ import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse } from '../common/types/paginated-response.type';
 import { PaginatedFolderContent } from '../common/types/paginated-folder-content.type';
 import type { ConflictAction } from '../common/name-conflict.service';
+import { buildTransferUrl } from '../common/transfer-url.util';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -1094,7 +1095,7 @@ export class FolderService {
     this.logger.debug(
       `Share folder download token generated: shareToken=${shareToken}, fileId=${fileId}, ttl=${ttl}s`,
     );
-    return { url: `/files/d/${token}`, expiresAt };
+    return { url: buildTransferUrl(`/files/d/${token}`), expiresAt };
   }
 
   async isDescendantOf(folderId: string, ancestorId: string): Promise<boolean> {

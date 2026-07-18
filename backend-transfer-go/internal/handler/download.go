@@ -178,6 +178,21 @@ func clampIntToInt32(v int) int32 {
 	return int32(v)
 }
 
+// streamCookieSameSite maps the configured mode string to http.SameSite.
+// Default (and any unrecognized value) is Strict, preserving prior behavior.
+// "none" is required for cross-site delivery and is always paired with
+// Secure:true at the call sites (browsers reject SameSite=None without Secure).
+func (h *FileHandler) streamSameSite() http.SameSite {
+	switch h.streamCookieSameSite {
+	case "none":
+		return http.SameSiteNoneMode
+	case "lax":
+		return http.SameSiteLaxMode
+	default:
+		return http.SameSiteStrictMode
+	}
+}
+
 func (h *FileHandler) IssueStreamCookie(c echo.Context) error {
 	userID, ok := c.Get("userId").(string)
 	if !ok || userID == "" {
@@ -201,12 +216,12 @@ func (h *FileHandler) IssueStreamCookie(c echo.Context) error {
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: h.streamSameSite(),
 		MaxAge:   clampInt64ToInt(ttl),
 	}
 	c.SetCookie(cookie)
 
-	h.logger.Info("stream_cookie.issued", "userId", userID, "ttl", ttl)
+	h.logger.Info("stream_cookie.issued", "userId", userID, "ttl", ttl, "sameSite", h.streamCookieSameSite)
 	expiresAt := formatISO8601(time.Now().Add(time.Duration(ttl) * time.Second))
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"expiresAt": expiresAt,
@@ -233,12 +248,12 @@ func (h *FileHandler) IssueGuestStreamCookie(c echo.Context) error {
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   true,
-		SameSite: http.SameSiteStrictMode,
+		SameSite: h.streamSameSite(),
 		MaxAge:   clampInt64ToInt(ttl),
 	}
 	c.SetCookie(cookie)
 
-	h.logger.Info("stream_cookie.guest.issued", "subject", subject, "ttl", ttl)
+	h.logger.Info("stream_cookie.guest.issued", "subject", subject, "ttl", ttl, "sameSite", h.streamCookieSameSite)
 	expiresAt := formatISO8601(time.Now().Add(time.Duration(ttl) * time.Second))
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"expiresAt": expiresAt,
@@ -247,16 +262,21 @@ func (h *FileHandler) IssueGuestStreamCookie(c echo.Context) error {
 }
 
 func (h *FileHandler) ClearStreamCookie(c echo.Context) error {
+	sameSite := h.streamSameSite()
 	cookie := &http.Cookie{
 		Name:     "stream_token",
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		SameSite: http.SameSiteStrictMode,
+		// Match the issue-time attributes so the browser overwrites the same
+		// cookie: issue sites always set Secure:true, so mirror that here
+		// regardless of SameSite mode. SameSite=None additionally requires it.
+		Secure:   true,
+		SameSite: sameSite,
 		MaxAge:   -1,
 	}
 	c.SetCookie(cookie)
-	h.logger.Info("stream_cookie.cleared")
+	h.logger.Info("stream_cookie.cleared", "sameSite", h.streamCookieSameSite)
 	return c.JSON(http.StatusOK, map[string]bool{"success": true})
 }
 

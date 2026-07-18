@@ -318,7 +318,11 @@ export class BandwidthLockService {
           this.prisma.fileRecord
             .update({
               where: { id: fileId },
-              data: { downloads24h: 0, bandwidthUsed24h: 0n, lastDownloadReset: now },
+              data: {
+                downloads24h: 0,
+                bandwidthUsed24h: 0n,
+                lastDownloadReset: now,
+              },
             })
             .catch((err) =>
               this.logger.warn(

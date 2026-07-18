@@ -1,0 +1,149 @@
+# ─── Public data-plane nginx (HOST-GO, public :80/:443) ─────────────────────
+# Standalone public origin for the Go transfer service on the data-plane host.
+# Clients hit https://${TRANSFER_DOMAIN}/* DIRECTLY — this bypasses the core edge
+# nginx entirely (no cross-host hop). It fronts ONLY the data plane:
+#
+#   /files/*    → /v1/transfer/*          (signed download links, media streaming)
+#   /transfer/* → /v1/transfer/*          (transfer API: stream, download-token, ...)
+#   /public/*   → /v1/transfer/public/*   (public S3 object access, no auth)
+#
+# It is SEPARATE from nginx-fastpath (:8088 internal), which fronts the Telegram
+# bot token and must NEVER be exposed publicly. This block only proxies to
+# backend-transfer:3001 (in-compose on this host); it never reaches the bot API.
+#
+# TRANSFER_DOMAIN MUST differ from S3_DOMAIN: the S3 SigV4 host filter
+# (s3HostFilter, Go) only gates the bare /:bucket/* object routes, NOT the
+# /v1/transfer/* routes served here — so GetConfig/stream/public are unaffected.
+#
+# CORS: NOT set here. The Go service owns CORS (Phase 2) so it can honor the
+# credentialed cross-origin allow-list; setting it here too would double the
+# headers and make browsers reject the response.
+#
+# Firewall: only this nginx (public 80/443) faces the internet. backend-transfer
+# 3001 and gRPC 50051 stay bound to the private NIC (GO_PRIVATE_IP) — never public.
+#
+# Vars expanded by entrypoint-transfer-public.sh: ${TRANSFER_DOMAIN},
+# ${SSL_CERT_FILE}, ${SSL_KEY_FILE}. Nginx runtime vars ($host, $request_id, ...)
+# are left intact.
+
+# ─── Default HTTP catch-all (404 for direct-IP access) ───────────────
+server {
+    listen 80 default_server;
+    server_name _;
+    return 404;
+}
+
+# ─── HTTP → HTTPS redirect for the transfer domain ───────────────────
+server {
+    listen 80;
+    server_name ${TRANSFER_DOMAIN};
+    return 301 https://$host$request_uri;
+}
+
+# ─── Default HTTPS catch-all (404 for direct-IP access) ──────────────
+server {
+    listen 443 ssl default_server;
+    server_name _;
+
+    ssl_certificate     /etc/nginx/ssl/dummy.crt;
+    ssl_certificate_key /etc/nginx/ssl/dummy.key;
+
+    return 404;
+}
+
+# ─── Public data-plane HTTPS server (transfer domain) ────────────────
+server {
+    listen 443 ssl;
+    server_name ${TRANSFER_DOMAIN};
+    client_max_body_size 0;
+
+    # Docker embedded DNS: proxy_pass to a variable ($transfer_upstream) forces
+    # runtime name resolution, so backend-transfer may boot AFTER this nginx
+    # without a config-load failure. Matches nginx.conf.template.
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    ssl_certificate     /etc/nginx/ssl/${SSL_CERT_FILE};
+    ssl_certificate_key /etc/nginx/ssl/${SSL_KEY_FILE};
+
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers HIGH:!aNULL:!MD5;
+    ssl_prefer_server_ciphers on;
+
+    # Direct file/stream routes used by signed download links and media streaming.
+    location /files/ {
+        # set MUST precede rewrite: `rewrite ... break` halts the rewrite phase
+        # (which includes `set`), so a `set` placed after it never runs and
+        # $transfer_upstream stays empty -> proxy_pass http://:3001 -> 500.
+        set $transfer_upstream backend-transfer;
+        rewrite ^/files/(.*) /v1/transfer/$1 break;
+        proxy_pass http://$transfer_upstream:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Transfer API routes (stream, download-token, share, ...).
+    location /transfer/ {
+        set $transfer_upstream backend-transfer;
+        rewrite ^/transfer/(.*) /v1/transfer/$1 break;
+        proxy_pass http://$transfer_upstream:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Shared-folder data plane: guest download + stream by share token.
+    # Go registers these under /v1/folders/ (NOT /v1/transfer/), so rewrite
+    # to /v1/$1 — do not fold into the /transfer/ prefix.
+    location /folders/ {
+        set $transfer_upstream backend-transfer;
+        rewrite ^/(.*) /v1/$1 break;
+        proxy_pass http://$transfer_upstream:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Public S3 object access (no auth required).
+    location /public/ {
+        set $transfer_upstream backend-transfer;
+        rewrite ^/public/(.*) /v1/transfer/public/$1 break;
+        proxy_pass http://$transfer_upstream:3001;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Request-ID $request_id;
+
+        proxy_request_buffering off;
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # Everything else on the transfer domain is not part of the data plane.
+    location / {
+        return 404;
+    }
+}

@@ -19,6 +19,7 @@ import Redis from 'ioredis';
 import { REDIS_CLIENT } from '../redis';
 import * as fs from 'fs';
 import * as path from 'path';
+import { buildTransferUrl } from '../common/transfer-url.util';
 
 // Redis key holding the live count of in-flight ZIP part streams for a job.
 // Go (which now owns part serving) INCRs on stream start and DECRs on end; the
@@ -344,11 +345,18 @@ export class DownloadZipService {
     if (!job) throw new NotFoundException('Job not found');
 
     const rawParts = (job.zipParts as unknown as ZipPart[]) || [];
-    const parts = rawParts.map((p, i) => ({
-      index: p.index ?? i,
-      size: String(p.size),
-      downloadUrl: `/transfer/download-zip/${jobId}/file/${p.index ?? i}`,
-    }));
+    const parts = rawParts.map((p, i) => {
+      const idx = p.index ?? i;
+      const downloadUrl = buildTransferUrl(
+        `/transfer/download-zip/${jobId}/file/${idx}`,
+      );
+      if (process.env.PUBLIC_TRANSFER_URL) {
+        this.logger.debug(
+          `Zip part URL built absolute: jobId=${jobId}, part=${idx}, url=${downloadUrl}`,
+        );
+      }
+      return { index: idx, size: String(p.size), downloadUrl };
+    });
 
     return {
       jobId: job.id,

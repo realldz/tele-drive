@@ -224,12 +224,25 @@ func main() {
 
 	// Standard middlewares
 	e.Use(echoMiddleware.Recover())
-	e.Use(echoMiddleware.CORSWithConfig(echoMiddleware.CORSConfig{
-		AllowOrigins:     []string{cfg.CorsOrigin},
+
+	// CORS with credentials. A literal "*" origin is spec-invalid together with
+	// AllowCredentials (browsers drop the response), so when the allow-list is
+	// the wildcard we reflect the request origin via AllowOriginFunc instead.
+	// Explicit origins fall through to the standard AllowOrigins match.
+	corsConfig := echoMiddleware.CORSConfig{
 		AllowMethods:     []string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodPatch, http.MethodPost, http.MethodDelete},
 		AllowCredentials: true,
 		ExposeHeaders:    []string{"X-Bandwidth-Reset", "X-Request-ID", "Content-Length", "Content-Range", "ETag"},
-	}))
+	}
+	if corsHasWildcard(cfg.CorsOrigins) {
+		corsConfig.AllowOriginFunc = func(origin string) (bool, error) { return true, nil }
+		log.Info("CORS configured", "mode", "reflect-any", "origins", cfg.CorsOrigins)
+	} else {
+		corsConfig.AllowOrigins = cfg.CorsOrigins
+		log.Info("CORS configured", "mode", "allow-list", "origins", cfg.CorsOrigins)
+	}
+	e.Use(echoMiddleware.CORSWithConfig(corsConfig))
+	log.Info("Stream cookie SameSite mode", "sameSite", cfg.StreamCookieSameSite)
 
 	fileHandler := handler.NewFileHandler(
 		coreClient,
@@ -245,6 +258,7 @@ func main() {
 		cfg.MaxBufferFileSize,
 		cfg.S3Domain,
 		settingsResolver,
+		cfg.StreamCookieSameSite,
 	)
 	fileHandler.RegisterRoutes(e)
 	// S3 data-plane routes (GET object) — mounted at root, gated by S3 host filter.
@@ -291,4 +305,16 @@ func main() {
 	coreClient.Close()
 
 	log.Info("Graceful shutdown complete")
+}
+
+// corsHasWildcard reports whether the CORS allow-list contains "*". A wildcard
+// origin cannot be sent literally alongside AllowCredentials, so callers reflect
+// the request origin instead.
+func corsHasWildcard(origins []string) bool {
+	for _, o := range origins {
+		if o == "*" {
+			return true
+		}
+	}
+	return false
 }

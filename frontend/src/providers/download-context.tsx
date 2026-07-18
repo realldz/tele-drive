@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useCallback, useRef, ReactNode } from 'react';
-import { createDownloadZip, createSharedDownloadZip, getDownloadZipStatus, API_URL } from '@/lib/api';
+import { createDownloadZip, createSharedDownloadZip, getDownloadZipStatus, resolveTransferLink } from '@/lib/api';
 import type { DownloadZipPart } from '@/lib/api';
 
 export interface DownloadJob {
@@ -48,7 +48,7 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
           // Auto-download if single part
           if (status.status === 'ready' && status.parts.length === 1) {
             const link = document.createElement('a');
-            link.href = API_URL + status.parts[0].downloadUrl;
+            link.href = resolveTransferLink(status.parts[0].downloadUrl);
             link.setAttribute('download', '');
             document.body.appendChild(link);
             link.click();

@@ -5,7 +5,7 @@ import toast from 'react-hot-toast';
 import { useI18n } from '@/providers/i18n-context';
 import { useSelection } from '@/hooks/use-selection';
 import { useDownload } from '@/providers/download-context';
-import { API_URL, api, requestShareFolderDownloadToken, parseBandwidthError, getApiErrorMessage } from '@/lib/api';
+import { resolveTransferLink, api, requestShareFolderDownloadToken, parseBandwidthError, getApiErrorMessage } from '@/lib/api';
 import { LOAD_MORE_ROOT_MARGIN, TOAST_SHORT_MS, DOWNLOAD_CLEANUP_DELAY_MS } from '@/lib/constants';
 import type { SharedFolderRoot, FolderRecord, FileRecord, BreadcrumbItem } from '@/lib/types';
 
@@ -142,7 +142,7 @@ export function useSharedFolder(token: string) {
       const { url } = await requestShareFolderDownloadToken(token, fileId);
       toast(t('dashboard.downloadStarted'), { icon: '⬇️', duration: TOAST_SHORT_MS });
       const link = document.createElement('a');
-      link.href = API_URL + url;
+      link.href = resolveTransferLink(url);
       link.setAttribute('download', filename);
       document.body.appendChild(link);
       link.click();

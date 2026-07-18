@@ -1,7 +1,7 @@
 'use client';
 
 import { X, CheckCircle2, AlertCircle, Loader2, Ban, Download } from 'lucide-react';
-import { formatBytes, API_URL } from '@/lib/api';
+import { formatBytes, resolveTransferLink } from '@/lib/api';
 import type { DownloadJob } from '@/providers/download-context';
 
 type Translate = (key: string, vars?: Record<string, string>) => string;
@@ -71,7 +71,7 @@ export default function TransferDownloadItem({ job, t, onCancel }: TransferDownl
           {job.parts.map((part) => (
             <a
               key={part.index}
-              href={API_URL + part.downloadUrl}
+              href={resolveTransferLink(part.downloadUrl)}
               download=""
               className="flex items-center justify-between text-xs text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100/70 border border-blue-100 rounded px-2.5 py-1.5 transition-colors cursor-pointer font-medium"
             >

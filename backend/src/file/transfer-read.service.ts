@@ -19,6 +19,7 @@ import type {
 } from '../common/types/download';
 import { TEMP_STORAGE } from '../common/temp-storage';
 import type { TempStorage } from '../common/temp-storage';
+import { buildTransferUrl } from '../common/transfer-url.util';
 
 @Injectable()
 export class TransferReadService {
@@ -84,7 +85,7 @@ export class TransferReadService {
     this.logger.debug(
       `Download token generated: fileId=${fileId}, userId=${userId}, ttl=${ttl}s`,
     );
-    return { url: `/files/d/${token}`, expiresAt };
+    return { url: buildTransferUrl(`/files/d/${token}`), expiresAt };
   }
 
   async generateShareDownloadToken(
@@ -108,7 +109,7 @@ export class TransferReadService {
     this.logger.debug(
       `Share download token generated: shareToken=${shareToken}, fileId=${file.id}, ttl=${ttl}s`,
     );
-    return { url: `/files/d/${token}`, expiresAt };
+    return { url: buildTransferUrl(`/files/d/${token}`), expiresAt };
   }
 
   async downloadBySignedToken(signedToken: string): Promise<DownloadInfo> {

@@ -1,0 +1,17 @@
+# Public data-plane nginx for the Go host (HOST-GO). Terminates TLS for the
+# standalone transfer domain (${TRANSFER_DOMAIN}) on :443 and proxies to the
+# in-compose backend-transfer:3001, so clients hit the Go host DIRECTLY, never
+# crossing the edge nginx on the control-plane host.
+#
+# This is SEPARATE from the :8088 fast-path (Dockerfile.fastpath): the fast-path
+# fronts the Telegram bot token and stays internal. This image is the ONLY thing
+# on the Go host published to the public NIC (443).
+FROM nginx:alpine
+
+RUN apk add --no-cache openssl
+
+COPY nginx-transfer-public.conf.template /etc/nginx/conf.d/nginx.conf.template
+COPY entrypoint-transfer-public.sh /entrypoint.sh
+RUN sed -i 's/\r$//' /entrypoint.sh && chmod +x /entrypoint.sh
+
+ENTRYPOINT ["/entrypoint.sh"]

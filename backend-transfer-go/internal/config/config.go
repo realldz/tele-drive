@@ -26,8 +26,16 @@ type Config struct {
 	MasterSecret            string
 	LogDir                  string
 	LogLevel                string
-	CorsOrigin              string
-	RedisURL                string
+	// CorsOrigins is the parsed allow-list from CORS_ORIGIN (comma-separated).
+	// Default ["*"]. When it contains "*" and credentials are enabled, main.go
+	// reflects the request origin instead of emitting a literal "*" (which is
+	// spec-invalid with credentials and dropped by browsers).
+	CorsOrigins []string
+	// StreamCookieSameSite controls the SameSite attribute of stream cookies.
+	// One of "strict" | "lax" | "none". Default "strict" preserves current
+	// behavior; set "none" (requires Secure+HTTPS) for cross-site domains.
+	StreamCookieSameSite string
+	RedisURL             string
 	UploadBufferDir         string
 	NestJSGrpcURL           string
 	GrpcPort                int
@@ -120,6 +128,20 @@ func Load() *Config {
 		log.Printf("Warning: MASTER_SECRET is %d bytes, expected exactly 32 bytes", len(masterSecret))
 	}
 
+	// CORS_ORIGIN is a comma-separated allow-list. Blank entries are dropped;
+	// an empty/unset value defaults to ["*"] (reflect-any, dev behavior).
+	corsOrigins := parseCorsOrigins(getEnv("CORS_ORIGIN", "*"))
+
+	// STREAM_COOKIE_SAMESITE: strict|lax|none. Default "strict" preserves the
+	// prior hard-coded behavior; unknown values fall back to strict.
+	streamCookieSameSite := strings.ToLower(strings.TrimSpace(getEnv("STREAM_COOKIE_SAMESITE", "strict")))
+	switch streamCookieSameSite {
+	case "strict", "lax", "none":
+	default:
+		log.Printf("Warning: STREAM_COOKIE_SAMESITE=%q invalid, falling back to \"strict\"", streamCookieSameSite)
+		streamCookieSameSite = "strict"
+	}
+
 	eventWorkerPoolSizeStr := getEnv("EVENT_WORKER_POOL_SIZE", "5")
 	eventWorkerPoolSize, err := strconv.Atoi(eventWorkerPoolSizeStr)
 	if err != nil || eventWorkerPoolSize <= 0 {
@@ -170,7 +192,8 @@ func Load() *Config {
 		MasterSecret:            masterSecret,
 		LogDir:                  getEnv("LOG_DIR", ".logs"),
 		LogLevel:                getEnv("LOG_LEVEL", "info"),
-		CorsOrigin:              getEnv("CORS_ORIGIN", "*"),
+		CorsOrigins:             corsOrigins,
+		StreamCookieSameSite:    streamCookieSameSite,
 		RedisURL:                getEnv("REDIS_URL", "redis://localhost:6379"),
 		UploadBufferDir:         getEnv("UPLOAD_BUFFER_DIR", ".upload-buffer"),
 		NestJSGrpcURL:           getEnv("NESTJS_GRPC_URL", "localhost:50051"),
@@ -185,6 +208,23 @@ func Load() *Config {
 		EventClaimMinIdle:       claimMinIdle,
 		UploadOutstandingTTL:    outstandingTTL,
 	}
+}
+
+// parseCorsOrigins splits a comma-separated CORS_ORIGIN value into a trimmed
+// allow-list. Empty entries are dropped. An empty/blank input yields ["*"] so
+// unset CORS_ORIGIN preserves the historical wildcard behavior.
+func parseCorsOrigins(raw string) []string {
+	var origins []string
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			origins = append(origins, part)
+		}
+	}
+	if len(origins) == 0 {
+		return []string{"*"}
+	}
+	return origins
 }
 
 func getEnv(key, defaultVal string) string {

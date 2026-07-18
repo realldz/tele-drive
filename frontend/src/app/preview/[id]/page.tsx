@@ -6,7 +6,7 @@ import { useI18n } from '@/providers/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import { FileIcon, Download, ArrowLeft, Loader2 } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
-import { API_URL, api, requestDownloadToken, parseBandwidthError, getStreamUrl, getApiErrorMessage } from '@/lib/api';
+import { resolveTransferLink, api, requestDownloadToken, parseBandwidthError, getStreamUrl, getApiErrorMessage } from '@/lib/api';
 import { useStream } from '@/hooks/use-stream';
 import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
@@ -61,7 +61,7 @@ export default function FilePreviewPage() {
       const { url } = await requestDownloadToken(fileInfo.id);
       toast(t('dashboard.downloadStarted'), { icon: '⬇️', duration: 2000 });
       const link = document.createElement('a');
-      link.href = API_URL + url;
+      link.href = resolveTransferLink(url);
       link.setAttribute('download', fileInfo.filename);
       document.body.appendChild(link);
       link.click();

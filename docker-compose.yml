@@ -199,6 +199,7 @@ services:
       context: ./frontend
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-/api/v1}
+        NEXT_PUBLIC_TRANSFER_URL: ${NEXT_PUBLIC_TRANSFER_URL:-}
         NEXT_PUBLIC_S3_DOMAIN: ${S3_DOMAIN:-}
     restart: unless-stopped
 

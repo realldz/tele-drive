@@ -35,6 +35,10 @@ type FileHandler struct {
 	jwtSecret         string
 	maxChunkSize      int64
 	maxBufferFileSize int64
+	// streamCookieSameSite is the configured SameSite mode ("strict"|"lax"|"none")
+	// applied to every stream cookie. "none" enables cross-site delivery (app
+	// domain → separate transfer domain); it always pairs with Secure.
+	streamCookieSameSite string
 
 	// settingsResolver pulls admin-dashboard SystemSetting values (TTL, concurrency,
 	// multi-thread) over gRPC with a short TTL cache, so changes apply without redeploy.
@@ -65,6 +69,7 @@ func NewFileHandler(
 	maxBufferFileSize int64,
 	s3Domain string,
 	settingsResolver *settings.Resolver,
+	streamCookieSameSite string,
 ) *FileHandler {
 	// Redis-first credential lookup with gRPC fallback (Phase 3), wrapped by the
 	// SigV4 verifier (Phase 2). Built here so the verifier shares the handler's
@@ -84,10 +89,11 @@ func NewFileHandler(
 		jwtSecret:         jwtSecret,
 		maxChunkSize:      maxChunkSize,
 		maxBufferFileSize: maxBufferFileSize,
-		settingsResolver:  settingsResolver,
-		s3Domain:          s3Domain,
-		s3Verifier:        s3Verifier,
-		activeUploads:     make(map[string]int),
+		settingsResolver:     settingsResolver,
+		s3Domain:             s3Domain,
+		s3Verifier:           s3Verifier,
+		streamCookieSameSite: streamCookieSameSite,
+		activeUploads:        make(map[string]int),
 	}
 }
 

@@ -9,7 +9,7 @@ import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
 
-import { API_URL, api, formatSize, requestShareDownloadToken, parseBandwidthError, getShareStreamUrl, getApiErrorMessage } from '@/lib/api';
+import { resolveTransferLink, api, formatSize, requestShareDownloadToken, parseBandwidthError, getShareStreamUrl, getApiErrorMessage } from '@/lib/api';
 import { useGuestStream } from '@/hooks/use-stream';
 import type { SharedFileInfo } from '@/lib/types';
 
@@ -66,7 +66,7 @@ export default function SharePage() {
       const { url } = await requestShareDownloadToken(token);
       toast(t('dashboard.downloadStarted'), { icon: '⬇️', duration: 2000 });
       const link = document.createElement('a');
-      link.href = API_URL + url;
+      link.href = resolveTransferLink(url);
       link.setAttribute('download', fileInfo.filename);
       document.body.appendChild(link);
       link.click();

@@ -466,7 +466,9 @@ export class DownloadZipProcessor
       240,
     );
     if (!acquired) {
-      this.logger.debug('Cron cleanup-expired-zips running elsewhere, skipping');
+      this.logger.debug(
+        'Cron cleanup-expired-zips running elsewhere, skipping',
+      );
       return;
     }
 

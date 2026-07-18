@@ -4,7 +4,7 @@ import { useEffect, useCallback } from 'react';
 import { X, Download, Loader2 } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
 import { useI18n } from '@/providers/i18n-context';
-import { API_URL, requestShareFolderDownloadToken, parseBandwidthError, getShareFolderStreamUrl } from '@/lib/api';
+import { resolveTransferLink, requestShareFolderDownloadToken, parseBandwidthError, getShareFolderStreamUrl } from '@/lib/api';
 import { useGuestStream } from '@/hooks/use-stream';
 import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
@@ -53,7 +53,7 @@ export default function SharedFolderPreviewModal({ shareToken, file, onClose }: 
       const { url } = await requestShareFolderDownloadToken(shareToken, file.id);
       toast(t('dashboard.downloadStarted'), { icon: '⬇️', duration: 2000 });
       const link = document.createElement('a');
-      link.href = API_URL + url;
+      link.href = resolveTransferLink(url);
       link.setAttribute('download', file.filename);
       document.body.appendChild(link);
       link.click();

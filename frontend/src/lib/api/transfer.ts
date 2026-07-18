@@ -1,4 +1,4 @@
-import { api, API_URL } from './client';
+import { api, transferApi, API_URL, TRANSFER_URL } from './client';
 
 export interface SignedDownloadUrl {
   url: string;
@@ -27,45 +27,49 @@ export interface DownloadZipStatus {
   error: string | null;
 }
 
+// Data-plane calls dùng transferApi (base = TRANSFER_URL). Khi TRANSFER_URL
+// rỗng → fallback API_URL → hành vi single-origin không đổi.
 export async function requestDownloadToken(fileId: string): Promise<SignedDownloadUrl> {
-  const res = await api.post(`/transfer/${fileId}/download-token`);
+  const res = await transferApi.post(`/transfer/${fileId}/download-token`);
   return res.data;
 }
 
 export async function requestShareDownloadToken(shareToken: string): Promise<SignedDownloadUrl> {
-  const res = await api.post(`/transfer/share/${shareToken}/download-token`);
+  const res = await transferApi.post(`/transfer/share/${shareToken}/download-token`);
   return res.data;
 }
 
+// download-token issuance là control-plane (NestJS core) — Go không có route
+// này. Dùng api (CORE); token trả về đã trỏ data-plane qua buildTransferUrl.
 export async function requestShareFolderDownloadToken(shareToken: string, fileId: string): Promise<SignedDownloadUrl> {
   const res = await api.post(`/folders/share/${shareToken}/download-token/${fileId}`);
   return res.data;
 }
 
 export async function requestStreamCookie(): Promise<StreamCookieResponse> {
-  const res = await api.post('/transfer/stream-cookie', {}, { withCredentials: true });
+  const res = await transferApi.post('/transfer/stream-cookie', {}, { withCredentials: true });
   return res.data;
 }
 
 export async function requestGuestStreamCookie(): Promise<StreamCookieResponse> {
-  const res = await api.post('/transfer/stream-cookie/guest', {}, { withCredentials: true });
+  const res = await transferApi.post('/transfer/stream-cookie/guest', {}, { withCredentials: true });
   return res.data;
 }
 
 export async function clearStreamCookie(): Promise<void> {
-  await api.delete('/transfer/stream-cookie', { withCredentials: true });
+  await transferApi.delete('/transfer/stream-cookie', { withCredentials: true });
 }
 
 export function getStreamUrl(fileId: string): string {
-  return `${API_URL}/transfer/stream/${fileId}`;
+  return `${TRANSFER_URL}/transfer/stream/${fileId}`;
 }
 
 export function getShareStreamUrl(shareToken: string): string {
-  return `${API_URL}/transfer/share/stream/${shareToken}`;
+  return `${TRANSFER_URL}/transfer/share/stream/${shareToken}`;
 }
 
 export function getShareFolderStreamUrl(shareToken: string, fileId: string): string {
-  return `${API_URL}/folders/share/${shareToken}/stream/${fileId}`;
+  return `${TRANSFER_URL}/folders/share/${shareToken}/stream/${fileId}`;
 }
 
 /** @deprecated Use requestDownloadToken */

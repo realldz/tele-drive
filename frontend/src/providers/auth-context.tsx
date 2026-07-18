@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 
-import { api, fetchCurrentUser, clearStreamCookie } from '@/lib/api';
+import { api, transferApi, fetchCurrentUser, clearStreamCookie } from '@/lib/api';
 
 interface User {
   id: string;
@@ -28,6 +28,22 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+// JWT header helpers — áp cho CẢ `api` (control) và `transferApi` (data) để
+// data-plane XHR không bị 401. DRY: một chỗ set/clear, hai instance.
+const AUTH_INSTANCES = [api, transferApi];
+
+function setAuthHeader(accessToken: string) {
+  for (const instance of AUTH_INSTANCES) {
+    instance.defaults.headers.common['Authorization'] = `Bearer ${accessToken}`;
+  }
+}
+
+function clearAuthHeader() {
+  for (const instance of AUTH_INSTANCES) {
+    delete instance.defaults.headers.common['Authorization'];
+  }
+}
+
 /**
  * AuthProvider — quản lý trạng thái đăng nhập, JWT, axios interceptor.
  * Wrap toàn bộ app trong layout.tsx.
@@ -40,8 +56,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [quotaInfo, setQuotaInfo] = useState<QuotaInfo | null>(null);
-  const requestInterceptorId = useRef<number | null>(null);
-  const responseInterceptorId = useRef<number | null>(null);
+  const requestInterceptorIds = useRef<number[]>([]);
+  const responseInterceptorIds = useRef<number[]>([]);
 
   // Fetch quota từ server — gọi 1 lần khi có token, sau đó gọi lại qua refreshQuota
   const refreshQuota = useCallback(async () => {
@@ -64,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const savedToken = localStorage.getItem('token');
     const savedUser = localStorage.getItem('user');
     if (savedToken && savedUser) {
-      api.defaults.headers.common['Authorization'] = `Bearer ${savedToken}`;
+      setAuthHeader(savedToken);
       setToken(savedToken);
       setUser(JSON.parse(savedUser));
     }
@@ -81,53 +97,58 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Axios request interceptor: mọi request tự lấy token mới nhất từ localStorage.
   // Đây là safety net — nếu axios.defaults bị miss do timing, interceptor sẽ bắt lại.
+  // Gắn cho CẢ `api` và `transferApi` để data-plane XHR cũng mang JWT.
   useEffect(() => {
-    requestInterceptorId.current = api.interceptors.request.use((config) => {
-      const currentToken = localStorage.getItem('token');
-      if (currentToken) {
-        config.headers.Authorization = `Bearer ${currentToken}`;
-      } else {
-        delete config.headers.Authorization;
-      }
-      return config;
-    });
+    requestInterceptorIds.current = AUTH_INSTANCES.map((instance) =>
+      instance.interceptors.request.use((config) => {
+        const currentToken = localStorage.getItem('token');
+        if (currentToken) {
+          config.headers.Authorization = `Bearer ${currentToken}`;
+        } else {
+          delete config.headers.Authorization;
+        }
+        return config;
+      }),
+    );
 
     return () => {
-      if (requestInterceptorId.current !== null) {
-        api.interceptors.request.eject(requestInterceptorId.current);
-      }
+      AUTH_INSTANCES.forEach((instance, i) => {
+        instance.interceptors.request.eject(requestInterceptorIds.current[i]);
+      });
     };
   }, []);
 
   // Axios response interceptor: tự động xử lí 401 — clear auth state + redirect login.
   // Tập trung logic ở đây thay vì lặp try/catch 401 ở từng page.
   useEffect(() => {
-    responseInterceptorId.current = api.interceptors.response.use(
-      (response) => response,
-      (error) => {
-        const url = error.config?.url || '';
-        const isAuthRoute = url.includes('/auth/login') || url.includes('/auth/register');
+    responseInterceptorIds.current = AUTH_INSTANCES.map((instance) =>
+      instance.interceptors.response.use(
+        (response) => response,
+        (error) => {
+          const url = error.config?.url || '';
+          const isAuthRoute = url.includes('/auth/login') || url.includes('/auth/register');
 
-        if (error?.response?.status === 401 && !isAuthRoute) {
-          localStorage.removeItem('token');
-          localStorage.removeItem('user');
-          delete api.defaults.headers.common['Authorization'];
-          setToken(null);
-          setUser(null);
-          setQuotaInfo(null);
+          if (error?.response?.status === 401 && !isAuthRoute) {
+            localStorage.removeItem('token');
+            localStorage.removeItem('user');
+            clearAuthHeader();
+            setToken(null);
+            setUser(null);
+            setQuotaInfo(null);
 
-          if (window.location.pathname !== '/login') {
-            window.location.href = '/login';
+            if (window.location.pathname !== '/login') {
+              window.location.href = '/login';
+            }
           }
-        }
-        return Promise.reject(error);
-      },
+          return Promise.reject(error);
+        },
+      ),
     );
 
     return () => {
-      if (responseInterceptorId.current !== null) {
-        api.interceptors.response.eject(responseInterceptorId.current);
-      }
+      AUTH_INSTANCES.forEach((instance, i) => {
+        instance.interceptors.response.eject(responseInterceptorIds.current[i]);
+      });
     };
   }, []);
 
@@ -136,7 +157,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { access_token, user: userData } = res.data;
     localStorage.setItem('token', access_token);
     localStorage.setItem('user', JSON.stringify(userData));
-    api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+    setAuthHeader(access_token);
     setToken(access_token);
     setUser(userData);
   }, []);
@@ -146,7 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const { access_token, user: userData } = res.data;
     localStorage.setItem('token', access_token);
     localStorage.setItem('user', JSON.stringify(userData));
-    api.defaults.headers.common['Authorization'] = `Bearer ${access_token}`;
+    setAuthHeader(access_token);
     setToken(access_token);
     setUser(userData);
   }, []);
@@ -157,7 +178,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setQuotaInfo(null);
     localStorage.removeItem('token');
     localStorage.removeItem('user');
-    delete api.defaults.headers.common['Authorization'];
+    clearAuthHeader();
     // Huỷ stream cookie ở đây (không ở teardownStream) — đây là lúc đúng để
     // vô hiệu token stream dùng chung toàn domain.
     clearStreamCookie().catch(() => {});
