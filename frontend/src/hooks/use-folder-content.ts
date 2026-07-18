@@ -35,7 +35,6 @@ export function useFolderContent(token: string | null) {
   const nextFileCursor = useRef<string | null>(null);
   const nextFolderCursor = useRef<string | null>(null);
 
-  const [searchQuery, setSearchQuery] = useState('');
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
 
@@ -44,19 +43,11 @@ export function useFolderContent(token: string | null) {
     setSortField(field);
   }, [sortField]);
 
-  const filteredFolders = useMemo(
-    () => folders.filter(f => f.name.toLowerCase().includes(searchQuery.toLowerCase())),
-    [folders, searchQuery],
-  );
-
-  const filteredFiles = useMemo(
-    () => files.filter(f => f.filename.toLowerCase().includes(searchQuery.toLowerCase())),
-    [files, searchQuery],
-  );
-
+  // Global search moved to use-global-search (search mode); browse mode renders
+  // raw folder content. No client-side cosmetic filter here anymore.
   const orderedIds = useMemo(
-    () => [...filteredFolders.map(f => f.id), ...filteredFiles.map(f => f.id)],
-    [filteredFolders, filteredFiles],
+    () => [...folders.map(f => f.id), ...files.map(f => f.id)],
+    [folders, files],
   );
 
   const hasMore = hasMoreFolders || hasMoreFiles;
@@ -147,14 +138,15 @@ export function useFolderContent(token: string | null) {
 
   useEffect(() => { fetchContent(false); }, [fetchContent]);
 
-  // Polling while any file is uploading (disabled during search)
+  // Polling while any file is uploading (browse mode; global search is a
+  // separate hook and never drives this dataset).
   useEffect(() => {
     const hasUploading = files.some(f => f.status === 'uploading');
-    if (hasUploading && !searchQuery) {
+    if (hasUploading) {
       const id = setInterval(fetchContent, UPLOAD_POLL_INTERVAL_MS);
       return () => clearInterval(id);
     }
-  }, [files, fetchContent, searchQuery]);
+  }, [files, fetchContent]);
 
   return {
     currentFolderId, setCurrentFolderId,
@@ -163,9 +155,8 @@ export function useFolderContent(token: string | null) {
     breadcrumbs,
     isLoadingContent,
     hasMore, loadMoreRef,
-    searchQuery, setSearchQuery,
     sortField, sortDirection, handleSort,
-    filteredFolders, filteredFiles, orderedIds,
+    orderedIds,
     fetchContent,
   };
 }

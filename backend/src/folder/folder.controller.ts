@@ -23,6 +23,7 @@ import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
 import { StreamCookieGuard } from '../common/guards/stream-cookie.guard';
 import { CreateFolderDto } from './dto/create-folder.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { SearchQueryDto } from './dto/search-query.dto';
 import type { AuthenticatedRequest } from '../common/types/request';
 import type { Response, Request } from 'express';
 import type { ConflictAction } from '../common/name-conflict.service';
@@ -80,6 +81,11 @@ export class FolderController {
       pagination.folderId,
       pagination,
     );
+  }
+
+  @Get('search')
+  search(@Query() dto: SearchQueryDto, @Req() req: AuthenticatedRequest) {
+    return this.folderService.searchAll(req.user.userId, dto);
   }
 
   @Get('trash/list')

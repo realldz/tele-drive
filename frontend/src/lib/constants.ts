@@ -32,6 +32,36 @@ export const TOAST_LONG_MS = 5000;
 // Infinite scroll
 export const LOAD_MORE_ROOT_MARGIN = '200px';
 
+// Global search
+export const SEARCH_DEBOUNCE_MS = 300;
+
+// Format categories — labels MUST match backend FORMAT_CATEGORIES
+// (backend/src/folder/file-format-category.ts). Backend owns the mime/ext
+// resolution; frontend only sends the category label. Keep the two in sync.
+export const SEARCH_FORMAT_CATEGORIES = [
+  'image',
+  'video',
+  'audio',
+  'document',
+  'archive',
+  'other',
+] as const;
+
+export type SearchFormatCategory = (typeof SEARCH_FORMAT_CATEGORIES)[number];
+
+export type SearchTypeFilter = 'all' | 'folder' | 'file';
+
+// Time-range presets. `days` resolves to createdFrom = now - days; null = all-time.
+export const SEARCH_TIME_PRESETS = [
+  { key: 'all', days: null },
+  { key: 'today', days: 1 },
+  { key: '7d', days: 7 },
+  { key: '30d', days: 30 },
+  { key: 'year', days: 365 },
+] as const;
+
+export type SearchTimePresetKey = (typeof SEARCH_TIME_PRESETS)[number]['key'];
+
 // HTTP client
 export const API_TIMEOUT_MS = 90000;
 

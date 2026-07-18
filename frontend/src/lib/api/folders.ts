@@ -76,6 +76,39 @@ export async function fetchFolderContentNextPage(
   return res.data;
 }
 
+export interface GlobalSearchParams {
+  q?: string;
+  type?: 'all' | 'folder' | 'file';
+  format?: string;
+  createdFrom?: string;
+  createdTo?: string;
+  cursor?: string | null;
+  sortField?: string;
+  sortDirection?: 'asc' | 'desc';
+}
+
+/**
+ * Global search across ALL of the user's files/folders (GET /folders/search).
+ * Returns the same PaginatedFolderContent shape as folder browsing so the
+ * dashboard grid/list + dual-cursor load-more infra can render it unchanged.
+ */
+export async function searchFiles(
+  params: GlobalSearchParams,
+): Promise<PaginatedFolderContent> {
+  const p = new URLSearchParams();
+  if (params.q) p.set('q', params.q);
+  if (params.type && params.type !== 'all') p.set('type', params.type);
+  if (params.format) p.set('format', params.format);
+  if (params.createdFrom) p.set('createdFrom', params.createdFrom);
+  if (params.createdTo) p.set('createdTo', params.createdTo);
+  if (params.cursor) p.set('cursor', params.cursor);
+  if (params.sortField) p.set('sortField', params.sortField);
+  if (params.sortDirection) p.set('sortDirection', params.sortDirection);
+  p.set('limit', String(PAGINATION_FOLDER_LIMIT));
+  const res = await api.get(`/folders/search?${p}`);
+  return res.data;
+}
+
 export async function fetchBreadcrumbs(folderId: string): Promise<BreadcrumbItem[]> {
   const res = await api.get(`/folders/${folderId}/breadcrumbs`);
   return res.data;

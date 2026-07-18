@@ -11,8 +11,10 @@ import { FileLifecycleService } from '../file/file-lifecycle.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { NameConflictService } from '../common/name-conflict.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
+import { SearchQueryDto } from './dto/search-query.dto';
 import { PaginatedResponse } from '../common/types/paginated-response.type';
 import { PaginatedFolderContent } from '../common/types/paginated-folder-content.type';
+import { buildFormatWhere } from './file-format-category';
 import type { ConflictAction } from '../common/name-conflict.service';
 import { buildTransferUrl } from '../common/transfer-url.util';
 import * as crypto from 'crypto';
@@ -306,6 +308,179 @@ export class FolderService {
       this.prisma.folder.count({ where: parentWhere }),
       this.prisma.fileRecord.count({ where: filesWhere }),
     ]);
+
+    return {
+      folders: folderItems,
+      files: fileItems,
+      nextFolderCursor,
+      nextFileCursor,
+      totalFolders,
+      totalFiles,
+    };
+  }
+
+  /**
+   * Global search across ALL of the user's folders + files (any depth, không
+   * scope theo parentId). Ẩn soft-deleted. Lọc theo type / format-category /
+   * time-range. Dùng lại dual-cursor base64 giống hệt getContent để frontend
+   * tái sử dụng pagination infra.
+   */
+  async searchAll(
+    userId: string,
+    dto: SearchQueryDto,
+  ): Promise<PaginatedFolderContent> {
+    const limit = dto.limit ?? 50;
+    const sortField = dto.sortField || 'createdAt';
+    const sortDirection = dto.sortDirection || 'desc';
+    const type = dto.type || 'all';
+
+    // Time-range fragment applied to both folders + files via createdAt.
+    const createdAtRange: Record<string, Date> = {};
+    if (dto.createdFrom) createdAtRange.gte = new Date(dto.createdFrom);
+    if (dto.createdTo) createdAtRange.lte = new Date(dto.createdTo);
+    const hasRange = Object.keys(createdAtRange).length > 0;
+
+    // Folder where — global (no parentId gate).
+    const folderWhere: Record<string, unknown> = { userId, deletedAt: null };
+    if (dto.q)
+      folderWhere.name = { contains: dto.q, mode: 'insensitive' as const };
+    if (hasRange) folderWhere.createdAt = createdAtRange;
+
+    // File where — global. Format filter merges an AND fragment so it composes
+    // with the name/time filters (buildFormatWhere returns its own OR/NOT).
+    const fileWhere: Record<string, unknown> = {
+      userId,
+      status: {
+        in: ['complete', 'uploading', 'buffered', 'buffer_failed'] as const,
+      },
+      deletedAt: null,
+    };
+    if (dto.q)
+      fileWhere.filename = { contains: dto.q, mode: 'insensitive' as const };
+    if (hasRange) fileWhere.createdAt = createdAtRange;
+    const formatWhere = buildFormatWhere(dto.format);
+    if (formatWhere) fileWhere.AND = [formatWhere];
+
+    // type filter decides which side runs. A format filter implies files-only
+    // ONLY when type is 'all' (folders have no format); an explicit type=folder
+    // must still search folders even if a stale format lingers in the query.
+    const searchFolders = type === 'folder' || (type === 'all' && !dto.format);
+    const searchFiles = type !== 'folder';
+
+    let parsedCursor: { f?: string; fc?: string } = {};
+    if (dto.cursor) {
+      try {
+        const decoded = Buffer.from(dto.cursor, 'base64').toString('utf-8');
+        const parsed = JSON.parse(decoded) as Record<string, unknown>;
+        parsedCursor = {
+          f: typeof parsed.f === 'string' ? parsed.f : undefined,
+          fc: typeof parsed.fc === 'string' ? parsed.fc : undefined,
+        };
+      } catch {
+        // ignore malformed cursor
+      }
+    }
+
+    const isQueryNextFile = !!(parsedCursor.fc && !parsedCursor.f);
+    const isQueryNextFolder = !!parsedCursor.f;
+
+    let folderOrderBy: any[] = [
+      { createdAt: sortDirection },
+      { id: sortDirection },
+    ];
+    if (sortField === 'name')
+      folderOrderBy = [{ name: sortDirection }, { id: sortDirection }];
+
+    let fileOrderBy: any[] = [
+      { createdAt: sortDirection },
+      { id: sortDirection },
+    ];
+    if (sortField === 'name')
+      fileOrderBy = [{ filename: sortDirection }, { id: sortDirection }];
+
+    const folders =
+      !searchFolders || isQueryNextFile
+        ? []
+        : await this.prisma.folder.findMany({
+            where: folderWhere,
+            orderBy: folderOrderBy,
+            cursor: parsedCursor.f ? { id: parsedCursor.f } : undefined,
+            skip: parsedCursor.f ? 1 : 0,
+            select: {
+              id: true,
+              name: true,
+              parentId: true,
+              userId: true,
+              visibility: true,
+              shareToken: true,
+              s3PublicAccess: true,
+              createdAt: true,
+              updatedAt: true,
+            },
+            take: limit + 1,
+          });
+
+    const folderHasNext = folders.length > limit;
+    const folderItems = folderHasNext ? folders.slice(0, -1) : folders;
+    const nextFolderCursor = folderHasNext
+      ? Buffer.from(
+          JSON.stringify({
+            f: (folderItems[folderItems.length - 1] as { id: string }).id,
+            fc: parsedCursor.fc,
+          }),
+        ).toString('base64')
+      : null;
+
+    const shouldFetchFiles =
+      searchFiles && (!isQueryNextFolder || !folderHasNext);
+    const files = shouldFetchFiles
+      ? await this.prisma.fileRecord.findMany({
+          where: fileWhere,
+          orderBy: fileOrderBy,
+          cursor: parsedCursor.fc ? { id: parsedCursor.fc } : undefined,
+          skip: parsedCursor.fc ? 1 : 0,
+          select: {
+            id: true,
+            filename: true,
+            size: true,
+            mimeType: true,
+            status: true,
+            totalChunks: true,
+            folderId: true,
+            userId: true,
+            visibility: true,
+            shareToken: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          take: limit + 1,
+        })
+      : [];
+
+    const fileHasNext = files.length > limit;
+    const fileItems = fileHasNext ? files.slice(0, -1) : files;
+    const nextFileCursor = fileHasNext
+      ? Buffer.from(
+          JSON.stringify({
+            fc: (fileItems[fileItems.length - 1] as { id: string }).id,
+          }),
+        ).toString('base64')
+      : null;
+
+    const [totalFolders, totalFiles] = await Promise.all([
+      searchFolders
+        ? this.prisma.folder.count({ where: folderWhere })
+        : Promise.resolve(0),
+      searchFiles
+        ? this.prisma.fileRecord.count({ where: fileWhere })
+        : Promise.resolve(0),
+    ]);
+
+    this.logger.log(
+      `search q="${dto.q ?? ''}" type=${type} format=${dto.format ?? '-'} ` +
+        `range=[${dto.createdFrom ?? ''},${dto.createdTo ?? ''}] ` +
+        `→ folders=${totalFolders} files=${totalFiles}`,
+    );
 
     return {
       folders: folderItems,

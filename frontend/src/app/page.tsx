@@ -8,6 +8,7 @@ import { useDragSelect, DragSelectOverlay } from '@/hooks/use-drag-select';
 import { useUpload } from '@/providers/upload/upload-provider';
 import { useDownload } from '@/providers/download-context';
 import { useFolderContent } from '@/hooks/use-folder-content';
+import { useGlobalSearch } from '@/hooks/use-global-search';
 import { useConflictResolution } from '@/hooks/use-conflict-resolution';
 import { useDashboardActions } from '@/hooks/use-dashboard-actions';
 import { useDndMove } from '@/hooks/use-dnd-move';
@@ -18,6 +19,7 @@ import SelectionActionBar from '@/components/molecules/selection-action-bar';
 import Spinner from '@/components/atoms/spinner';
 import DashboardTopbar from '@/components/dashboard/dashboard-topbar';
 import DashboardContent from '@/components/dashboard/dashboard-content';
+import SearchFilterBar from '@/components/dashboard/search-filter-bar';
 import DashboardDialogs from '@/components/dashboard/dashboard-dialogs';
 import ConflictDialog from '@/components/organisms/dialogs/conflict-dialog';
 import toast from 'react-hot-toast';
@@ -36,9 +38,20 @@ export default function Dashboard() {
   const content = useFolderContent(token);
   const {
     currentFolderId, setCurrentFolderId, folders, files, setFiles, breadcrumbs,
-    isLoadingContent, hasMore, loadMoreRef, searchQuery, setSearchQuery,
-    sortField, sortDirection, handleSort, filteredFolders, filteredFiles, orderedIds, fetchContent,
+    isLoadingContent, hasMore, loadMoreRef,
+    sortField, sortDirection, handleSort, orderedIds, fetchContent,
   } = content;
+
+  // Global search — sibling data path. When searchActive, page renders its
+  // results + filter bar instead of the folder-browse dataset.
+  const search = useGlobalSearch(token, sortField, sortDirection);
+  const searchActive = search.searchActive;
+  const visibleFolders = searchActive ? (search.folders as FolderRecord[]) : folders;
+  const visibleFiles = searchActive ? (search.files as FileRecord[]) : files;
+  const activeOrderedIds = searchActive ? search.orderedIds : orderedIds;
+  const activeHasMore = searchActive ? search.hasMore : hasMore;
+  const activeLoadMoreRef = searchActive ? search.loadMoreRef : loadMoreRef;
+  const activeIsLoading = searchActive ? search.isSearching : isLoadingContent;
 
   const conflict = useConflictResolution({ folders, files, fetchContent, resolveConflict, queue, t });
   const { pendingConflict, setPendingConflict, applyToAllRef, buildMoveConflict, handleConflictResolution } = conflict;
@@ -117,14 +130,16 @@ export default function Dashboard() {
 
   const handleItemClick = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: ItemType) => {
     if (e.ctrlKey || e.metaKey || e.shiftKey) {
-      selection.handleSelect(item.id, e, orderedIds);
+      selection.handleSelect(item.id, e, activeOrderedIds);
     } else if (type === 'folder') {
+      // Folder result click navigates into it AND exits search (locked decision).
+      if (searchActive) search.clearSearch();
       setCurrentFolderId(item.id);
     } else {
       const file = item as FileRecord;
       if (file.status === 'complete' || file.status === 'buffered') setPreviewFileId(file.id);
     }
-  }, [selection, orderedIds, setCurrentFolderId]);
+  }, [selection, activeOrderedIds, setCurrentFolderId, searchActive, search]);
 
   const openContextMenu = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: ItemType) => {
     e.preventDefault(); e.stopPropagation();
@@ -191,7 +206,7 @@ export default function Dashboard() {
       >
         <DashboardTopbar
           showMobileSearch={showMobileSearch} setShowMobileSearch={setShowMobileSearch}
-          searchQuery={searchQuery} setSearchQuery={setSearchQuery}
+          searchQuery={search.query} setSearchQuery={search.setQuery}
           showNewMenu={showNewMenu} setShowNewMenu={setShowNewMenu}
           newMenuRef={newMenuRef} fileInputRef={fileInputRef} folderInputRef={folderInputRef}
           currentFolderId={currentFolderId}
@@ -200,24 +215,30 @@ export default function Dashboard() {
           setShowCreateFolder={setShowCreateFolder}
         />
 
+        {searchActive && (
+          <SearchFilterBar filters={search.filters} setFilters={search.setFilters} />
+        )}
+
         <div className="flex-1 overflow-y-auto relative" ref={contentRef} style={{ userSelect: isDragging ? 'none' : undefined }}>
           <DragSelectOverlay rect={dragRect} />
-          <Breadcrumbs items={breadcrumbs} onNavigate={setCurrentFolderId}
-            onDragOver={dnd.handleDragOver} onDragLeave={dnd.handleDragLeave} onDrop={dnd.handleDrop}
-            dragOverFolderId={dnd.dragOverFolderId} />
+          {!searchActive && (
+            <Breadcrumbs items={breadcrumbs} onNavigate={setCurrentFolderId}
+              onDragOver={dnd.handleDragOver} onDragLeave={dnd.handleDragLeave} onDrop={dnd.handleDrop}
+              dragOverFolderId={dnd.dragOverFolderId} />
+          )}
 
           <div className="px-2 py-6 md:px-6" data-content-area onClick={(e) => {
             if (e.target === e.currentTarget && !e.ctrlKey && !e.metaKey && !e.shiftKey) selection.clearSelection();
           }}>
             <DashboardContent
-              isLoadingContent={isLoadingContent}
-              visibleFolders={filteredFolders} visibleFiles={filteredFiles}
-              filteredFoldersCount={filteredFolders.length} filteredFilesCount={filteredFiles.length}
-              viewMode={viewMode} searchQuery={searchQuery}
+              isLoadingContent={activeIsLoading}
+              visibleFolders={visibleFolders} visibleFiles={visibleFiles}
+              filteredFoldersCount={visibleFolders.length} filteredFilesCount={visibleFiles.length}
+              viewMode={viewMode} searchQuery={searchActive ? search.query || t('search.filters') : ''}
               sortField={sortField} sortDirection={sortDirection} onSort={handleSort}
               selection={selection} downloadingFiles={actions.downloadingFiles} actionLoading={actions.actionLoading}
               dragOverFolderId={dnd.dragOverFolderId}
-              hasMore={hasMore} loadMoreRef={loadMoreRef}
+              hasMore={activeHasMore} loadMoreRef={activeLoadMoreRef}
               onItemClick={handleItemClick}
               onDragStart={dnd.handleDragStart} onDragOver={dnd.handleDragOver}
               onDragLeave={dnd.handleDragLeave} onDrop={dnd.handleDrop}
