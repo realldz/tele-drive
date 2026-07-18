@@ -11,6 +11,18 @@ export const isIpv4 = (v) => {
   if (m.slice(1).some((o) => Number(o) > 255)) return 'must be a valid IPv4 address';
   return null;
 };
+// Bare filename — SSL_CERT_FILE/SSL_KEY_FILE name a file inside ./nginx/ssl and
+// flow into an nginx ssl_certificate path. Positive charset (alnum . _ -) so no
+// path separator, space, or nginx-config metachar can slip through. Empty is
+// allowed so the optional field falls back to compose defaults (cert.pem/key.pem).
+export const isFilename = (v) => {
+  if (!v) return null;
+  return /^[A-Za-z0-9._-]+$/.test(v) ? null : 'must be a bare filename (letters, digits, . _ -)';
+};
+// Hostname for TRANSFER_DOMAIN → nginx server_name. Positive charset (host label
+// chars + optional :port) so scheme, path, spaces, ';' and newlines can't inject
+// a stray nginx directive via server_name.
+export const isHostname = (v) => (/^[A-Za-z0-9.-]+(:\d+)?$/.test(v || '') ? null : 'must be a bare hostname (no scheme, path, or spaces)');
 
 const req = (validate) => (v) => isRequired(v) ?? (validate ? validate(v) : null);
 
@@ -55,6 +67,9 @@ const SCHEMA = {
     { key: 'CORE_HOST', file: '.env.transfer', prompt: 'Core control-plane host (name or IP)', validate: req(), required: true },
     { key: 'GO_PRIVATE_IP', file: '.env.transfer', prompt: 'Go private IP (bind address)', validate: req(isIpv4), required: true },
     { key: 'UPLOAD_BUFFER_NFS', file: '.env.transfer', prompt: 'Shared upload buffer path (NFS mount)', validate: req(), required: true },
+    { key: 'TRANSFER_DOMAIN', file: '.env.transfer', prompt: 'Public transfer domain (e.g. dl.example.com)', validate: req(isHostname), required: true },
+    { key: 'SSL_CERT_FILE', file: '.env.transfer', prompt: 'TLS cert filename in ./nginx/ssl (blank = self-signed)', validate: isFilename, required: false },
+    { key: 'SSL_KEY_FILE', file: '.env.transfer', prompt: 'TLS key filename in ./nginx/ssl (blank = self-signed)', validate: isFilename, required: false },
     REDIS('.env.transfer'),
     ...TELEGRAM_APP('.env.transfer'),
     ...BACKEND_FIELDS,

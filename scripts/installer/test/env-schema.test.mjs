@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  isExact32, isNumeric, isPositiveInt, isIpv4,
+  isExact32, isNumeric, isPositiveInt, isIpv4, isFilename, isHostname,
   fieldsFor, validateValues,
 } from '../lib/env-schema.mjs';
 
@@ -44,6 +44,45 @@ test('fieldsFor(go) includes GO_PRIVATE_IP + CORE_HOST', () => {
   const keys = fieldsFor('go').map((f) => f.key);
   assert.ok(keys.includes('GO_PRIVATE_IP'));
   assert.ok(keys.includes('CORE_HOST'));
+});
+
+test('fieldsFor(go) includes transfer-domain + SSL fields', () => {
+  const keys = fieldsFor('go').map((f) => f.key);
+  assert.ok(keys.includes('TRANSFER_DOMAIN'));
+  assert.ok(keys.includes('SSL_CERT_FILE'));
+  assert.ok(keys.includes('SSL_KEY_FILE'));
+});
+
+test('isFilename accepts bare names + empty, rejects paths', () => {
+  assert.equal(isFilename('cert.pem'), null);
+  assert.equal(isFilename(''), null); // optional → empty allowed
+  assert.notEqual(isFilename('a/b.pem'), null);
+  assert.notEqual(isFilename('a\\b.pem'), null);
+});
+
+test('isHostname accepts bare host, rejects scheme/path', () => {
+  assert.equal(isHostname('dl.example.com'), null);
+  assert.equal(isHostname('dl.example.com:8443'), null);
+  assert.notEqual(isHostname('https://dl.example.com'), null);
+  assert.notEqual(isHostname('dl.example.com/files'), null);
+});
+
+test('validateValues(go) fails without TRANSFER_DOMAIN, passes with it + blank SSL', () => {
+  const base = {
+    CORE_HOST: 'core.internal',
+    GO_PRIVATE_IP: '10.0.0.2',
+    UPLOAD_BUFFER_NFS: '/mnt/buffer',
+    REDIS_PASSWORD: 'shared',
+    TELEGRAM_API_ID: '123456',
+    TELEGRAM_API_HASH: 'abcdef0123456789abcdef0123456789',
+    TELEGRAM_BOT_TOKEN: '123:abc',
+    TELEGRAM_CHAT_ID: '-100123',
+    DATABASE_URL: 'postgresql://u:p@core:5432/app',
+    JWT_SECRET: 'jwtsecret',
+    MASTER_SECRET: 'a'.repeat(32),
+  };
+  assert.ok(validateValues('go', base).some((e) => e.startsWith('TRANSFER_DOMAIN')));
+  assert.deepEqual(validateValues('go', { ...base, TRANSFER_DOMAIN: 'dl.example.com' }), []);
 });
 
 test('validateValues reports missing required and bad values', () => {
