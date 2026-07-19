@@ -19,6 +19,7 @@ model SystemSetting {
 model User {
   id                  String       @id @default(uuid())
   username            String       @unique
+  email               String?      @unique
   password            String       // Hash bằng bcrypt
   role                String       @default("USER") // ADMIN | USER
   quota               BigInt       @default(15000000000) // 15GB mặc định

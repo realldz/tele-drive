@@ -7,6 +7,7 @@ import { api, transferApi, fetchCurrentUser, clearStreamCookie } from '@/lib/api
 interface User {
   id: string;
   username: string;
+  email?: string | null;
   role: string;
 }
 
@@ -23,6 +24,7 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
   logout: () => void;
+  refreshUser: () => Promise<void>;
   refreshQuota: () => Promise<void>;
 }
 
@@ -59,20 +61,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const requestInterceptorIds = useRef<number[]>([]);
   const responseInterceptorIds = useRef<number[]>([]);
 
-  // Fetch quota từ server — gọi 1 lần khi có token, sau đó gọi lại qua refreshQuota
-  const refreshQuota = useCallback(async () => {
+  const refreshUser = useCallback(async () => {
     const currentToken = localStorage.getItem('token');
     if (!currentToken) return;
+
+    const data = await fetchCurrentUser();
+    const nextUser = {
+      id: data.id,
+      username: data.username,
+      email: data.email,
+      role: data.role,
+    };
+    localStorage.setItem('user', JSON.stringify(nextUser));
+    setUser(nextUser);
+    setQuotaInfo({
+      usedSpace: Number(data.usedSpace),
+      quota: Number(data.quota),
+    });
+  }, []);
+
+  // Fetch quota từ server — gọi 1 lần khi có token, sau đó gọi lại qua refreshQuota
+  const refreshQuota = useCallback(async () => {
     try {
-      const data = await fetchCurrentUser();
-      setQuotaInfo({
-        usedSpace: Number(data.usedSpace),
-        quota: Number(data.quota),
-      });
+      await refreshUser();
     } catch {
       // non-critical
     }
-  }, []);
+  }, [refreshUser]);
 
   // Khởi tạo: đọc token từ localStorage VÀ set axios header ngay lập tức
   /* eslint-disable react-hooks/set-state-in-effect */
@@ -185,7 +200,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, isLoading, quotaInfo, login, register, logout, refreshQuota }}>
+    <AuthContext.Provider value={{ user, token, isLoading, quotaInfo, login, register, logout, refreshUser, refreshQuota }}>
       {children}
     </AuthContext.Provider>
   );

@@ -7,11 +7,12 @@ import type { UserRole } from '@/lib/types';
 interface EditUserForm {
   quotaGB: number | string;
   bandwidthLimitGB: number | string;
+  email: string;
   role: string;
 }
 
 interface EditUserModalProps {
-  user: { id: string; username: string; role: UserRole };
+  user: { id: string; username: string; email?: string | null; role: UserRole };
   currentUserId: string | undefined;
   form: EditUserForm;
   onFormChange: (form: EditUserForm) => void;
@@ -46,6 +47,21 @@ export default function EditUserModal({ user, currentUserId, form, onFormChange,
               <option value="USER">{t('admin.userRole')}</option><option value="ADMIN">{t('admin.adminRole')}</option>
             </select>
             {isSelf && <p className="text-xs text-orange-500 mt-1">{t('admin.cannotDemoteSelf')}</p>}
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="admin-user-email">{t('admin.email')}</label>
+            <input
+              id="admin-user-email"
+              type="email"
+              inputMode="email"
+              autoComplete="email"
+              value={form.email}
+              onChange={(e) => onFormChange({ ...form, email: e.target.value })}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring focus:ring-blue-100 outline-none"
+              placeholder={t('admin.emailPlaceholder')}
+              maxLength={254}
+            />
+            <p className="text-xs text-gray-500 mt-1">{t('admin.clearEmail')}</p>
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.maxQuota')}</label>

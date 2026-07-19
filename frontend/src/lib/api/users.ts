@@ -25,12 +25,21 @@ export async function fetchAdminUserBasic(userId: string): Promise<AdminUserBasi
   return res.data;
 }
 
+export async function updateCurrentUser(body: { email: string | null }) {
+  const res = await api.patch('/users/me', body);
+  return res.data;
+}
+
 export async function changePassword(currentPassword: string, newPassword: string) {
   return api.patch('/users/me/password', { currentPassword, newPassword });
 }
 
 export async function adminResetPassword(userId: string, newPassword: string) {
   return api.patch(`/users/${userId}/password`, { newPassword });
+}
+
+export async function updateUserAccount(userId: string, body: { email: string | null }) {
+  return api.patch(`/users/${userId}/account`, body);
 }
 
 export async function updateUserRole(userId: string, role: string) {

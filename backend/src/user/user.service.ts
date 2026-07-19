@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { FileLifecycleService } from '../file/file-lifecycle.service';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { PaginatedResponse } from '../common/types/paginated-response.type';
+import { UpdateCurrentUserDto } from './dto/update-current-user.dto';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -29,6 +30,7 @@ export class UserService {
       select: {
         id: true,
         username: true,
+        email: true,
         role: true,
         quota: true,
         usedSpace: true,
@@ -40,6 +42,80 @@ export class UserService {
     });
     if (!user) throw new NotFoundException('User not found');
     return user;
+  }
+
+  async updateMe(userId: string, dto: UpdateCurrentUserDto) {
+    return this.updateAccountEmail(userId, dto, 'self');
+  }
+
+  async updateUserAccount(targetUserId: string, dto: UpdateCurrentUserDto) {
+    return this.updateAccountEmail(targetUserId, dto, 'admin');
+  }
+
+  private async updateAccountEmail(
+    userId: string,
+    dto: UpdateCurrentUserDto,
+    actor: 'self' | 'admin',
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const hasEmail = Object.prototype.hasOwnProperty.call(dto, 'email');
+    const email = hasEmail ? this.normalizeEmail(dto.email) : user.email;
+    if (email && email !== user.email) {
+      const duplicate = await this.prisma.user.findFirst({
+        where: {
+          email: { equals: email, mode: 'insensitive' },
+          NOT: { id: userId },
+        },
+        select: { id: true },
+      });
+
+      if (duplicate) {
+        this.logger.warn(
+          `Email update rejected: ${actor} update for user "${user.username}" (id: ${userId}) conflicts with another user`,
+        );
+        throw new BadRequestException('Email already exists');
+      }
+    }
+
+    try {
+      const updated = await this.prisma.user.update({
+        where: { id: userId },
+        data: { email },
+        select: {
+          id: true,
+          username: true,
+          email: true,
+          role: true,
+          quota: true,
+          usedSpace: true,
+          dailyBandwidthLimit: true,
+          dailyBandwidthUsed: true,
+          lastBandwidthReset: true,
+          createdAt: true,
+        },
+      });
+
+      this.logger.log(
+        `Email ${email ? 'updated' : 'cleared'}: ${actor} update for user "${user.username}" (id: ${userId})`,
+      );
+      return updated;
+    } catch (err) {
+      if ((err as { code?: string }).code === 'P2002') {
+        this.logger.warn(
+          `Email update rejected: ${actor} update for user "${user.username}" (id: ${userId}) hit unique constraint`,
+        );
+        throw new BadRequestException('Email already exists');
+      }
+      throw err;
+    }
+  }
+
+  private normalizeEmail(email: string | null | undefined) {
+    if (email === null || email === undefined) return null;
+    const normalized = email.trim().toLowerCase();
+    return normalized === '' ? null : normalized;
   }
 
   /**
@@ -64,6 +140,7 @@ export class UserService {
       select: {
         id: true,
         username: true,
+        email: true,
         role: true,
         quota: true,
         usedSpace: true,
@@ -289,6 +366,7 @@ export class UserService {
       select: {
         id: true,
         username: true,
+        email: true,
         role: true,
         usedSpace: true,
         quota: true,
@@ -383,9 +461,9 @@ export class UserService {
       throw new UnauthorizedException('Current password is incorrect');
     }
 
-    if (newPassword.length < 4) {
+    if (newPassword.length < 6) {
       throw new BadRequestException(
-        'New password must be at least 4 characters',
+        'New password must be at least 6 characters',
       );
     }
 
@@ -410,9 +488,9 @@ export class UserService {
     });
     if (!user) throw new NotFoundException('User not found');
 
-    if (newPassword.length < 4) {
+    if (newPassword.length < 6) {
       throw new BadRequestException(
-        'New password must be at least 4 characters',
+        'New password must be at least 6 characters',
       );
     }
 

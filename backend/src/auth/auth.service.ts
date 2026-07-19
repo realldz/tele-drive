@@ -64,6 +64,7 @@ export class AuthService {
       user: {
         id: user.id,
         username: user.username,
+        email: user.email,
         role: user.role,
       },
     };
@@ -97,6 +98,7 @@ export class AuthService {
       user: {
         id: user.id,
         username: user.username,
+        email: user.email,
         role: user.role,
       },
     };
@@ -111,6 +113,7 @@ export class AuthService {
       select: {
         id: true,
         username: true,
+        email: true,
         role: true,
         quota: true,
         usedSpace: true,

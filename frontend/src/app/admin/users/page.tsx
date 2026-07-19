@@ -7,6 +7,7 @@ import {
   deleteUser as deleteUserApi,
   fetchUsers as fetchUsersApi,
   getApiErrorMessage,
+  updateUserAccount,
   updateUserBandwidth,
   updateUserQuota,
   updateUserRole,
@@ -36,8 +37,9 @@ export default function AdminUsersPage() {
   const [editForm, setEditForm] = useState<{
     quotaGB: number | string;
     bandwidthLimitGB: number | string;
+    email: string;
     role: string;
-  }>({ quotaGB: 15, bandwidthLimitGB: 0, role: 'USER' });
+  }>({ quotaGB: 15, bandwidthLimitGB: 0, email: '', role: 'USER' });
   const [resetPwUser, setResetPwUser] = useState<AdminUser | null>(null);
   const [resetPwForm, setResetPwForm] = useState({
     newPassword: '',
@@ -106,6 +108,9 @@ export default function AdminUsersPage() {
     e.preventDefault();
     if (!editingUser) return;
     try {
+      await updateUserAccount(editingUser.id, {
+        email: editForm.email.trim() || null,
+      });
       await updateUserRole(editingUser.id, editForm.role);
       const quotaBytes = Math.round(Number(editForm.quotaGB) * ONE_GB).toString();
       const bwGb = Number(editForm.bandwidthLimitGB);
@@ -142,7 +147,7 @@ export default function AdminUsersPage() {
       toast.error(t('password.mismatch'));
       return;
     }
-    if (resetPwForm.newPassword.length < 4) {
+    if (resetPwForm.newPassword.length < 6) {
       toast.error(t('password.tooShort'));
       return;
     }
@@ -181,6 +186,7 @@ export default function AdminUsersPage() {
             bandwidthLimitGB: u.dailyBandwidthLimit
               ? Number(u.dailyBandwidthLimit) / ONE_GB
               : 0,
+            email: u.email ?? '',
             role: u.role,
           });
         }}

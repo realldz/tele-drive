@@ -38,12 +38,12 @@ export default function ResetPasswordModal({ username, form, onFormChange, loadi
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('password.newPassword')}</label>
             <input type="password" value={form.newPassword} onChange={(e) => onFormChange({ ...form, newPassword: e.target.value })}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring focus:ring-blue-100 outline-none" required minLength={4} />
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring focus:ring-blue-100 outline-none" required minLength={6} />
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('password.confirmNewPassword')}</label>
             <input type="password" value={form.confirmPassword} onChange={(e) => onFormChange({ ...form, confirmPassword: e.target.value })}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring focus:ring-blue-100 outline-none" required minLength={4} />
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:ring focus:ring-blue-100 outline-none" required minLength={6} />
           </div>
           <div className="flex justify-end gap-3 mt-6">
             <button type="button" onClick={onClose} className="px-4 py-2 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-lg font-medium transition-colors">{t('admin.cancel')}</button>

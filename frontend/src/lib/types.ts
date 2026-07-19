@@ -45,6 +45,7 @@ export type UserRole = 'ADMIN' | 'USER';
 export interface AuthUser {
   id: string;
   username: string;
+  email?: string | null;
   role: UserRole;
 }
 
@@ -82,6 +83,7 @@ export interface AdminUserFile {
 export interface AdminUserBasic {
   id: string;
   username: string;
+  email?: string | null;
   role: UserRole;
   usedSpace: string;
   quota: string;

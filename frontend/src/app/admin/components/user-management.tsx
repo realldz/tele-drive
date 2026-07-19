@@ -89,7 +89,12 @@ export default function UserManagement({
           <tbody className="divide-y divide-gray-100">
             {users.map((u) => (
               <tr key={u.id} className="hover:bg-gray-50">
-                <td className="p-4 font-medium text-gray-800">{u.username}</td>
+                <td className="p-4">
+                  <div className="font-medium text-gray-800">{u.username}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">
+                    {u.email || t('admin.noEmail')}
+                  </div>
+                </td>
                 <td className="p-4 text-sm">
                   <span
                     className={`px-2 py-1 rounded-full text-xs font-semibold ${u.role === 'ADMIN' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}

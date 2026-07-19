@@ -16,6 +16,7 @@ import { UpdateQuotaDto } from './dto/update-quota.dto';
 import { UpdateBandwidthDto } from './dto/update-bandwidth.dto';
 import { UpdateRoleDto } from './dto/update-role.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { UpdateCurrentUserDto } from './dto/update-current-user.dto';
 import { UpdateFileDownloadPolicyDto } from './dto/update-file-download-policy.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import type { AuthenticatedRequest } from '../common/types/request';
@@ -27,6 +28,14 @@ export class UserController {
   @Get('me')
   getMe(@Req() req: AuthenticatedRequest) {
     return this.userService.getMe(req.user.userId);
+  }
+
+  @Patch('me')
+  updateMe(
+    @Req() req: AuthenticatedRequest,
+    @Body() body: UpdateCurrentUserDto,
+  ) {
+    return this.userService.updateMe(req.user.userId, body);
   }
 
   @Patch('me/password')
@@ -71,6 +80,15 @@ export class UserController {
   @Delete(':id')
   deleteUser(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.userService.deleteUser(id, req.user.userId);
+  }
+
+  @UseGuards(AdminGuard)
+  @Patch(':id/account')
+  updateUserAccount(
+    @Param('id') id: string,
+    @Body() body: UpdateCurrentUserDto,
+  ) {
+    return this.userService.updateUserAccount(id, body);
   }
 
   @UseGuards(AdminGuard)
