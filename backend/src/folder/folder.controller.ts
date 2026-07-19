@@ -96,6 +96,14 @@ export class FolderController {
     return this.folderService.listTrash(req.user.userId, pagination);
   }
 
+  @Get('shared')
+  listShared(
+    @Query() pagination: PaginationQueryDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.folderService.listShared(req.user.userId, pagination);
+  }
+
   @Get()
   findAll(
     @Query('parentId') parentId: string | undefined,

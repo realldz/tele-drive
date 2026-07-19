@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { usePathname } from 'next/navigation';
-import { Home, Trash2, KeyRound, ShieldAlert, LogOut, User, HardDrive, Menu, X, KeySquare } from 'lucide-react';
+import { Home, Trash2, KeyRound, ShieldAlert, LogOut, User, HardDrive, Menu, X, KeySquare, Share2 } from 'lucide-react';
 import { useAuth } from '@/providers/auth-context';
 import { useI18n } from '@/providers/i18n-context';
 import LanguageSwitcher from '@/components/language-switcher';
@@ -57,6 +57,7 @@ export default function Sidebar({ children }: SidebarProps) {
 
   const navItems = [
     { href: '/', label: t('sidebar.home'), icon: Home },
+    { href: '/shared', label: t('sidebar.shared'), icon: Share2 },
     { href: '/trash', label: t('sidebar.trash'), icon: Trash2 },
     { href: '/s3-keys', label: t('sidebar.s3Keys'), icon: KeyRound },
   ];

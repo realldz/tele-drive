@@ -15,6 +15,10 @@ import { SearchQueryDto } from './dto/search-query.dto';
 import { PaginatedResponse } from '../common/types/paginated-response.type';
 import { PaginatedFolderContent } from '../common/types/paginated-folder-content.type';
 import { buildFormatWhere } from './file-format-category';
+import {
+  buildSharedFolderWhere,
+  buildSharedFileWhere,
+} from './shared-items-where';
 import type { ConflictAction } from '../common/name-conflict.service';
 import { buildTransferUrl } from '../common/transfer-url.util';
 import * as crypto from 'crypto';
@@ -480,6 +484,128 @@ export class FolderService {
       `search q="${dto.q ?? ''}" type=${type} format=${dto.format ?? '-'} ` +
         `range=[${dto.createdFrom ?? ''},${dto.createdTo ?? ''}] ` +
         `→ folders=${totalFolders} files=${totalFiles}`,
+    );
+
+    return {
+      folders: folderItems,
+      files: fileItems,
+      nextFolderCursor,
+      nextFileCursor,
+      totalFolders,
+      totalFiles,
+    };
+  }
+
+  /**
+   * List everything the user is CURRENTLY sharing publicly (any depth):
+   *  - folders with a share link OR S3 public access
+   *  - files with a share link
+   * Reuses the getContent/searchAll dual-cursor shape so the frontend renders it
+   * like a folder listing. where-fragments live in shared-items-where.ts (pure,
+   * unit-tested). Sort createdAt desc (most-recent share-eligible first).
+   */
+  async listShared(
+    userId: string,
+    pagination: PaginationQueryDto,
+  ): Promise<PaginatedFolderContent> {
+    const limit = pagination.limit ?? 50;
+
+    const folderWhere = buildSharedFolderWhere(userId);
+    const fileWhere = buildSharedFileWhere(userId);
+
+    let parsedCursor: { f?: string; fc?: string } = {};
+    if (pagination.cursor) {
+      try {
+        const decoded = Buffer.from(pagination.cursor, 'base64').toString(
+          'utf-8',
+        );
+        const parsed = JSON.parse(decoded) as Record<string, unknown>;
+        parsedCursor = {
+          f: typeof parsed.f === 'string' ? parsed.f : undefined,
+          fc: typeof parsed.fc === 'string' ? parsed.fc : undefined,
+        };
+      } catch {
+        // ignore malformed cursor
+      }
+    }
+
+    const isQueryNextFile = !!(parsedCursor.fc && !parsedCursor.f);
+    const isQueryNextFolder = !!parsedCursor.f;
+
+    const folders = isQueryNextFile
+      ? []
+      : await this.prisma.folder.findMany({
+          where: folderWhere,
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          cursor: parsedCursor.f ? { id: parsedCursor.f } : undefined,
+          skip: parsedCursor.f ? 1 : 0,
+          select: {
+            id: true,
+            name: true,
+            parentId: true,
+            userId: true,
+            visibility: true,
+            shareToken: true,
+            s3PublicAccess: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          take: limit + 1,
+        });
+
+    const folderHasNext = folders.length > limit;
+    const folderItems = folderHasNext ? folders.slice(0, -1) : folders;
+    const nextFolderCursor = folderHasNext
+      ? Buffer.from(
+          JSON.stringify({
+            f: (folderItems[folderItems.length - 1] as { id: string }).id,
+            fc: parsedCursor.fc,
+          }),
+        ).toString('base64')
+      : null;
+
+    const shouldFetchFiles = !isQueryNextFolder || !folderHasNext;
+    const files = shouldFetchFiles
+      ? await this.prisma.fileRecord.findMany({
+          where: fileWhere,
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          cursor: parsedCursor.fc ? { id: parsedCursor.fc } : undefined,
+          skip: parsedCursor.fc ? 1 : 0,
+          select: {
+            id: true,
+            filename: true,
+            size: true,
+            mimeType: true,
+            status: true,
+            totalChunks: true,
+            folderId: true,
+            userId: true,
+            visibility: true,
+            shareToken: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+          take: limit + 1,
+        })
+      : [];
+
+    const fileHasNext = files.length > limit;
+    const fileItems = fileHasNext ? files.slice(0, -1) : files;
+    const nextFileCursor = fileHasNext
+      ? Buffer.from(
+          JSON.stringify({
+            fc: (fileItems[fileItems.length - 1] as { id: string }).id,
+          }),
+        ).toString('base64')
+      : null;
+
+    const [totalFolders, totalFiles] = await Promise.all([
+      this.prisma.folder.count({ where: folderWhere }),
+      this.prisma.fileRecord.count({ where: fileWhere }),
+    ]);
+
+    this.logger.log(
+      `listShared user=${userId} → folders=${totalFolders} files=${totalFiles}`,
     );
 
     return {

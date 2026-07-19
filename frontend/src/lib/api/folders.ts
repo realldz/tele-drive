@@ -109,6 +109,22 @@ export async function searchFiles(
   return res.data;
 }
 
+/**
+ * List everything the user is currently sharing publicly (GET /folders/shared).
+ * Same PaginatedFolderContent shape as browse/search so the Shared view reuses
+ * dual-cursor load-more. Folders carry `shareToken` and/or `s3PublicAccess`;
+ * files carry `shareToken`.
+ */
+export async function listSharedItems(
+  params?: { cursor?: string | null; limit?: number },
+): Promise<PaginatedFolderContent> {
+  const p = new URLSearchParams();
+  if (params?.cursor) p.set('cursor', params.cursor);
+  p.set('limit', String(params?.limit ?? PAGINATION_FOLDER_LIMIT));
+  const res = await api.get(`/folders/shared?${p}`);
+  return res.data;
+}
+
 export async function fetchBreadcrumbs(folderId: string): Promise<BreadcrumbItem[]> {
   const res = await api.get(`/folders/${folderId}/breadcrumbs`);
   return res.data;
