@@ -9,6 +9,11 @@ import { PrismaService } from '../prisma/prisma.service';
 import { CacheService } from '../cache/cache.service';
 import * as crypto from 'crypto';
 import { escapeXml, decodeXmlEntities } from '../common/utils/xml';
+import {
+  buildListPage,
+  type S3ListObject,
+  type S3ListPage,
+} from './s3-list-pagination.util';
 
 /**
  * S3Service — Path resolution, folder auto-creation, XML response builder.
@@ -450,15 +455,8 @@ export class S3Service {
     prefix?: string,
     delimiter?: string,
     maxKeys = 1000,
-  ): Promise<{
-    objects: Array<{
-      key: string;
-      size: bigint;
-      lastModified: Date;
-      etag: string;
-    }>;
-    commonPrefixes: string[];
-  }> {
+    startAfter?: string,
+  ): Promise<S3ListPage> {
     const bucket = await this.prisma.folder.findFirst({
       where: {
         userId,
@@ -475,12 +473,7 @@ export class S3Service {
       throw new ForbiddenException('AccessDenied');
     }
 
-    const objects: Array<{
-      key: string;
-      size: bigint;
-      lastModified: Date;
-      etag: string;
-    }> = [];
+    const objects: S3ListObject[] = [];
     const commonPrefixes = new Set<string>();
 
     await this.listRecursiveOptimized(
@@ -493,47 +486,46 @@ export class S3Service {
       Number.MAX_SAFE_INTEGER,
     );
 
-    objects.sort((a, b) => a.key.localeCompare(b.key));
-    const sortedCommonPrefixes = [...commonPrefixes].sort((a, b) =>
-      a.localeCompare(b),
+    // Byte-order sort (see s3-list-pagination.util.ts) — same requirement as
+    // the authenticated listing: aws-cli merge-joins on UTF-8 byte order.
+    // The full page (objects, commonPrefixes, isTruncated, next token) must be
+    // returned so the controller can answer IsTruncated and resumption faithfully.
+    const page = buildListPage(objects, commonPrefixes, maxKeys, startAfter);
+
+    this.logger.log(
+      `S3 ListObjectsV2 (public): bucket="${bucketName}" prefix="${prefix || ''}" ` +
+        `returned=${page.objects.length + page.commonPrefixes.length}/${maxKeys} ` +
+        `truncated=${page.isTruncated} cursor=${startAfter ? 'yes' : 'no'} (userId: ${userId})`,
     );
 
-    return {
-      objects: objects.slice(0, maxKeys),
-      commonPrefixes: sortedCommonPrefixes,
-    };
+    return page;
   }
 
   // ---------------------------------------------------------------------------
   // ListObjectsV2 — prefix-based listing
   // ---------------------------------------------------------------------------
 
+  /**
+   * ListObjectsV2 for an authenticated bucket owner.
+   *
+   * `startAfter` is the exclusive resume key (from a decoded continuation token
+   * or the client's `start-after`). Ordering is UTF-8 byte order, which is what
+   * `aws s3 sync`'s merge-join requires — see s3-list-pagination.util.ts.
+   */
   async listObjects(
     userId: string,
     bucketName: string,
     prefix?: string,
     delimiter?: string,
     maxKeys = 1000,
-  ): Promise<{
-    objects: Array<{
-      key: string;
-      size: bigint;
-      lastModified: Date;
-      etag: string;
-    }>;
-    commonPrefixes: string[];
-  }> {
+    startAfter?: string,
+  ): Promise<S3ListPage> {
     const bucket = await this.prisma.folder.findFirst({
       where: { userId, name: bucketName, parentId: null, deletedAt: null },
     });
     if (!bucket) throw new NotFoundException('NoSuchBucket');
 
-    const objects: Array<{
-      key: string;
-      size: bigint;
-      lastModified: Date;
-      etag: string;
-    }> = [];
+    const objects: S3ListObject[] = [];
     const commonPrefixes = new Set<string>();
 
     await this.listRecursiveOptimized(
@@ -546,15 +538,15 @@ export class S3Service {
       Number.MAX_SAFE_INTEGER,
     );
 
-    objects.sort((a, b) => a.key.localeCompare(b.key));
-    const sortedCommonPrefixes = [...commonPrefixes].sort((a, b) =>
-      a.localeCompare(b),
+    const page = buildListPage(objects, commonPrefixes, maxKeys, startAfter);
+
+    this.logger.log(
+      `S3 ListObjectsV2: bucket="${bucketName}" prefix="${prefix || ''}" ` +
+        `returned=${page.objects.length + page.commonPrefixes.length}/${maxKeys} ` +
+        `truncated=${page.isTruncated} cursor=${startAfter ? 'yes' : 'no'} (userId: ${userId})`,
     );
 
-    return {
-      objects: objects.slice(0, maxKeys),
-      commonPrefixes: sortedCommonPrefixes,
-    };
+    return page;
   }
 
   private async listRecursiveOptimized(
@@ -810,6 +802,11 @@ export class S3Service {
     maxKeys: number,
     isTruncated: boolean,
     encodingType?: string,
+    cursors?: {
+      nextContinuationToken?: string;
+      continuationToken?: string;
+      startAfter?: string;
+    },
   ): string {
     const shouldUrlEncode = encodingType === 'url';
     const encodeValue = (value: string) =>
@@ -840,6 +837,20 @@ export class S3Service {
       ? `\n  <EncodingType>url</EncodingType>`
       : '';
 
+    // Echo cursors only when the client supplied them; emit the next token only
+    // when the page is actually truncated (AWS omits it otherwise, and clients
+    // loop forever if it is present without truncation).
+    const continuationTokenXml = cursors?.continuationToken
+      ? `\n  <ContinuationToken>${escapeXml(cursors.continuationToken)}</ContinuationToken>`
+      : '';
+    const startAfterXml = cursors?.startAfter
+      ? `\n  <StartAfter>${escapeXml(encodeValue(cursors.startAfter))}</StartAfter>`
+      : '';
+    const nextContinuationTokenXml =
+      isTruncated && cursors?.nextContinuationToken
+        ? `\n  <NextContinuationToken>${escapeXml(cursors.nextContinuationToken)}</NextContinuationToken>`
+        : '';
+
     return `<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>${escapeXml(bucketName)}</Name>
@@ -847,7 +858,7 @@ export class S3Service {
   <KeyCount>${keyCount}</KeyCount>
   <MaxKeys>${maxKeys}</MaxKeys>
   <Delimiter>${escapeXml(encodeValue(delimiter))}</Delimiter>${encodingTypeXml}
-  <IsTruncated>${isTruncated}</IsTruncated>${objectsXml}${prefixesXml}
+  <IsTruncated>${isTruncated}</IsTruncated>${continuationTokenXml}${startAfterXml}${nextContinuationTokenXml}${objectsXml}${prefixesXml}
 </ListBucketResult>`;
   }
 

@@ -361,6 +361,11 @@ message PrepareS3PutResponse {
   string folder_id = 2;
   string encrypted_key = 3; // base64; Go decrypts via MASTER_SECRET-derived KEK
   bool is_encrypted = 4;
+  // True when the key is a real zero-byte OBJECT (no trailing slash) that the
+  // control plane already persisted as a complete FileRecord. Like a folder
+  // marker it carries an empty file_id (nothing for Go to ingest), but it is
+  // NOT a folder — Go must log and treat the two cases distinctly.
+  bool is_empty_object = 5;
 }
 
 // --- S3 PUT completion (overwrite-friendly) ---

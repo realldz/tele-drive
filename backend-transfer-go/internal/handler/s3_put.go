@@ -99,10 +99,16 @@ func (h *FileHandler) S3PutObject(c echo.Context) error {
 		return s3ErrorXML(c, http.StatusInternalServerError, "InternalError", "Failed to prepare upload.")
 	}
 
-	// Zero-byte object → folder marker. Nothing to ingest; PrepareS3Put already
-	// created the folder chain and returned an empty fileId.
+	// Nothing to ingest: either a folder marker (key ends in '/') or a real
+	// zero-byte object the control plane already persisted. Both carry an empty
+	// FileId, so IsEmptyObject is what tells them apart — do not collapse these
+	// branches, the distinction is the whole point of finding A3.
 	if prep.FileId == "" {
-		log.Info("s3 PutObject folder marker", "folderId", prep.FolderId)
+		if prep.IsEmptyObject {
+			log.Info("s3 PutObject empty object stored", "folderId", prep.FolderId)
+		} else {
+			log.Info("s3 PutObject folder marker", "folderId", prep.FolderId)
+		}
 		c.Response().Header().Set("ETag", `"d41d8cd98f00b204e9800998ecf8427e"`) // md5 of empty
 		return c.NoContent(http.StatusOK)
 	}

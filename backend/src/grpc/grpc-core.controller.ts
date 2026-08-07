@@ -379,7 +379,12 @@ export class GrpcCoreController {
         mimeType: file.mimeType,
         size: Number(file.size),
         etag: file.etag || `"${file.id}"`,
-        lastModified: file.updatedAt.toUTCString(),
+        // A4: LastModified must derive from createdAt on EVERY surface. List
+        // (s3.service.ts) already uses createdAt; using updatedAt here made
+        // HEAD/GET disagree with List, and because updatedAt is Prisma
+        // @updatedAt the read path (bandwidth counters) advanced it on every
+        // download — so a plain GET looked like a mutation to sync clients.
+        lastModified: file.createdAt.toUTCString(),
       };
     } catch {
       this.logger.debug(
@@ -396,11 +401,13 @@ export class GrpcCoreController {
     }
   }
 
-  // Provision an S3 PutObject before Go ingests the body. Mirrors the legacy
-  // redirectPutObject: zero-byte key → folder marker (fileId empty signals Go to
-  // skip ingest); else create an 'uploading' FileRecord with encryption keyed
-  // upfront so Go encrypts the stream (Go has no MASTER_SECRET). Go reports back
-  // via ReportS3PutComplete once the body lands on Telegram.
+  // Provision an S3 PutObject before Go ingests the body. Three outcomes, all
+  // distinguished by the response: key ending in '/' → folder marker; zero-byte
+  // key without a slash → real empty FileRecord persisted here (isEmptyObject,
+  // nothing for Go to ingest); otherwise an 'uploading' FileRecord with
+  // encryption keyed upfront so Go encrypts the stream (Go has no MASTER_SECRET)
+  // and reports back via ReportS3PutComplete once the body lands on Telegram.
+  // Both no-ingest cases return an empty fileId, so Go branches on isEmptyObject.
   @GrpcMethod('CoreService', 'PrepareS3Put')
   async prepareS3Put(data: {
     userId: string;
@@ -409,22 +416,105 @@ export class GrpcCoreController {
     mimeType: string;
     contentLength: number;
   }) {
-    // Zero-byte object → folder marker. Resolve/create the folder chain and
-    // return an empty fileId so Go responds 200 without uploading anything.
-    if (!data.contentLength || data.contentLength === 0) {
-      const folderKey = data.key.endsWith('/') ? data.key : `${data.key}/`;
+    // A3: only a key ending in '/' is a folder marker. Previously ANY zero-byte
+    // PUT became a folder, so `PUT foo/empty.txt` (0 bytes) silently created a
+    // FOLDER named empty.txt; List then emitted it as `foo/empty.txt/` with a
+    // trailing slash, so a client looking for `foo/empty.txt` never found it and
+    // re-uploaded it on every single sync.
+    if (data.key.endsWith('/')) {
       const folderId = await this.s3Service.resolveKeyAsFolder(
         data.userId,
         data.bucket,
-        folderKey,
+        data.key,
       );
       this.logger.log(
-        `gRPC PrepareS3Put folder marker: userId=${data.userId} bucket=${data.bucket} key=${folderKey}`,
+        `gRPC PrepareS3Put folder marker: userId=${data.userId} bucket=${data.bucket} key=${data.key}`,
       );
-      return { fileId: '', folderId, encryptedKey: '', isEncrypted: false };
+      return {
+        fileId: '',
+        folderId,
+        encryptedKey: '',
+        isEncrypted: false,
+        isEmptyObject: false,
+      };
     }
 
     const filename = data.key.split('/').pop() || data.key;
+
+    // A3: a zero-byte key WITHOUT a trailing slash is a real (empty) object.
+    // There is no body to encrypt or ship to Telegram, so persist it complete
+    // right here and tell Go to skip ingest. resolveKey below is the same
+    // ownership path a normal upload takes, so an empty PUT cannot land outside
+    // the caller's bucket.
+    if (!data.contentLength || data.contentLength <= 0) {
+      const { folderId } = await this.s3Service.resolveKey(
+        data.userId,
+        data.bucket,
+        data.key,
+        true,
+      );
+      const emptyRecord = await this.prisma.$transaction(async (tx) => {
+        const created = await tx.fileRecord.create({
+          data: {
+            filename,
+            size: 0n,
+            mimeType: resolveMimeType(filename, data.mimeType),
+            status: 'complete',
+            // md5 of the empty string — what S3 clients expect for a 0-byte object.
+            etag: '"d41d8cd98f00b204e9800998ecf8427e"',
+            isEncrypted: false,
+            folderId: folderId || null,
+            userId: data.userId,
+          },
+        });
+
+        // Same overwrite-to-trash semantics as ReportS3PutComplete: without
+        // this, truncating an existing object to 0 bytes would leave TWO active
+        // rows for one key and findObject would pick between them arbitrarily.
+        const stale = await tx.fileRecord.findMany({
+          where: {
+            userId: data.userId,
+            folderId: folderId || null,
+            filename,
+            id: { not: created.id },
+            deletedAt: null,
+          },
+          select: { id: true, size: true, status: true },
+        });
+        if (stale.length > 0) {
+          await tx.fileRecord.updateMany({
+            where: { id: { in: stale.map((f) => f.id) } },
+            data: { deletedAt: new Date() },
+          });
+          const reclaimed = stale.reduce(
+            (sum, f) => (f.status === 'complete' ? sum + f.size : sum),
+            0n,
+          );
+          if (reclaimed > 0n) {
+            await tx.$executeRaw`
+              UPDATE "User"
+              SET "usedSpace" = GREATEST(0::bigint, "usedSpace" - ${reclaimed}::bigint)
+              WHERE id = ${data.userId}
+            `;
+          }
+          this.logger.log(
+            `gRPC PrepareS3Put empty object overwrite: moved ${stale.length} prior version(s) to trash for key=${data.key}, reclaiming ${reclaimed} bytes`,
+          );
+        }
+        return created;
+      });
+      this.logger.log(
+        `gRPC PrepareS3Put empty object: userId=${data.userId} bucket=${data.bucket} key=${data.key} fileId=${emptyRecord.id} (0 bytes, no Telegram object)`,
+      );
+      return {
+        fileId: '',
+        folderId: folderId || '',
+        encryptedKey: '',
+        isEncrypted: false,
+        isEmptyObject: true,
+      };
+    }
+
     const { folderId } = await this.s3Service.resolveKey(
       data.userId,
       data.bucket,
@@ -464,6 +554,19 @@ export class GrpcCoreController {
   // Marks the record complete, increments quota, and soft-deletes prior versions
   // of the same (folderId, filename) — overwrite-to-trash AFTER success, matching
   // the legacy doPutObject semantics so a failed upload never destroys old data.
+  //
+  // KNOWN DRIFT (A6): the superseded rows are decremented here at soft-delete
+  // time, but trash-cleanup (trash-cleanup.service.ts:177,311) and
+  // file-lifecycle (file-lifecycle.service.ts:190,226,271,341) decrement AGAIN
+  // when those same rows are later hard-deleted — their guard is
+  // `status === 'complete'`, which stays true after a soft delete. So an
+  // overwritten version is released twice. Two things bound the damage:
+  // the GREATEST clamp below keeps usedSpace >= 0 (a negative value would read
+  // as unlimited storage), and quota-sync.service.ts recomputes usedSpace nightly
+  // from SUM(size) over non-deleted complete rows, which is authoritative.
+  // A true exactly-once fix has to mark the row as already-released and teach
+  // the delete paths to honour that marker — those files are outside this
+  // phase's ownership, so it is deliberately deferred, not overlooked.
   @GrpcMethod('CoreService', 'ReportS3PutComplete')
   async reportS3PutComplete(data: {
     fileId: string;
@@ -504,6 +607,12 @@ export class GrpcCoreController {
           encryptionAlgo: 'aes-256-ctr',
           encryptionIv: data.encryptionIv,
           etag: data.etag || record.etag,
+          // A5: persist the size Go actually ingested. PrepareS3Put stored the
+          // pre-upload Content-Length guess; for clients that send a chunked
+          // body without x-amz-decoded-content-length that guess is 0 or the
+          // *encoded* length, so the row disagreed with the bytes on Telegram
+          // (quota already used data.size, which is why this stayed invisible).
+          size: BigInt(data.size),
           isChunked: data.isChunked,
           totalChunks: data.totalChunks,
           tempStorageKey: null,
@@ -511,6 +620,7 @@ export class GrpcCoreController {
       });
 
       // Overwrite: soft-delete older complete versions of the same key.
+      let reclaimed = 0n;
       if (record.filename) {
         const stale = await tx.fileRecord.findMany({
           where: {
@@ -520,15 +630,22 @@ export class GrpcCoreController {
             id: { not: record.id },
             deletedAt: null,
           },
-          select: { id: true },
+          select: { id: true, size: true, status: true },
         });
         if (stale.length > 0) {
           await tx.fileRecord.updateMany({
             where: { id: { in: stale.map((f) => f.id) } },
             data: { deletedAt: new Date() },
           });
+          // A6: releasing the superseded bytes now. Only 'complete' rows ever
+          // contributed to usedSpace (every increment site is gated on
+          // completion), so summing anything else would over-release.
+          reclaimed = stale.reduce(
+            (sum, f) => (f.status === 'complete' ? sum + f.size : sum),
+            0n,
+          );
           this.logger.log(
-            `gRPC ReportS3PutComplete overwrite: moved ${stale.length} prior version(s) to trash for fileId=${data.fileId}`,
+            `gRPC ReportS3PutComplete overwrite: moved ${stale.length} prior version(s) to trash for fileId=${data.fileId}, reclaiming ${reclaimed} bytes`,
           );
         }
       }
@@ -537,6 +654,21 @@ export class GrpcCoreController {
         where: { id: record.userId },
         data: { usedSpace: { increment: BigInt(data.size) } },
       });
+
+      if (reclaimed > 0n) {
+        // Clamped decrement: Prisma's `decrement` cannot floor at zero, and a
+        // negative usedSpace reads as unlimited storage downstream (every quota
+        // check is `usedSpace + size > quota`). GREATEST keeps it non-negative
+        // even if the counter was already drifting low.
+        await tx.$executeRaw`
+          UPDATE "User"
+          SET "usedSpace" = GREATEST(0::bigint, "usedSpace" - ${reclaimed}::bigint)
+          WHERE id = ${record.userId}
+        `;
+        this.logger.log(
+          `gRPC ReportS3PutComplete quota delta: userId=${record.userId} +${data.size} -${reclaimed} (net ${BigInt(data.size) - reclaimed}) for fileId=${data.fileId}`,
+        );
+      }
     });
 
     this.logger.log(

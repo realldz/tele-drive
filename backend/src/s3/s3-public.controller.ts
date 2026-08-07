@@ -19,6 +19,7 @@ import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
 import type { S3AuthenticatedRequest } from '../common/types/request';
 import type { Response } from 'express';
 import * as crypto from 'crypto';
+import { parseMaxKeys, resolveListStartAfter } from './s3-list-pagination.util';
 
 /**
  * S3PublicController — S3 public access (không cần AWS Signature V4).
@@ -58,22 +59,51 @@ export class S3PublicController {
     const prefix = this.qstr(req.query['prefix']);
     const delimiter = this.qstr(req.query['delimiter']);
     const encodingType = this.qstr(req.query['encoding-type']);
-    const maxKeys = Math.min(
-      parseInt(this.qstr(req.query['max-keys']) || '1000', 10),
-      1000,
-    );
+    const continuationToken = this.qstr(req.query['continuation-token']);
+    const startAfterParam = this.qstr(req.query['start-after']);
+    const maxKeysParam = this.qstr(req.query['max-keys']);
+    const maxKeys = parseMaxKeys(maxKeysParam);
 
     this.setRequestId(res);
+
+    // AWS rejects a non-numeric or negative MaxKeys with InvalidArgument.
+    // MaxKeys=0 is legal and returns an empty, non-truncated page.
+    if (maxKeys === undefined) {
+      this.logger.warn(
+        `S3 Public ListObjectsV2 rejected invalid max-keys "${maxKeysParam}" for bucket "${bucket}" (userId: ${userId})`,
+      );
+      return this.sendS3Error(res, {
+        status: 400,
+        message: 'InvalidArgument',
+      });
+    }
+
+    // A continuation token always wins over start-after (AWS behavior).
+    // resolveListStartAfter throws InvalidArgument for a malformed token or
+    // an over-long start-after — answer 400 before the listing ever runs.
+    let startAfter: string | undefined;
     try {
-      const { objects, commonPrefixes } =
+      startAfter = resolveListStartAfter(continuationToken, startAfterParam);
+    } catch {
+      this.logger.warn(
+        `S3 Public ListObjectsV2 rejected malformed continuation-token for bucket "${bucket}" (userId: ${userId})`,
+      );
+      return this.sendS3Error(res, {
+        status: 400,
+        message: 'InvalidArgument',
+      });
+    }
+
+    try {
+      const { objects, commonPrefixes, isTruncated, nextContinuationToken } =
         await this.s3Service.listObjectsPublic(
           userId,
           bucket,
           prefix,
           delimiter || undefined,
           maxKeys,
+          startAfter,
         );
-      const isTruncated = objects.length >= maxKeys;
       const xml = this.s3Service.buildListObjectsV2Xml(
         bucket,
         objects,
@@ -83,6 +113,11 @@ export class S3PublicController {
         maxKeys,
         isTruncated,
         encodingType,
+        {
+          nextContinuationToken,
+          continuationToken: continuationToken || undefined,
+          startAfter: startAfterParam || undefined,
+        },
       );
 
       res.setHeader('Content-Type', 'application/xml');
@@ -240,11 +275,24 @@ export class S3PublicController {
   }
 
   private sendS3Error(res: Response, err: unknown) {
-    const message = err instanceof Error ? err.message : String(err);
-    const explicitStatus =
-      typeof err === 'object' && err !== null && 'status' in err
-        ? err.status
+    // Several call sites raise plain `{ status, message }` literals rather than
+    // Error instances. Reading `.message` off them is required — `String(err)`
+    // on an object yields "[object Object]", which lands in <Code> and makes the
+    // XML body unparseable for clients (they see a 400 with no usable S3 code).
+    const asRecord =
+      typeof err === 'object' && err !== null
+        ? (err as Record<string, unknown>)
         : undefined;
+    const message =
+      err instanceof Error
+        ? err.message
+        : asRecord
+          ? typeof asRecord.message === 'string'
+            ? asRecord.message
+            : '' // never stringify an object into <Code>
+          : String(err);
+    const explicitStatus = asRecord?.status;
+
     const statusMap: Record<string, number> = {
       NoSuchBucket: 404,
       NoSuchKey: 404,

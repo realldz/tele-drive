@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { S3Service } from './s3.service';
+import { decodeContinuationToken } from './s3-list-pagination.util';
 
 describe('S3Service', () => {
   let service: S3Service;
@@ -328,6 +329,168 @@ describe('S3Service', () => {
         'alpha.mp4',
         'zeta.mp4',
       ]);
+    });
+  });
+
+  describe('listObjectsPublic pagination', () => {
+    // Build a prisma stub whose bucket is public and whose traversal emits
+    // exactly the given file records at the bucket root.
+    const publicBucket = (files: unknown[]) => ({
+      folder: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: 'bucket-id',
+          s3PublicAccess: true,
+          s3PublicListObjects: true,
+        }),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      fileRecord: { findMany: jest.fn().mockResolvedValue(files) },
+    });
+
+    const fileOf = (i: number) => ({
+      filename: `file-${String(i).padStart(4, '0')}.txt`,
+      size: 1n,
+      createdAt: new Date('2026-05-01T00:00:00.000Z'),
+      updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+      id: `file-${i}`,
+      etag: `"etag-${i}"`,
+      folderId: 'bucket-id',
+    });
+
+    it('returns a resume token for >=1000 objects at the default max-keys (the sync-loop bug)', async () => {
+      const files = Array.from({ length: 1200 }, (_, i) => fileOf(i));
+      service = new S3Service(publicBucket(files) as never);
+
+      const page = await service.listObjectsPublic('user-1', 'bucket-a');
+
+      // Exactly maxKeys objects in the page, flagged truncated, with a cursor —
+      // the controller shares this with the client so it can resume.
+      expect(page.objects).toHaveLength(1000);
+      expect(page.isTruncated).toBe(true);
+      expect(page.nextContinuationToken).toBeDefined();
+    });
+
+    it('resumes across pages via the exclusive startAfter cursor', async () => {
+      const files = Array.from({ length: 2500 }, (_, i) => fileOf(i));
+      service = new S3Service(publicBucket(files) as never);
+
+      const page1 = await service.listObjectsPublic(
+        'user-1',
+        'bucket-a',
+        '',
+        undefined,
+        1000,
+      );
+      expect(page1.objects).toHaveLength(1000);
+      expect(page1.isTruncated).toBe(true);
+
+      // The controller hands listObjectsPublic the DECODED resume key, not the
+      // opaque base64 token. Mimic that here with `decodeContinuationToken`.
+      const key2 = decodeContinuationToken(page1.nextContinuationToken!);
+      const page2 = await service.listObjectsPublic(
+        'user-1',
+        'bucket-a',
+        '',
+        undefined,
+        1000,
+        key2,
+      );
+      // Exclusive cursor must not repeat the boundary key.
+      expect(page2.objects[0].key).not.toBe(page1.objects[999].key);
+      expect(page2.objects).toHaveLength(1000);
+      expect(page2.isTruncated).toBe(true);
+
+      const page3 = await service.listObjectsPublic(
+        'user-1',
+        'bucket-a',
+        '',
+        undefined,
+        1000,
+        decodeContinuationToken(page2.nextContinuationToken!),
+      );
+      expect(page3.objects).toHaveLength(500);
+      expect(page3.isTruncated).toBe(false);
+      expect(page3.nextContinuationToken).toBeUndefined();
+
+      // Union of all pages covers every key exactly once (no dupes, no gaps).
+      const keys = [...page1.objects, ...page2.objects, ...page3.objects].map(
+        (o) => o.key,
+      );
+      expect(new Set(keys).size).toBe(2500);
+    });
+
+    it('counts commonPrefixes toward truncation (a delimiter page is never silently cut)', async () => {
+      // Two root objects plus four subfolder prefixes → 6 entries in the shared
+      // key space. With maxKeys=3 the page must be truncated so the collapsed
+      // prefixes can be enumerated via the resume token.
+      const children = [
+        {
+          id: 'sub-1',
+          name: 'a-docs',
+          parentId: 'bucket-id',
+          updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+        },
+        {
+          id: 'sub-2',
+          name: 'b-media',
+          parentId: 'bucket-id',
+          updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+        },
+        {
+          id: 'sub-3',
+          name: 'c-data',
+          parentId: 'bucket-id',
+          updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+        },
+        {
+          id: 'sub-4',
+          name: 'd-zip',
+          parentId: 'bucket-id',
+          updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+        },
+      ];
+      const files = [
+        fileOf(0), // root object
+        fileOf(1), // root object
+      ];
+      const prisma = {
+        folder: {
+          findFirst: jest.fn().mockResolvedValue({
+            id: 'bucket-id',
+            s3PublicAccess: true,
+            s3PublicListObjects: true,
+          }),
+          findMany: jest.fn().mockResolvedValue([
+            {
+              id: 'bucket-id',
+              name: 'bucket-a',
+              parentId: null,
+              updatedAt: new Date('2026-05-01T00:00:00.000Z'),
+            },
+            ...children,
+          ]),
+        },
+        fileRecord: { findMany: jest.fn().mockResolvedValue(files) },
+      } as never;
+      service = new S3Service(prisma);
+
+      const page = await service.listObjectsPublic(
+        'user-1',
+        'bucket-a',
+        '',
+        '/',
+        3,
+      );
+
+      // Byte order puts the 4 collapsed prefixes first, then the 2 root objects.
+      // The shared key space (6 entries) is cut at MaxKeys=3: 3 prefixes fit,
+      // the rest spill — the page MUST be reported truncated so the collapsed
+      // prefixes are not silently dropped.
+      expect(page.commonPrefixes).toHaveLength(3);
+      expect(page.objects).toHaveLength(0);
+      // Truncated because the remaining 3 prefixes spill past MaxKeys.
+      expect(page.isTruncated).toBe(true);
+      expect(page.nextContinuationToken).toBeDefined();
     });
   });
 

@@ -244,6 +244,27 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 		}
 	}
 
+	// Zero-byte object short-circuit. A zero-byte FileRecord (PUT 0 bytes) has
+	// no Telegram object and no chunks, so GetDownloadInfo routes it to the
+	// chunked branch as IsChunked=true with an empty Chunks slice. Without this
+	// guard the `start >= fileSize` check below (0 >= 0) would return 416 for a
+	// plain GET. Per RFC 7233, only an actual byte-range request against the
+	// empty resource is 416; an unranged GET must be 200 with Content-Length: 0
+	// and no body — matching real AWS S3 and the HEAD surface.
+	if fileSize == 0 && !isRange {
+		res := c.Response()
+		if multiThread {
+			res.Header().Set("Accept-Ranges", "bytes")
+		}
+		res.Header().Set("Content-Length", "0")
+		res.Header().Set("Content-Type", info.MimeType)
+		if d.logger != nil {
+			d.logger.Info("download.zero_byte_served", "fileId", info.ID, "size", fileSize)
+		}
+		res.WriteHeader(http.StatusOK)
+		return nil
+	}
+
 	if start >= fileSize {
 		c.Response().Header().Set("Content-Range", fmt.Sprintf("bytes */%d", fileSize))
 		return c.NoContent(http.StatusRequestedRangeNotSatisfiable)
@@ -479,6 +500,19 @@ func (d *Downloader) ServeStream(w http.ResponseWriter, r *http.Request, meta *p
 				end, _ = strconv.ParseInt(parts[1], 10, 64)
 			}
 		}
+	}
+
+	// Zero-byte short-circuit: unranged GET of a size-0 object → 200 + empty
+	// body; only an actual byte-range request is 416 (RFC 7233).
+	if size == 0 && !isPartial {
+		w.Header().Set("Content-Type", meta.MimeType)
+		w.Header().Set("Content-Length", "0")
+		w.Header().Set("Accept-Ranges", "bytes")
+		if d.logger != nil {
+			d.logger.Info("download.zero_byte_served", "fileId", meta.Id, "size", size)
+		}
+		w.WriteHeader(http.StatusOK)
+		return nil
 	}
 
 	if start > end || start >= size {
