@@ -271,4 +271,45 @@ describe('S3PublicController', () => {
       expect(listObjectsPublic).not.toHaveBeenCalled();
     });
   });
+
+  describe('sendS3Error Code/Message split', () => {
+    const sendS3Error = (
+      controller: S3PublicController,
+      res: unknown,
+      err: unknown,
+    ): void =>
+      (
+        controller as unknown as {
+          sendS3Error: (res: unknown, err: unknown) => void;
+        }
+      ).sendS3Error(res, err);
+
+    it('splits "NoSuchKey: some/key" so <Code> stays a real S3 code', () => {
+      const { controller, s3Service, res } = createController();
+
+      sendS3Error(controller, res, { message: 'NoSuchKey: some/key' });
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(s3Service.buildErrorXml).toHaveBeenCalledWith(
+        'NoSuchKey',
+        'some/key',
+      );
+      // The whole string must never land in <Code>.
+      expect(s3Service.buildErrorXml.mock.calls[0][0]).not.toBe(
+        'NoSuchKey: some/key',
+      );
+    });
+
+    it('keeps a colonless code identical in Code and Message', () => {
+      const { controller, s3Service, res } = createController();
+
+      sendS3Error(controller, res, { message: 'NoSuchBucket' });
+
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(s3Service.buildErrorXml).toHaveBeenCalledWith(
+        'NoSuchBucket',
+        'NoSuchBucket',
+      );
+    });
+  });
 });

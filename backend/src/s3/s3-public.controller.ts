@@ -20,6 +20,7 @@ import type { S3AuthenticatedRequest } from '../common/types/request';
 import type { Response } from 'express';
 import * as crypto from 'crypto';
 import { parseMaxKeys, resolveListStartAfter } from './s3-list-pagination.util';
+import { S3_STATUS_MAP, splitS3ErrorCode } from './s3-error.util';
 
 /**
  * S3PublicController — S3 public access (không cần AWS Signature V4).
@@ -283,7 +284,7 @@ export class S3PublicController {
       typeof err === 'object' && err !== null
         ? (err as Record<string, unknown>)
         : undefined;
-    const message =
+    const rawMessage =
       err instanceof Error
         ? err.message
         : asRecord
@@ -293,29 +294,24 @@ export class S3PublicController {
           : String(err);
     const explicitStatus = asRecord?.status;
 
-    const statusMap: Record<string, number> = {
-      NoSuchBucket: 404,
-      NoSuchKey: 404,
-      BucketNotEmpty: 409,
-      InvalidArgument: 400,
-      BadDigest: 400,
-      AccessDenied: 403,
-      InvalidRequest: 400,
-      ServiceUnavailable: 503,
-      InternalError: 500,
-    };
+    // Service errors are thrown as `NoSuchKey: <key>`; split so <Code> stays a
+    // real S3 code and the detail lands in <Message>.
+    const { code, message: splitMessage } = splitS3ErrorCode(
+      rawMessage,
+      S3_STATUS_MAP,
+    );
 
     res
       .status(
         typeof explicitStatus === 'number'
           ? explicitStatus
-          : statusMap[message] || 404,
+          : S3_STATUS_MAP[code] || 404,
       )
       .setHeader('Content-Type', 'application/xml')
       .send(
         this.s3Service.buildErrorXml(
-          message || 'InternalError',
-          message || 'An internal error occurred.',
+          code || 'InternalError',
+          splitMessage || 'An internal error occurred.',
         ),
       );
   }

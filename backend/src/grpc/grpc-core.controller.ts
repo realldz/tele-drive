@@ -9,6 +9,7 @@ import { S3Service } from '../s3/s3.service';
 import { CryptoService } from '../crypto/crypto.service';
 import { resolveMimeType } from '../common/utils/resolve-mime-type';
 import { randomUUID } from 'crypto';
+import type { FileRecord } from '@prisma/client';
 
 @Controller()
 export class GrpcCoreController {
@@ -27,6 +28,33 @@ export class GrpcCoreController {
   @GrpcMethod('CoreService', 'Ping')
   ping() {
     return { timestamp: Date.now() };
+  }
+
+  /**
+   * Surface a unique-constraint rejection as an S3-shaped Conflict error instead
+   * of letting the raw Prisma P2002 bubble up. The FileRecord partial unique
+   * index on (userId, folderId, filename) WHERE deletedAt IS NULL makes the DB
+   * the arbiter in the concurrent-PUT race: only one request can win the row,
+   * every loser hits P2002 here and gets a clean 409 Conflict.
+   */
+  private assertNoKeyConflict(err: unknown): never {
+    if (
+      typeof err === 'object' &&
+      err !== null &&
+      'code' in err &&
+      (err as { code?: unknown }).code === 'P2002'
+    ) {
+      this.logger.warn(
+        `gRPC PrepareS3Put rejected duplicate active FileRecord (unique constraint)`,
+      );
+      const conflict = new Error(
+        'An object with this key already exists. Overwrite the existing object or delete it first.',
+      ) as Error & { status: number; code: string };
+      conflict.status = 409;
+      conflict.code = 'Conflict';
+      throw conflict;
+    }
+    throw err instanceof Error ? err : new Error(String(err));
   }
 
   @GrpcMethod('CoreService', 'ReportChunkResults')
@@ -454,19 +482,24 @@ export class GrpcCoreController {
         true,
       );
       const emptyRecord = await this.prisma.$transaction(async (tx) => {
-        const created = await tx.fileRecord.create({
-          data: {
-            filename,
-            size: 0n,
-            mimeType: resolveMimeType(filename, data.mimeType),
-            status: 'complete',
-            // md5 of the empty string — what S3 clients expect for a 0-byte object.
-            etag: '"d41d8cd98f00b204e9800998ecf8427e"',
-            isEncrypted: false,
-            folderId: folderId || null,
-            userId: data.userId,
-          },
-        });
+        let created: FileRecord;
+        try {
+          created = await tx.fileRecord.create({
+            data: {
+              filename,
+              size: 0n,
+              mimeType: resolveMimeType(filename, data.mimeType),
+              status: 'complete',
+              // md5 of the empty string — what S3 clients expect for a 0-byte object.
+              etag: '"d41d8cd98f00b204e9800998ecf8427e"',
+              isEncrypted: false,
+              folderId: folderId || null,
+              userId: data.userId,
+            },
+          });
+        } catch (err) {
+          this.assertNoKeyConflict(err);
+        }
 
         // Same overwrite-to-trash semantics as ReportS3PutComplete: without
         // this, truncating an existing object to 0 bytes would leave TWO active
@@ -525,19 +558,24 @@ export class GrpcCoreController {
     const encryptedKey = this.cryptoService.encryptKey(
       this.cryptoService.generateFileKey(),
     );
-    const fileRecord = await this.prisma.fileRecord.create({
-      data: {
-        filename,
-        size: BigInt(data.contentLength),
-        mimeType: resolveMimeType(filename, data.mimeType),
-        status: 'uploading',
-        isEncrypted: true,
-        encryptionAlgo: 'aes-256-ctr',
-        encryptedKey,
-        folderId: folderId || null,
-        userId: data.userId,
-      },
-    });
+    let fileRecord: FileRecord;
+    try {
+      fileRecord = await this.prisma.fileRecord.create({
+        data: {
+          filename,
+          size: BigInt(data.contentLength),
+          mimeType: resolveMimeType(filename, data.mimeType),
+          status: 'uploading',
+          isEncrypted: true,
+          encryptionAlgo: 'aes-256-ctr',
+          encryptedKey,
+          folderId: folderId || null,
+          userId: data.userId,
+        },
+      });
+    } catch (err) {
+      this.assertNoKeyConflict(err);
+    }
 
     this.logger.log(
       `gRPC PrepareS3Put: userId=${data.userId} bucket=${data.bucket} key=${data.key} fileId=${fileRecord.id} (${data.contentLength} bytes)`,

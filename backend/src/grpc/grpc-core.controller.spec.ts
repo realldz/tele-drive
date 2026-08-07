@@ -258,6 +258,30 @@ describe('GrpcCoreController', () => {
         status: 'uploading',
       });
     });
+
+    it('maps a duplicate active row (P2002) to a 409 Conflict error', async () => {
+      // Two concurrent PUTs to the same key both create an active FileRecord;
+      // the partial unique index lets exactly one win, every loser hits P2002
+      // here and must see a clean 409, never the raw Prisma error.
+      const prisma = createPrisma();
+      prisma.fileRecord.create.mockRejectedValueOnce({ code: 'P2002' });
+      const controller = createController(prisma, {
+        resolveKeyAsFolder: jest.fn(),
+        resolveKey: jest.fn().mockResolvedValue({ folderId: 'folder-1' }),
+      });
+
+      await expect(
+        controller.prepareS3Put({
+          userId: 'user-1',
+          bucket: 'bucket-a',
+          key: 'foo/empty.txt',
+          mimeType: 'text/plain',
+          contentLength: 0,
+        }),
+      ).rejects.toMatchObject({ status: 409, code: 'Conflict' });
+      // The duplicate must never reach the overwrite-to-trash step.
+      expect(prisma.fileRecord.updateMany).not.toHaveBeenCalled();
+    });
   });
 
   describe('resolveS3Object — LastModified', () => {

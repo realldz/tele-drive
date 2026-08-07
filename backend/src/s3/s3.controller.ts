@@ -31,6 +31,7 @@ import { Readable, Transform } from 'stream';
 import * as crypto from 'crypto';
 import { wrapRequestStream } from './s3-stream.utils';
 import { parseMaxKeys, resolveListStartAfter } from './s3-list-pagination.util';
+import { S3_STATUS_MAP, splitS3ErrorCode } from './s3-error.util';
 import { resolveMimeType } from '../common/utils/resolve-mime-type';
 import { SkipThrottle } from '@nestjs/throttler';
 import { UseInterceptors } from '@nestjs/common';
@@ -1282,7 +1283,7 @@ export class S3Controller {
       typeof err === 'object' && err !== null
         ? (err as Record<string, unknown>)
         : undefined;
-    const message =
+    const rawMessage =
       err instanceof Error
         ? err.message
         : asRecord
@@ -1292,17 +1293,12 @@ export class S3Controller {
           : String(err);
     const explicitStatus = asRecord?.status;
 
-    const statusMap: Record<string, number> = {
-      NoSuchBucket: 404,
-      NoSuchKey: 404,
-      BucketNotEmpty: 409,
-      InvalidArgument: 400,
-      BadDigest: 400,
-      AccessDenied: 403,
-      InvalidRequest: 400,
-      ServiceUnavailable: 503,
-      InternalError: 500,
-    };
+    // Service errors are thrown as `NoSuchKey: <key>`; split so <Code> stays a
+    // real S3 code and the detail lands in <Message>.
+    const { code, message: splitMessage } = splitS3ErrorCode(
+      rawMessage,
+      S3_STATUS_MAP,
+    );
 
     const normalized = isRetryableUpstreamError(err)
       ? {
@@ -1311,12 +1307,12 @@ export class S3Controller {
           status: 503,
         }
       : {
-          code: message || 'InternalError',
-          message: message || 'An internal error occurred.',
+          code: code || 'InternalError',
+          message: splitMessage || 'An internal error occurred.',
           status:
             typeof explicitStatus === 'number'
               ? explicitStatus
-              : statusMap[message] || 500,
+              : S3_STATUS_MAP[code] || 500,
         };
 
     res

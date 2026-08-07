@@ -76,6 +76,36 @@ describe('S3Controller', () => {
     );
   });
 
+  it('splits a prefixed code out of the message and keeps the key detail', () => {
+    const { controller, s3Service, res } = createController();
+    const err = new Error('NoSuchKey: some/key');
+
+    sendS3Error(controller, res, err);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(s3Service.buildErrorXml).toHaveBeenCalledWith(
+      'NoSuchKey',
+      'some/key',
+    );
+    // The <Code> must never swallow the full "NoSuchKey: some/key" string.
+    expect(s3Service.buildErrorXml.mock.calls[0][0]).not.toBe(
+      'NoSuchKey: some/key',
+    );
+  });
+
+  it('keeps a code with no colon intact as both Code and Message', () => {
+    const { controller, s3Service, res } = createController();
+    const err = new Error('NoSuchBucket');
+
+    sendS3Error(controller, res, err);
+
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(s3Service.buildErrorXml).toHaveBeenCalledWith(
+      'NoSuchBucket',
+      'NoSuchBucket',
+    );
+  });
+
   describe('ListObjectsV2 continuation-token plumbing', () => {
     const emptyPage = {
       objects: [],
