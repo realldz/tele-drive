@@ -1,0 +1,33 @@
+# ─── Pull-only overlay: run the images published by CI (mono host) ──────────
+# Single-host stack (docker-compose.yml) using the prebuilt images instead of
+# building from source. CI publishes them in .github/workflows/docker-publish.yml.
+#
+# Typical deploy:
+#   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+#   docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+#
+# Pin a specific build instead of the moving :latest tag (any tag CI produced:
+# sha-<short>, master, 1.2.3, 1.2, 1):
+#   TELE_DRIVE_IMAGE_TAG=sha-1a2b3c4 docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+#
+# Private packages need a login first (GITHUB_TOKEN with read:packages, or a PAT):
+#   echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
+#
+# Forking? Point TELE_DRIVE_IMAGE_PREFIX at your own namespace.
+#
+# NOTE: `build:` stays defined in the base file, so a host that still has the
+# source tree can fall back to a local build when a pull is not possible. Use
+# `pull` (or `up -d --pull always`) to guarantee the published image wins.
+
+services:
+  nginx:
+    image: ${TELE_DRIVE_IMAGE_PREFIX:-ghcr.io/realldz/tele-drive}-nginx:${TELE_DRIVE_IMAGE_TAG:-latest}
+
+  backend-core:
+    image: ${TELE_DRIVE_IMAGE_PREFIX:-ghcr.io/realldz/tele-drive}-backend:${TELE_DRIVE_IMAGE_TAG:-latest}
+
+  backend-transfer:
+    image: ${TELE_DRIVE_IMAGE_PREFIX:-ghcr.io/realldz/tele-drive}-backend-transfer-go:${TELE_DRIVE_IMAGE_TAG:-latest}
+
+  frontend:
+    image: ${TELE_DRIVE_IMAGE_PREFIX:-ghcr.io/realldz/tele-drive}-frontend:${TELE_DRIVE_IMAGE_TAG:-latest}

@@ -22,6 +22,12 @@ ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
 ARG NEXT_PUBLIC_S3_DOMAIN=
 ENV NEXT_PUBLIC_S3_DOMAIN=${NEXT_PUBLIC_S3_DOMAIN}
 
+# Optional data-plane/transfer origin (e.g. https://transfer.example.com) for
+# stream/download/config XHR; empty = falls back to NEXT_PUBLIC_API_URL
+# (src/lib/api/client.ts). Compose already passes this build arg.
+ARG NEXT_PUBLIC_TRANSFER_URL=
+ENV NEXT_PUBLIC_TRANSFER_URL=${NEXT_PUBLIC_TRANSFER_URL}
+
 RUN npm run build
 
 # --- Production runner ---

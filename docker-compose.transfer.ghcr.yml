@@ -1,0 +1,25 @@
+# ─── Pull-only overlay: run the images published by CI (data-plane host) ─────
+# Multi-host Go data plane (docker-compose.transfer.yml) using the prebuilt
+# images instead of building from source.
+#
+#   docker compose --env-file .env.transfer \
+#     -f docker-compose.transfer.yml -f docker-compose.transfer.ghcr.yml pull
+#   docker compose --env-file .env.transfer \
+#     -f docker-compose.transfer.yml -f docker-compose.transfer.ghcr.yml up -d
+#
+# --env-file is mandatory: compose only auto-loads ./.env, so ${CORE_HOST},
+# ${GO_PRIVATE_IP}, ${TRANSFER_DOMAIN}, ${REDIS_PASSWORD}, ... would resolve empty.
+#
+# This host must run the SAME TELE_DRIVE_IMAGE_TAG as the control-plane host
+# (docker-compose.core.ghcr.yml) — mixed tags mean a Go/NestJS version skew over
+# gRPC.
+
+services:
+  backend-transfer:
+    image: ${TELE_DRIVE_IMAGE_PREFIX:-ghcr.io/realldz/tele-drive}-backend-transfer-go:${TELE_DRIVE_IMAGE_TAG:-latest}
+
+  nginx-fastpath:
+    image: ${TELE_DRIVE_IMAGE_PREFIX:-ghcr.io/realldz/tele-drive}-nginx-fastpath:${TELE_DRIVE_IMAGE_TAG:-latest}
+
+  nginx-public:
+    image: ${TELE_DRIVE_IMAGE_PREFIX:-ghcr.io/realldz/tele-drive}-nginx-transfer-public:${TELE_DRIVE_IMAGE_TAG:-latest}

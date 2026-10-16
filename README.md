@@ -135,6 +135,44 @@ docker compose --profile tunnel up -d
 Configure routing in [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) dashboard:
 - Public hostname → Service: `http://nginx:80`
 
+#### Option C: Prebuilt images from GitHub Container Registry
+
+`.github/workflows/docker-publish.yml` builds every image and publishes it to
+`ghcr.io` on each push to `master` and each `v*` tag (pull requests only build, to
+validate the Dockerfiles). A host can then run those images instead of building:
+
+```bash
+# Private GHCR packages only — skip when the package is public
+echo "$GHCR_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
+
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml pull
+docker compose -f docker-compose.yml -f docker-compose.ghcr.yml up -d
+```
+
+| Image | Compose service |
+|-------|-----------------|
+| `ghcr.io/realldz/tele-drive-backend` | `backend-core` (NestJS; also the transfer entrypoint) |
+| `ghcr.io/realldz/tele-drive-backend-transfer-go` | `backend-transfer` (Go data plane) |
+| `ghcr.io/realldz/tele-drive-frontend` | `frontend` (Next.js standalone) |
+| `ghcr.io/realldz/tele-drive-nginx` | `nginx` (single-host compose) |
+| `ghcr.io/realldz/tele-drive-nginx-edge` | `nginx-edge` (control-plane host) |
+| `ghcr.io/realldz/tele-drive-nginx-fastpath` | `nginx-fastpath` (:8088 Telegram fast path, Go host) |
+| `ghcr.io/realldz/tele-drive-nginx-transfer-public` | `nginx-public` (standalone transfer domain, Go host) |
+
+Tags: `master` + `latest` for branch builds, `sha-<short>` for every build, and
+`1.2.3` / `1.2` / `1` for `v*` tag pushes. Pin `TELE_DRIVE_IMAGE_TAG` (default
+`latest`) to a release or `sha-<short>` on production hosts so a restart never
+silently changes code.
+
+Multi-host deployments use the matching overlays and **the same tag on both hosts**:
+`docker-compose.core.ghcr.yml` (control plane) and `docker-compose.transfer.ghcr.yml`
+(data plane). `TELE_DRIVE_IMAGE_PREFIX` overrides the registry path for forks.
+
+> `NEXT_PUBLIC_*` values are baked into the frontend image at build time. CI reads
+> them from repository variables (`NEXT_PUBLIC_API_URL` — default `/api/v1`,
+> `NEXT_PUBLIC_TRANSFER_URL`, `NEXT_PUBLIC_S3_DOMAIN`), so set those before
+> publishing when the frontend talks to a dedicated transfer/S3 domain.
+
 ### Per-service commands
 
 | Action | Command |

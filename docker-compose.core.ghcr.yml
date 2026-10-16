@@ -1,0 +1,24 @@
+# ─── Pull-only overlay: run the images published by CI (control-plane host) ──
+# Multi-host control plane (docker-compose.core.yml) using the prebuilt images
+# instead of building from source.
+#
+#   docker compose --env-file .env.core \
+#     -f docker-compose.core.yml -f docker-compose.core.ghcr.yml pull
+#   docker compose --env-file .env.core \
+#     -f docker-compose.core.yml -f docker-compose.core.ghcr.yml up -d
+#
+# --env-file is mandatory: compose only auto-loads ./.env, so ${GO_HOST},
+# ${CORE_PRIVATE_IP}, ${REDIS_PASSWORD}, ... would resolve empty without it.
+#
+# The Go data plane on the other host uses docker-compose.transfer.ghcr.yml with
+# the SAME TELE_DRIVE_IMAGE_TAG, so both hosts run one consistent release.
+
+services:
+  backend-core:
+    image: ${TELE_DRIVE_IMAGE_PREFIX:-ghcr.io/realldz/tele-drive}-backend:${TELE_DRIVE_IMAGE_TAG:-latest}
+
+  nginx-edge:
+    image: ${TELE_DRIVE_IMAGE_PREFIX:-ghcr.io/realldz/tele-drive}-nginx-edge:${TELE_DRIVE_IMAGE_TAG:-latest}
+
+  frontend:
+    image: ${TELE_DRIVE_IMAGE_PREFIX:-ghcr.io/realldz/tele-drive}-frontend:${TELE_DRIVE_IMAGE_TAG:-latest}

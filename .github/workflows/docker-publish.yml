@@ -1,0 +1,194 @@
+name: Build & Push Docker Images
+
+# Builds every image the stack boots from and publishes them to GitHub Container
+# Registry (ghcr.io):
+#
+#   ghcr.io/<owner>/tele-drive-backend               NestJS API (core / transfer entrypoints)
+#   ghcr.io/<owner>/tele-drive-backend-transfer-go   Go data plane
+#   ghcr.io/<owner>/tele-drive-frontend              Next.js standalone frontend
+#   ghcr.io/<owner>/tele-drive-nginx                 mono (all-in-one) edge nginx
+#   ghcr.io/<owner>/tele-drive-nginx-edge            control-plane host edge nginx
+#   ghcr.io/<owner>/tele-drive-nginx-fastpath        Go-host Telegram fast-path nginx (:8088)
+#   ghcr.io/<owner>/tele-drive-nginx-transfer-public Go-host public data-plane nginx
+#
+# Triggers:
+#   - push to master          -> build + push (tags: master, latest, sha-<short>)
+#   - push tag v*             -> build + push (tags: 1.2.3, 1.2, 1, latest, sha-<short>)
+#   - pull request to master  -> build only, no push (validates the Dockerfiles)
+#   - manual (workflow_dispatch) -> build + push, optional platforms override
+#
+# Deployment consumes these images through the pull-only compose overlays
+# (docker-compose*.ghcr.yml). See docs/deploy/ci-cd.md.
+
+on:
+  push:
+    branches: [master]
+    tags: ["v*"]
+  pull_request:
+    branches: [master]
+    paths:
+      - "backend/**"
+      - "backend-transfer-go/**"
+      - "frontend/**"
+      - "nginx/**"
+      - "docker-compose*.yml"
+      - ".github/workflows/docker-publish.yml"
+  workflow_dispatch:
+    inputs:
+      platforms:
+        description: "Target platforms for buildx (comma separated). Default single-arch amd64."
+        type: string
+        required: false
+        default: "linux/amd64"
+
+# One publish per ref: a newer push supersedes an in-flight build of the same ref.
+concurrency:
+  group: docker-publish-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_BASENAME: tele-drive
+
+jobs:
+  # Resolve the registry prefix (GHCR requires a lowercase owner) and the target
+  # platforms once, so every matrix leg tags its image identically.
+  prepare:
+    name: Prepare image metadata
+    runs-on: ubuntu-latest
+    outputs:
+      prefix: ${{ steps.resolve.outputs.prefix }}
+      platforms: ${{ steps.resolve.outputs.platforms }}
+    steps:
+      - name: Resolve image prefix and platforms
+        id: resolve
+        env:
+          OWNER: ${{ github.repository_owner }}
+          REQUESTED_PLATFORMS: ${{ inputs.platforms }}
+        run: |
+          set -euo pipefail
+          prefix="${REGISTRY}/$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')/${IMAGE_BASENAME}"
+          # workflow_dispatch can request linux/amd64,linux/arm64; every other
+          # event stays single-arch amd64 (multi-arch means QEMU for the Node builds).
+          platforms="${REQUESTED_PLATFORMS:-linux/amd64}"
+          echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
+          echo "platforms=$platforms" >> "$GITHUB_OUTPUT"
+          echo "Publishing ${prefix}-<service> for ${platforms}"
+
+  build:
+    name: ${{ matrix.name }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            context: ./backend
+            dockerfile: ./backend/Dockerfile
+            description: Tele-Drive NestJS API (control plane and transfer entrypoints)
+          - name: backend-transfer-go
+            context: ./backend-transfer-go
+            dockerfile: ./backend-transfer-go/Dockerfile
+            description: Tele-Drive Go data plane (upload/download/S3 object I/O, ZIP, bandwidth)
+          - name: frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+            description: Tele-Drive Next.js frontend (standalone output)
+            # NEXT_PUBLIC_* are baked into the bundle at build time, so the URLs an
+            # operator sets as repository variables are compiled into the image.
+            build-args: |
+              NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || '/api/v1' }}
+              NEXT_PUBLIC_TRANSFER_URL=${{ vars.NEXT_PUBLIC_TRANSFER_URL }}
+              NEXT_PUBLIC_S3_DOMAIN=${{ vars.NEXT_PUBLIC_S3_DOMAIN }}
+          - name: nginx
+            context: ./nginx
+            dockerfile: ./nginx/Dockerfile
+            description: Tele-Drive edge nginx (single-host compose)
+          - name: nginx-edge
+            context: ./nginx
+            dockerfile: ./nginx/Dockerfile.edge
+            description: Tele-Drive control-plane edge nginx (multi-host compose)
+          - name: nginx-fastpath
+            context: ./nginx
+            dockerfile: ./nginx/Dockerfile.fastpath
+            description: Tele-Drive Telegram fast-path nginx (:8088, Go host, internal only)
+          - name: nginx-transfer-public
+            context: ./nginx
+            dockerfile: ./nginx/Dockerfile.transfer-public
+            description: Tele-Drive public data-plane nginx (Go host, standalone transfer domain)
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # PR runs only build; GITHUB_TOKEN is not used to write packages there.
+      - name: Log in to GitHub Container Registry
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ needs.prepare.outputs.prefix }}-${{ matrix.name }}
+          tags: |
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+          labels: |
+            org.opencontainers.image.title=tele-drive-${{ matrix.name }}
+            org.opencontainers.image.description=${{ matrix.description }}
+            org.opencontainers.image.vendor=tele-drive
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ needs.prepare.outputs.platforms }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ matrix.build-args }}
+          # No provenance/SBOM attestation manifests: this keeps a plain manifest
+          # list that older Docker engines on deployment hosts can pull.
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Write job summary
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          {
+            echo "### \`${{ matrix.name }}\`"
+            echo
+            echo '```'
+            echo "$TAGS"
+            echo '```'
+            if [ -n "$DIGEST" ]; then
+              echo "Digest: \`$DIGEST\`"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+        continue-on-error: true
