@@ -19,6 +19,18 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   BUFFER_MAX_RETRIES: '3', // 3 lần - số lần thử lại tối đa khi đồng bộ lỗi
 };
 
+/**
+ * Feature settings that may be pre-seeded from the host environment. Only rows
+ * that do not exist yet are created; a matching process.env value is required.
+ * Cached/derived readers: backend getCachedSetting(), Go settings.Resolver
+ * (via gRPC GetSystemSettings from this same table).
+ */
+const ENV_SEEDED_SETTINGS = [
+  'CDN_CACHE_MODE',
+  'CDN_CACHE_TTL_SECONDS',
+  'CDN_CACHE_WINDOW_SECONDS',
+] as const;
+
 @Injectable()
 export class SettingsService implements OnModuleInit {
   private readonly logger = new Logger(SettingsService.name);
@@ -43,6 +55,25 @@ export class SettingsService implements OnModuleInit {
       });
       if (!existing) {
         await this.prisma.systemSetting.create({ data: { key, value } });
+        seeded++;
+      }
+    }
+
+    // Env-seeded feature keys: when the host sets these env vars, seed them
+    // into SystemSetting so BOTH backend roles and the Go data plane (which
+    // reads settings over gRPC straight from the DB) see the same value.
+    // Dashboard edits win afterwards — env only applies while the row is absent.
+    for (const key of ENV_SEEDED_SETTINGS) {
+      const envValue = process.env[key];
+      if (!envValue) continue;
+      const existing = await this.prisma.systemSetting.findUnique({
+        where: { key },
+      });
+      if (!existing) {
+        await this.prisma.systemSetting.create({
+          data: { key, value: envValue },
+        });
+        this.logger.log(`Seeded system settings from env '${key}'`);
         seeded++;
       }
     }
