@@ -27,65 +27,70 @@ describe('transfer-cache.util', () => {
     const etag = transferCacheETag('f1', 120);
 
     it('matches exact and weak-prefixed validators', () => {
+      const other = '"zzzz"';
       expect(ifNoneMatchSatisfied(etag, etag)).toBe(true);
       expect(ifNoneMatchSatisfied(`W/${etag}`, etag)).toBe(true);
-    });
-
-    it('matches comma lists and the * wildcard', () => {
-      const other = '"zzzz"';
       expect(ifNoneMatchSatisfied(`${other}, ${etag}`, etag)).toBe(true);
       expect(ifNoneMatchSatisfied('*', etag)).toBe(true);
       expect(ifNoneMatchSatisfied(other, etag)).toBe(false);
-    });
-
-    it('is false without a header', () => {
       expect(ifNoneMatchSatisfied(undefined, etag)).toBe(false);
       expect(ifNoneMatchSatisfied('', etag)).toBe(false);
     });
   });
 
   describe('computeTransferCacheHeaders', () => {
-    it('private scope bypasses the CDN regardless of settings', () => {
-      const dirs = { enabled: true, ttlSeconds: 3600 };
-      expect(computeTransferCacheHeaders('private', dirs, 'f1', 10n)).toEqual({
+    it('private scope bypasses the CDN in every mode', () => {
+      for (const mode of ['disabled', 'revalidate', 'full'] as const) {
+        expect(
+          computeTransferCacheHeaders(
+            'private',
+            { mode, ttlSeconds: 3600 },
+            'f1',
+            10n,
+          ),
+        ).toEqual({
+          'Cache-Control': 'private, no-store',
+          ETag: transferCacheETag('f1', 10n),
+        });
+      }
+    });
+
+    it('disabled mode still emits explicit no-store on signed routes', () => {
+      expect(
+        computeTransferCacheHeaders(
+          'signed',
+          { mode: 'disabled', ttlSeconds: 3600 },
+          'f1',
+          10n,
+        ),
+      ).toEqual({
         'Cache-Control': 'private, no-store',
         ETag: transferCacheETag('f1', 10n),
       });
     });
 
-    it('disabled settings still emit explicit no-store on signed routes', () => {
-      const dirs = { enabled: false, ttlSeconds: 3600 };
-      expect(computeTransferCacheHeaders('signed', dirs, 'f1', 10n)).toEqual({
-        'Cache-Control': 'private, no-store',
-        ETag: transferCacheETag('f1', 10n),
-      });
+    it('revalidate → no-cache', () => {
+      expect(
+        computeTransferCacheHeaders(
+          'signed',
+          { mode: 'revalidate', ttlSeconds: 3600 },
+          'f1',
+          10n,
+        )['Cache-Control'],
+      ).toBe('no-cache');
     });
 
-    it('enabled + signed → public with clamped max-age', () => {
-      expect(
+    it('full → public with clamped max-age', () => {
+      const cc = (ttl: number) =>
         computeTransferCacheHeaders(
           'signed',
-          { enabled: true, ttlSeconds: 3600 },
+          { mode: 'full', ttlSeconds: ttl },
           'f1',
           10n,
-        )['Cache-Control'],
-      ).toBe('public, max-age=3600');
-      expect(
-        computeTransferCacheHeaders(
-          'signed',
-          { enabled: true, ttlSeconds: 1 },
-          'f1',
-          10n,
-        )['Cache-Control'],
-      ).toBe('public, max-age=30');
-      expect(
-        computeTransferCacheHeaders(
-          'signed',
-          { enabled: true, ttlSeconds: 999999999 },
-          'f1',
-          10n,
-        )['Cache-Control'],
-      ).toBe(`public, max-age=${7 * 24 * 60 * 60}`);
+        )['Cache-Control'];
+      expect(cc(3600)).toBe('public, max-age=3600');
+      expect(cc(1)).toBe('public, max-age=30');
+      expect(cc(999999999)).toBe(`public, max-age=${7 * 24 * 60 * 60}`);
     });
   });
 

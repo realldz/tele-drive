@@ -22,29 +22,47 @@ import (
 //
 // Scopes:
 //   - signed: URL carries its own bearer credential (signed download token,
-//     share token) → cacheable with `public, max-age=<ttl>` when enabled.
-//   - private: URL has NO per-request credential (owner JWT / stream-cookie
+//     share token) → the only scope a CDN may cache.
+//     private: URL has NO per-request credential (owner JWT / stream-cookie
 //     routes) → always `private, no-store`; the CDN must bypass.
+//   - none: skip entirely — routes with their own ETag semantics (S3 GetObject
+//     carries the real object ETag; a td- ETag would clobber it).
 //
-// When CDN_CACHE_ENABLED is false (default) every byte response still gets an
-// explicit `Cache-Control: private, no-store` so CDNs never guess.
+// Modes (settings key CDN_CACHE_MODE, default `disabled`):
+//   - disabled: every scope → `private, no-store` (explicit, so CDNs never
+//     guess). No behavior change until an admin opts in.
+//   - revalidate: signed → `no-cache` (store + revalidate every hit). Every
+//     CDN hit consults the origin; the origin grants a 304 only after the
+//     quota pass, and a revalidation 304 reports actualBytes=0 with
+//     CountDownload=true so downloads24h counts it while the daily-bandwidth
+//     lock is fully refunded.
+//   - full: signed → `public, max-age=<CDN_CACHE_TTL_SECONDS>` — CDN hits are
+//     NOT metered inside the TTL window (bandwidth/quota undercount accepted).
 type DownloadCacheScope string
 
 const (
 	CacheScopeSigned  DownloadCacheScope = "signed"
 	CacheScopePrivate DownloadCacheScope = "private"
-	// CacheScopeNone skips CDN-cache handling entirely — for routes with their
-	// own ETag semantics (S3 GetObject carries the real object ETag; a td- ETag
-	// would clobber it). P2 will add opt-in per-object cache policy there.
-	CacheScopeNone DownloadCacheScope = "none"
+	CacheScopeNone    DownloadCacheScope = "none"
+)
+
+type DownloadCacheMode string
+
+const (
+	CacheModeDisabled   DownloadCacheMode = "disabled"
+	CacheModeRevalidate DownloadCacheMode = "revalidate"
+	CacheModeFull       DownloadCacheMode = "full"
 )
 
 const (
-	cacheEnabledSettingKey = "CDN_CACHE_ENABLED"
-	cacheTTLSettingKey     = "CDN_CACHE_TTL_SECONDS"
-	cacheDefaultTTL        = 3600
-	cacheMinTTL            = 30
-	cacheMaxTTL            = 7 * 24 * 60 * 60
+	cacheModeSettingKey = "CDN_CACHE_MODE"
+	cacheTTLSettingKey  = "CDN_CACHE_TTL_SECONDS"
+	cacheDefaultTTL     = 3600
+	cacheMinTTL         = 30
+	cacheMaxTTL         = 7 * 24 * 60 * 60
+
+	policyNoStore    = "private, no-store"
+	policyRevalidate = "no-cache"
 )
 
 func clampCacheTTL(raw int) int {
@@ -60,13 +78,19 @@ func clampCacheTTL(raw int) int {
 	return raw
 }
 
-func (d *Downloader) cdnCacheDirectories(ctx context.Context) (bool, int) {
+func (d *Downloader) cdnCacheConfig(ctx context.Context) (DownloadCacheMode, int) {
 	if d.settingsResolver == nil {
-		return false, cacheDefaultTTL
+		return CacheModeDisabled, cacheDefaultTTL
 	}
-	enabled := d.settingsResolver.GetBool(ctx, cacheEnabledSettingKey, false)
-	ttl := d.settingsResolver.GetInt(ctx, cacheTTLSettingKey, cacheDefaultTTL)
-	return enabled, clampCacheTTL(ttl)
+	raw := strings.ToLower(strings.TrimSpace(
+		d.settingsResolver.GetString(ctx, cacheModeSettingKey, string(CacheModeDisabled))))
+	mode := DownloadCacheMode(raw)
+	switch mode {
+	case CacheModeRevalidate, CacheModeFull:
+	default:
+		mode = CacheModeDisabled
+	}
+	return mode, clampCacheTTL(d.settingsResolver.GetInt(ctx, cacheTTLSettingKey, cacheDefaultTTL))
 }
 
 // transferCacheETag must match transferCacheETag() in transfer-cache.util.ts:
@@ -93,10 +117,12 @@ func ifNoneMatchSatisfied(ifNoneMatch, etag string) bool {
 	return false
 }
 
+
+
 // ApplyCacheHeaders sets ETag + Cache-Control for a byte response and reports
 // whether a matching If-None-Match already closed the response with a bare 304
-// (the caller must then stream nothing). The `private` scope ignores settings —
-// those URLs carry no per-request credential, so a CDN must never cache them.
+// (the caller must then stream nothing). Enabled only for the `signed` scope —
+// URLs without a per-request credential must never be cached by a CDN.
 func (d *Downloader) ApplyCacheHeaders(
 	ctx context.Context,
 	w http.ResponseWriter,
@@ -109,13 +135,16 @@ func (d *Downloader) ApplyCacheHeaders(
 		return false
 	}
 
-	enabled, ttl := d.cdnCacheDirectories(ctx)
+	mode, ttl := d.cdnCacheConfig(ctx)
 	var policy string
-	switch {
-	case scope == CacheScopePrivate || !enabled:
-		policy = "private, no-store"
-	default:
-		policy = "public, max-age=" + strconv.Itoa(ttl)
+	if scope == CacheScopeSigned && mode != CacheModeDisabled {
+		if mode == CacheModeFull {
+			policy = "public, max-age=" + strconv.Itoa(ttl)
+		} else {
+			policy = policyRevalidate
+		}
+	} else {
+		policy = policyNoStore
 	}
 	etag := transferCacheETag(fileID, size)
 
@@ -126,12 +155,12 @@ func (d *Downloader) ApplyCacheHeaders(
 		d.logger.Debug("cache headers applied",
 			"fileId", fileID,
 			"scope", string(scope),
-			"enabled", enabled,
+			"mode", string(mode),
 			"policy", policy,
 		)
 	}
 
-	if enabled && scope == CacheScopeSigned && ifNoneMatchSatisfied(ifNoneMatch, etag) {
+	if policy != policyNoStore && ifNoneMatchSatisfied(ifNoneMatch, etag) {
 		if d.logger != nil {
 			d.logger.Debug("cache revalidation hit (304)",
 				"fileId", fileID,
@@ -143,3 +172,4 @@ func (d *Downloader) ApplyCacheHeaders(
 	}
 	return false
 }
+

@@ -181,6 +181,7 @@ describe('BandwidthInterceptor', () => {
       5n,
       5n,
       true,
+      false,
     );
   });
 
@@ -230,6 +231,7 @@ describe('BandwidthInterceptor', () => {
       4n,
       10n,
       true,
+      false,
     );
   });
 
@@ -280,6 +282,7 @@ describe('BandwidthInterceptor', () => {
       4n,
       10n,
       true,
+      false,
     );
   });
 
@@ -323,6 +326,7 @@ describe('BandwidthInterceptor', () => {
       5n,
       5n,
       true,
+      false,
     );
   });
 
@@ -368,6 +372,7 @@ describe('BandwidthInterceptor', () => {
       'file-3',
       5n,
       5n,
+      false,
       false,
     );
   });
@@ -443,6 +448,7 @@ describe('BandwidthInterceptor', () => {
       's3-file',
       4n,
       4n,
+      false,
       false,
     );
   });

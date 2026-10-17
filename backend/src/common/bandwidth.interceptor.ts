@@ -470,11 +470,18 @@ export class BandwidthInterceptor implements NestInterceptor {
           `[${requestId || 'unknown'}] Bandwidth reconciled: fileId=${data.fileId}, userId=${data.userId || 'guest'}, locked=${formatBytes(data.estimatedSize)}, actual=${formatBytes(actualBytes)}, refunded=0 B`,
         );
       }
+      // A CDN revalidation 304 serves 0 bytes but still cleared the quota — the
+      // download still counts (downloads24h), while bandwidth is refunded in full
+      // above because nothing was streamed. forceCountDownload makes the counter
+      // bypass its actualBytes >= estimatedSize guard for this one request.
+      const cdnRevalidated =
+        (res as { _cdnRevalidated?: boolean })._cdnRevalidated === true;
       void this.lockService.reconcilePerFileCounters(
         data.fileId,
         actualBytes,
         data.estimatedSize,
         data.countAsDownload,
+        cdnRevalidated,
       );
       this.recordAggregate(data, actualBytes, refund, requestId);
     });

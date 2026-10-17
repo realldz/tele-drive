@@ -3,7 +3,7 @@ import * as crypto from 'crypto';
 /**
  * CDN-cache headers for the data plane (download / stream responses).
  *
- * Mirrors `backend-transfer-go/internal/handler/cacheheaders.go` — both sides
+ * Mirrors `backend-transfer-go/internal/telegram/cacheheaders.go` — both sides
  * must emit the SAME ETag for the same (fileId, size) because either backend
  * may serve the origin fetch the CDN revalidates against.
  *
@@ -14,22 +14,30 @@ import * as crypto from 'crypto';
  *
  * Scopes:
  *  - "signed": URL carries its own bearer credential (signed download token,
- *    share token) → cacheable with `public, max-age=<ttl>` when enabled.
+ *    share token) → the only scope a CDN may cache.
  *  - "private": URL has NO per-request credential (owner JWT/cookie routes) →
  *    always `private, no-store`; the CDN must bypass.
  *
- * When `CDN_CACHE_ENABLED` is false (default) every scope still emits an
- * explicit `Cache-Control: private, no-store` so CDNs never guess.
+ * Modes (settings key `CDN_CACHE_MODE`, default `disabled`):
+ *  - disabled: every scope → explicit `Cache-Control: private, no-store` so
+ *    CDNs never guess; behavior unchanged until an admin opts in.
+ *  - revalidate: signed → `no-cache` (store + revalidate every hit). Every CDN
+ *    hit consults the origin; the origin grants a 304 only after the quota
+ *    pass, and a revalidation 304 counts as a download (downloads24h moves)
+ *    while the daily-bandwidth lock is refunded in full.
+ *  - full: signed → `public, max-age=<TTL>` — CDN hits are NOT metered inside
+ *    the TTL window (bandwidth/quota undercount accepted).
  */
 export type TransferCacheScope = 'signed' | 'private';
+export type TransferCacheMode = 'disabled' | 'revalidate' | 'full';
 
 export interface TransferCacheDirectories {
-  enabled: boolean;
+  mode: TransferCacheMode;
   ttlSeconds: number;
 }
 
+export const TRANSFER_CACHE_MODE_KEY = 'CDN_CACHE_MODE';
 export const TRANSFER_CACHE_TTL_KEY = 'CDN_CACHE_TTL_SECONDS';
-export const TRANSFER_CACHE_ENABLED_KEY = 'CDN_CACHE_ENABLED';
 
 /** Guard against absurd values slipping in through the settings table. */
 export const TRANSFER_CACHE_MIN_TTL = 30;
@@ -80,14 +88,15 @@ export function computeTransferCacheHeaders(
   fileId: string,
   size: bigint | number,
 ): { 'Cache-Control': string; ETag: string } {
-  if (scope === 'private' || !dirs.enabled) {
-    return {
-      'Cache-Control': 'private, no-store',
-      ETag: transferCacheETag(fileId, size),
-    };
+  const etag = transferCacheETag(fileId, size);
+  if (scope === 'private' || dirs.mode === 'disabled') {
+    return { 'Cache-Control': 'private, no-store', ETag: etag };
+  }
+  if (dirs.mode === 'revalidate') {
+    return { 'Cache-Control': 'no-cache', ETag: etag };
   }
   return {
     'Cache-Control': `public, max-age=${clampTransferCacheTtl(dirs.ttlSeconds)}`,
-    ETag: transferCacheETag(fileId, size),
+    ETag: etag,
   };
 }

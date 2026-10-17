@@ -210,10 +210,15 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 	start := int64(0)
 	end := fileSize - 1
 
-	// CDN-cache headers + conditional-GET revalidation (P0). Applied before the
-	// bandwidth lock so a revalidation 304 never burns a quota check.
-	if d.ApplyCacheHeaders(c.Request().Context(), c.Response().Writer, scope, info.ID, info.Size, c.Request().Header.Get("If-None-Match")) {
-		return nil
+	// CDN-cache headers + conditional-GET revalidation, applied at LOCATION:
+	//   - zero-byte short-circuit (before the 200 empty response)
+	//   - after CheckAndLockBandwidth — a revalidation 304 is only granted when
+	//     quota allows (revalidate mode counts it as a download; the deferred
+	//     RefundAndReconcile reports a zero-byte full download so downloads24h
+	//     moves while daily bandwidth is refunded in full).
+	ifNoneMatch := c.Request().Header.Get("If-None-Match")
+	applyCacheOr304 := func() bool {
+		return d.ApplyCacheHeaders(c.Request().Context(), c.Response().Writer, scope, info.ID, info.Size, ifNoneMatch)
 	}
 
 	// Multi-thread (Range) support is admin-gated (ENABLE_MULTI_THREAD_DOWNLOAD).
@@ -258,6 +263,9 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 	// empty resource is 416; an unranged GET must be 200 with Content-Length: 0
 	// and no body — matching real AWS S3 and the HEAD surface.
 	if fileSize == 0 && !isRange {
+		if applyCacheOr304() {
+			return nil
+		}
 		res := c.Response()
 		if multiThread {
 			res.Header().Set("Accept-Ranges", "bytes")
@@ -293,6 +301,14 @@ func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHead
 		actualBytes := c.Response().Size - initialSize
 		d.RefundAndReconcile(lock, actualBytes)
 	}()
+
+	// Revalidation 304 AFTER the quota pass (see comment at the top of this
+	// function): the deferred RefundAndReconcile reports actualBytes=0 with
+	// CountDownload=(!hasRangeHeader)=true — the download counter moves and the
+	// optimistic daily-bandwidth lock is refunded in full.
+	if applyCacheOr304() {
+		return nil
+	}
 
 	res := c.Response()
 

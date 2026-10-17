@@ -45,26 +45,29 @@ func TestIfNoneMatchSatisfied(t *testing.T) {
 	}
 }
 
-func TestApplyCacheHeadersPolicies(t *testing.T) {
+func TestApplyCacheHeadersModes(t *testing.T) {
 	etag := `"td-90b2981ae4beec2aa50345bcab45361a"`
 	cases := []struct {
-		name string
-		// enabled governs the synthetic settings snapshot wired below
-		enabled bool
+		name    string
+		mode    DownloadCacheMode
 		scope   DownloadCacheScope
 		inm     string
 		wantCC  string
 		want304 bool
 	}{
-		{"private always no-store", true, CacheScopePrivate, "", "private, no-store", false},
-		{"signed disabled noop no-store", false, CacheScopeSigned, "", "private, no-store", false},
-		{"signed enabled public", true, CacheScopeSigned, "", "public, max-age=3600", false},
-		{"revalidation 304", true, CacheScopeSigned, etag, "public, max-age=3600", true},
+		{"disabled signed", CacheModeDisabled, CacheScopeSigned, "", "private, no-store", false},
+		{"disabled private", CacheModeDisabled, CacheScopePrivate, "", "private, no-store", false},
+		{"revalidate private bypass", CacheModeRevalidate, CacheScopePrivate, "", "private, no-store", false},
+		{"revalidate signed", CacheModeRevalidate, CacheScopeSigned, "", "no-cache", false},
+		{"full signed", CacheModeFull, CacheScopeSigned, "", "public, max-age=3600", false},
+		{"full private bypass", CacheModeFull, CacheScopePrivate, "", "private, no-store", false},
+		{"revalidate 304", CacheModeRevalidate, CacheScopeSigned, etag, "no-cache", true},
+		{"degenerate mode → disabled", DownloadCacheMode("bogus"), CacheScopeSigned, "", "private, no-store", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			d := &Downloader{}
-			d.settingsResolver = newCdnFakeResolver(tc.enabled)
+			d.settingsResolver = newCdnFakeResolver(tc.mode)
 
 			rec := httptest.NewRecorder()
 			shortCircuited := d.ApplyCacheHeaders(
@@ -91,7 +94,7 @@ func TestApplyCacheHeadersPolicies(t *testing.T) {
 
 func TestApplyCacheHeadersSkipsS3Scope(t *testing.T) {
 	d := &Downloader{}
-	d.settingsResolver = newCdnFakeResolver(true)
+	d.settingsResolver = newCdnFakeResolver(CacheModeFull)
 
 	rec := httptest.NewRecorder()
 	shortCircuited := d.ApplyCacheHeaders(
@@ -128,18 +131,18 @@ func TestClampCacheTTL(t *testing.T) {
 
 // cdnFakeFetcher satisfies settings.settingsFetcher from the test package side.
 type cdnFakeFetcher struct {
-	enabled bool
+	mode DownloadCacheMode
 }
 
 func (f *cdnFakeFetcher) GetSystemSettings(_ context.Context, _ []string) (map[string]string, error) {
 	out := map[string]string{}
-	if f.enabled {
-		out["CDN_CACHE_ENABLED"] = "true"
+	if f.mode != CacheModeDisabled {
+		out[string(cacheModeSettingKey)] = string(f.mode)
 	}
 	return out, nil
 }
 
-func newCdnFakeResolver(enabled bool) *settings.Resolver {
+func newCdnFakeResolver(mode DownloadCacheMode) *settings.Resolver {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return settings.NewResolver(&cdnFakeFetcher{enabled: enabled}, logger)
+	return settings.NewResolver(&cdnFakeFetcher{mode: mode}, logger)
 }

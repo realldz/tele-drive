@@ -23,9 +23,10 @@ import { buildTransferUrl } from '../common/transfer-url.util';
 import {
   computeTransferCacheHeaders,
   ifNoneMatchSatisfied,
-  TRANSFER_CACHE_ENABLED_KEY,
+  TRANSFER_CACHE_MODE_KEY,
   TRANSFER_CACHE_TTL_KEY,
   type TransferCacheDirectories,
+  type TransferCacheMode,
   type TransferCacheScope,
 } from '../common/transfer-cache.util';
 
@@ -71,18 +72,20 @@ export class TransferReadService {
    * still gets an explicit `Cache-Control: private, no-store`.
    */
   private async getCacheDirectories(): Promise<TransferCacheDirectories> {
-    const enabled = this.settingsService.getCachedSetting(
-      TRANSFER_CACHE_ENABLED_KEY,
-      false,
-      (v) => v !== 'false',
-    );
-    const ttl = this.settingsService.getCachedSetting(
-      TRANSFER_CACHE_TTL_KEY,
-      3600,
-      (v) => parseInt(v, 10),
-    );
-    const [resolvedEnabled, resolvedTtl] = await Promise.all([enabled, ttl]);
-    return { enabled: resolvedEnabled, ttlSeconds: resolvedTtl };
+    const [mode, ttl] = await Promise.all([
+      this.settingsService.getCachedSetting<TransferCacheMode>(
+        TRANSFER_CACHE_MODE_KEY,
+        'disabled',
+        (v) =>
+          v === 'revalidate' || v === 'full'
+            ? (v as TransferCacheMode)
+            : 'disabled',
+      ),
+      this.settingsService.getCachedSetting(TRANSFER_CACHE_TTL_KEY, 3600, (v) =>
+        parseInt(v, 10),
+      ),
+    ]);
+    return { mode, ttlSeconds: ttl };
   }
 
   /**
@@ -113,17 +116,21 @@ export class TransferReadService {
     res.setHeader('ETag', headers.ETag);
 
     this.logger.debug(
-      `Cache headers applied: fileId=${fileId}, scope=${scope}, enabled=${dirs.enabled}, policy="${headers['Cache-Control']}"`,
+      `Cache headers applied: fileId=${fileId}, scope=${scope}, mode=${dirs.mode}, policy="${headers['Cache-Control']}"`,
     );
 
     if (
-      dirs.enabled &&
+      dirs.mode !== 'disabled' &&
       scope === 'signed' &&
       ifNoneMatchSatisfied(deps.ifNoneMatch, headers.ETag)
     ) {
       this.logger.debug(
         `Cache revalidation hit (304): fileId=${fileId}, etag=${headers.ETag}`,
       );
+      // The bandwidth interceptor reads this flag during reconciliation so a
+      // revalidation 304 counts as a download (downloads24h) while the
+      // optimistic bandwidth lock is refunded in full (0 bytes served).
+      (res as { _cdnRevalidated?: boolean })._cdnRevalidated = true;
       res.status(304);
       res.end();
       return true;
