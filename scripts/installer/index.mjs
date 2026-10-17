@@ -63,6 +63,12 @@ async function main() {
     if (v !== undefined) currentValues[f.key] = v;
   }
 
+  // CLI overrides win over whatever the env files currently hold, so
+  // `--image-tag=1.2.3` both prefills the interactive prompt and pins the
+  // non-interactive write.
+  if (args.imageTag !== null) currentValues.TELE_DRIVE_IMAGE_TAG = args.imageTag;
+  if (args.imagePrefix !== null) currentValues.TELE_DRIVE_IMAGE_PREFIX = args.imagePrefix;
+
   // Collect.
   let values;
   if (args.interactive) {
@@ -94,10 +100,23 @@ async function main() {
   }
 
   // Emit the plan for bash.
-  const plan = buildPlan({ topology, scale, build: args.build, envFilesWritten });
+  const plan = buildPlan({
+    topology, scale,
+    source: args.source,
+    imageTag: values.TELE_DRIVE_IMAGE_TAG ?? args.imageTag ?? '',
+    imagePrefix: values.TELE_DRIVE_IMAGE_PREFIX ?? args.imagePrefix ?? '',
+    envFilesWritten,
+  });
   atomicWrite('.installer-plan.json', JSON.stringify(plan, null, 2) + '\n');
 
   console.log(`\nWrote: ${envFilesWritten.join(', ')}, .installer-plan.json`);
+
+  if (args.source === 'ghcr') {
+    console.log(`\n[image] Pulling prebuilt images (${plan.imagePrefix || 'ghcr.io/realldz/tele-drive'}:*) tag=${plan.imageTag || 'latest'}.`);
+    console.log('  Pin releases via --image-tag; swap registry via --image-prefix (forks).');
+  } else {
+    console.log('\n[image] Building all images on this host (--build). No GHCR pull.');
+  }
 
   if (topology === 'core' || topology === 'go') {
     console.log('\n[multi-host] Copy these to the OTHER host and keep them identical:');

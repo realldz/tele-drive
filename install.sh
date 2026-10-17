@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Wizard installer — replaces deploy.sh.
 # Host needs only Docker; the Node wizard runs in an ephemeral container.
+# Default image mode pulls the prebuilt images CI publishes to GHCR
+# (docker-compose*.ghcr.yml overlays); pass --build to compile on this host.
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -36,11 +38,21 @@ read_plan() {
     node -e "const p=require('/repo/$PLAN_FILE'); process.stdout.write(String(p[process.argv[1]] ?? ''))" "$1"
 }
 COMPOSE_FILE="$(read_plan composeFile)"
-BUILD="$(read_plan build)"
+IMAGE_SOURCE="$(read_plan imageSource)"
+OVERLAY_FILE="$(read_plan overlayFile)"
 SCALE_TRANSFER="$(read_plan scaleTransfer)"
 NEED_CERTS="$(read_plan needCerts)"
 ROLE="$(read_plan role)"
-log "Plan: compose=$COMPOSE_FILE role=$ROLE build=$BUILD scale=${SCALE_TRANSFER:-none}"
+log "Plan: compose=$COMPOSE_FILE role=$ROLE images=$IMAGE_SOURCE${OVERLAY_FILE:+ overlay=$OVERLAY_FILE} scale=${SCALE_TRANSFER:-none}"
+
+# 3b. Compose file list. GHCR deploys append the pull-only overlay AFTER the
+# base file, so the published image refs win over the base build: definitions.
+# NOTE: the overlay cannot delete the base build: keys — "pull" below is what
+# guarantees the published image actually exists locally before "up".
+COMPOSE_FILES=(-f "$COMPOSE_FILE")
+if [ "$IMAGE_SOURCE" = "ghcr" ]; then
+  COMPOSE_FILES+=(-f "$OVERLAY_FILE")
+fi
 
 # The CORE host is the control plane and the CA origin: it must run first, mint
 # the shared gRPC CA (gen-grpc-certs.sh), then its certs are copied to the go
@@ -49,8 +61,6 @@ log "Plan: compose=$COMPOSE_FILE role=$ROLE build=$BUILD scale=${SCALE_TRANSFER:
 # go auto-deploys further below — it only VERIFIES the copied certs, never mints.
 if [ "$ROLE" = "core" ]; then
   ENV_FILE=".env.core"
-  BUILD_FLAG=""
-  [ "$BUILD" = "true" ] && BUILD_FLAG=" --build"
   log "Core host config written. install.sh does NOT auto-deploy the core control plane."
   printf '\n  Complete the core deploy manually on THIS host:\n\n'
   printf '  1. Mint the shared gRPC CA on this CORE host only:\n'
@@ -58,7 +68,15 @@ if [ "$ROLE" = "core" ]; then
   printf '  2. Copy certs/grpc/{ca.crt,backend-transfer.crt,backend-transfer.key} to the go host.\n'
   printf '  3. REDIS_PASSWORD in %s must match the value on the go host.\n' "$ENV_FILE"
   printf '  4. Bring up the control plane:\n'
-  printf '       docker compose --env-file %s -f %s up -d%s\n\n' "$ENV_FILE" "$COMPOSE_FILE" "$BUILD_FLAG"
+  if [ "$IMAGE_SOURCE" = "ghcr" ]; then
+    FILES="${COMPOSE_FILES[*]}"
+    printf '       docker compose --env-file %s %s pull\n' "$ENV_FILE" "$FILES"
+    printf '       docker compose --env-file %s %s up -d\n' "$ENV_FILE" "$FILES"
+    printf '     (pin a fixed release: TELE_DRIVE_IMAGE_TAG=sha-<short> in %s)\n' "$ENV_FILE"
+    printf '  Build images on this host instead: %s --build\n\n' "$0"
+  else
+    printf '       docker compose --env-file %s -f %s up -d --build\n\n' "$ENV_FILE" "$COMPOSE_FILE"
+  fi
   rm -f "$PLAN_FILE"
   exit 0
 fi
@@ -102,8 +120,28 @@ ENV_FILE_ARGS=()
 [ "$ROLE" = "go" ] && ENV_FILE_ARGS=(--env-file .env.transfer)
 # ${arr[@]+"${arr[@]}"} expands to nothing when the array is empty (mono/scale),
 # instead of a spurious "" arg — and stays safe under `set -u` on bash 3.2+.
-UP_ARGS=(${ENV_FILE_ARGS[@]+"${ENV_FILE_ARGS[@]}"} -f "$COMPOSE_FILE" up -d)
-[ "$BUILD" = "true" ] && UP_ARGS+=(--build)
+
+# GHCR mode: pull FIRST. The base files keep "build:" and the overlay cannot
+# remove it, so an "up" without a successful pull would silently build from
+# source on a host that still has the repo — exactly what this mode must avoid.
+if [ "$IMAGE_SOURCE" = "ghcr" ]; then
+  log "Pulling prebuilt images from GHCR (${TELE_DRIVE_IMAGE_PREFIX:-default prefix}:${TELE_DRIVE_IMAGE_TAG:-latest})..."
+  if ! docker compose ${ENV_FILE_ARGS[@]+"${ENV_FILE_ARGS[@]}"} "${COMPOSE_FILES[@]}" pull; then
+    err "Image pull failed."
+    printf '  Usual causes: private GHCR packages (docker login ghcr.io first), an unknown\n' >&2
+    printf '  TELE_DRIVE_IMAGE_TAG, a fork where TELE_DRIVE_IMAGE_PREFIX no longer applies, or no network.\n' >&2
+    printf '  Fallback (compile on this host): %s --build\n' "$0" >&2
+    rm -f "$PLAN_FILE"
+    exit 1
+  fi
+  log "Pull complete."
+fi
+
+UP_ARGS=(${ENV_FILE_ARGS[@]+"${ENV_FILE_ARGS[@]}"} "${COMPOSE_FILES[@]}" up -d)
+[ "$IMAGE_SOURCE" = "build" ] && UP_ARGS+=(--build)
+# Belt-and-suspenders for GHCR mode: even without an explicit pull (e.g. up run
+# from inside the wizard's plan), compose must prefer the registry image.
+[ "$IMAGE_SOURCE" = "ghcr" ] && UP_ARGS+=(--pull always)
 if [ -n "$SCALE_TRANSFER" ]; then
   UP_ARGS+=(--scale "backend-transfer=$SCALE_TRANSFER")
 fi
@@ -117,7 +155,7 @@ log "Waiting for services to become healthy..."
 HEALTHY=0
 for _ in $(seq 1 30); do
   # One line per service replica: "<service> <health>"
-  STATUS="$(docker compose ${ENV_FILE_ARGS[@]+"${ENV_FILE_ARGS[@]}"} -f "$COMPOSE_FILE" ps --format '{{.Service}} {{.Health}}' 2>/dev/null || true)"
+  STATUS="$(docker compose ${ENV_FILE_ARGS[@]+"${ENV_FILE_ARGS[@]}"} "${COMPOSE_FILES[@]}" ps --format '{{.Service}} {{.Health}}' 2>/dev/null || true)"
   BT_TOTAL="$(printf '%s\n' "$STATUS" | awk '$1=="backend-transfer"' | wc -l | tr -d ' ')"
   BT_OK="$(printf '%s\n' "$STATUS" | awk '$1=="backend-transfer" && $2=="healthy"' | wc -l | tr -d ' ')"
   if [ "$ROLE" = "go" ]; then
@@ -140,7 +178,7 @@ if [ "$HEALTHY" = "1" ]; then
   log "All services healthy."
 else
   err "Services did not become healthy in time. Recent diagnostic logs:"
-  docker compose ${ENV_FILE_ARGS[@]+"${ENV_FILE_ARGS[@]}"} -f "$COMPOSE_FILE" logs --tail 200 2>/dev/null \
+  docker compose ${ENV_FILE_ARGS[@]+"${ENV_FILE_ARGS[@]}"} "${COMPOSE_FILES[@]}" logs --tail 200 2>/dev/null \
     | grep -iE "wrongpass|noauth|cert|tls|can't resolve|permission denied" | tail -20 || true
   rm -f "$PLAN_FILE"
   exit 1

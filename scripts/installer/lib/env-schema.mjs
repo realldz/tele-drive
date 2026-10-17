@@ -26,6 +26,22 @@ export const isHostname = (v) => (/^[A-Za-z0-9.-]+(:\d+)?$/.test(v || '') ? null
 
 const req = (validate) => (v) => isRequired(v) ?? (validate ? validate(v) : null);
 
+// Deploy-image knobs consumed by the docker-compose*.ghcr.yml overlays. Both
+// optional: blank keeps the overlay defaults (latest / ghcr.io/realldz/tele-drive).
+export const isImageTag = (v) =>
+  /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(v || '')
+    ? null
+    : 'must be a valid image tag (letters, digits, . _ -)';
+export const isImagePrefix = (v) =>
+  /^[a-z0-9][a-z0-9./_-]*$/.test(v || '')
+    ? null
+    : 'must be a lowercase registry path (registry/owner/repo)';
+
+const IMAGE_FIELDS = (file) => [
+  { key: 'TELE_DRIVE_IMAGE_TAG', file, prompt: 'Image tag to deploy (blank = latest; e.g. sha-1a2b3c4)', validate: isImageTag, required: false },
+  { key: 'TELE_DRIVE_IMAGE_PREFIX', file, prompt: 'Image registry prefix (blank = ghcr.io/realldz/tele-drive)', validate: isImagePrefix, required: false },
+];
+
 // Shared backend/.env fields (all topologies boot the NestJS backend).
 const BACKEND_FIELDS = [
   { key: 'DATABASE_URL', file: 'backend/.env', prompt: 'Postgres connection URL', validate: req(), required: true },
@@ -49,11 +65,13 @@ const SCHEMA = {
   mono: [
     ...TELEGRAM_APP('.env'),
     REDIS('.env'),
+    ...IMAGE_FIELDS('.env'),
     ...BACKEND_FIELDS,
   ],
   scale: [
     ...TELEGRAM_APP('.env'),
     REDIS('.env'),
+    ...IMAGE_FIELDS('.env'),
     ...BACKEND_FIELDS,
   ],
   core: [
@@ -61,6 +79,7 @@ const SCHEMA = {
     { key: 'CORE_PRIVATE_IP', file: '.env.core', prompt: 'Core private IP (bind address for Redis + gRPC)', validate: req(isIpv4), required: true },
     { key: 'UPLOAD_BUFFER_NFS', file: '.env.core', prompt: 'Shared upload buffer path (NFS mount)', validate: req(), required: true },
     REDIS('.env.core'),
+    ...IMAGE_FIELDS('.env.core'),
     ...BACKEND_FIELDS,
   ],
   go: [
@@ -72,6 +91,7 @@ const SCHEMA = {
     { key: 'SSL_KEY_FILE', file: '.env.transfer', prompt: 'TLS key filename in ./nginx/ssl (blank = self-signed)', validate: isFilename, required: false },
     REDIS('.env.transfer'),
     ...TELEGRAM_APP('.env.transfer'),
+    ...IMAGE_FIELDS('.env.transfer'),
     ...BACKEND_FIELDS,
   ],
 };

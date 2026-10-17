@@ -139,7 +139,17 @@ Configure routing in [Cloudflare Zero Trust](https://one.dash.cloudflare.com/) d
 
 `.github/workflows/docker-publish.yml` builds every image and publishes it to
 `ghcr.io` on each push to `master` and each `v*` tag (pull requests only build, to
-validate the Dockerfiles). A host can then run those images instead of building:
+validate the Dockerfiles). A host can then run those images instead of building.
+The bundled installer does exactly this by default now — wizard, env files, then a
+pull-first deploy (no compiler on the host):
+
+```bash
+./install.sh            # topology wizard -> env files -> GHCR pull -> up -d
+./install.sh --build    # compile everything on this host instead
+./install.sh --topology=go --image-tag=sha-1a2b3c4   # scripted + pinned release
+```
+
+Manual commands:
 
 ```bash
 # Private GHCR packages only — skip when the package is public
