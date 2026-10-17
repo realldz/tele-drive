@@ -20,6 +20,14 @@ import type {
 import { TEMP_STORAGE } from '../common/temp-storage';
 import type { TempStorage } from '../common/temp-storage';
 import { buildTransferUrl } from '../common/transfer-url.util';
+import {
+  computeTransferCacheHeaders,
+  ifNoneMatchSatisfied,
+  TRANSFER_CACHE_ENABLED_KEY,
+  TRANSFER_CACHE_TTL_KEY,
+  type TransferCacheDirectories,
+  type TransferCacheScope,
+} from '../common/transfer-cache.util';
 
 @Injectable()
 export class TransferReadService {
@@ -56,6 +64,71 @@ export class TransferReadService {
       3600,
       (v) => parseInt(v, 10),
     );
+  }
+
+  /**
+   * CDN-cache config (P0). Disabled by default → every byte-serving response
+   * still gets an explicit `Cache-Control: private, no-store`.
+   */
+  private async getCacheDirectories(): Promise<TransferCacheDirectories> {
+    const enabled = this.settingsService.getCachedSetting(
+      TRANSFER_CACHE_ENABLED_KEY,
+      false,
+      (v) => v !== 'false',
+    );
+    const ttl = this.settingsService.getCachedSetting(
+      TRANSFER_CACHE_TTL_KEY,
+      3600,
+      (v) => parseInt(v, 10),
+    );
+    const [resolvedEnabled, resolvedTtl] = await Promise.all([enabled, ttl]);
+    return { enabled: resolvedEnabled, ttlSeconds: resolvedTtl };
+  }
+
+  /**
+   * Emits ETag + Cache-Control for a byte response and short-circuits a
+   * matching If-None-Match with a bare 304 (only cacheable routes revalidate).
+   * Returns true when the response is already finished.
+   */
+  private async applyTransferCacheHeaders(
+    res: Response,
+    deps: {
+      downloadInfo: DownloadInfo;
+      scope: TransferCacheScope | undefined;
+      ifNoneMatch: string | undefined;
+    },
+  ): Promise<boolean> {
+    const fileId = deps.downloadInfo.fileId;
+    if (!fileId) return false;
+
+    const scope: TransferCacheScope = deps.scope ?? 'private';
+    const dirs = await this.getCacheDirectories();
+    const headers = computeTransferCacheHeaders(
+      scope,
+      dirs,
+      fileId,
+      deps.downloadInfo.size,
+    );
+    res.setHeader('Cache-Control', headers['Cache-Control']);
+    res.setHeader('ETag', headers.ETag);
+
+    this.logger.debug(
+      `Cache headers applied: fileId=${fileId}, scope=${scope}, enabled=${dirs.enabled}, policy="${headers['Cache-Control']}"`,
+    );
+
+    if (
+      dirs.enabled &&
+      scope === 'signed' &&
+      ifNoneMatchSatisfied(deps.ifNoneMatch, headers.ETag)
+    ) {
+      this.logger.debug(
+        `Cache revalidation hit (304): fileId=${fileId}, etag=${headers.ETag}`,
+      );
+      res.status(304);
+      res.end();
+      return true;
+    }
+    return false;
   }
 
   async generateDownloadToken(
@@ -199,6 +272,7 @@ export class TransferReadService {
   }
 
   getDownloadMetadata(fileRecord: {
+    id: string;
     filename: string;
     size: bigint | number;
     telegramFileId: string | null;
@@ -229,6 +303,7 @@ export class TransferReadService {
 
     if (fileRecord.status === 'buffered' && fileRecord.tempStorageKey) {
       return {
+        fileId: fileRecord.id,
         filename: fileRecord.filename,
         size: fileRecord.size,
         isBuffered: true,
@@ -240,6 +315,7 @@ export class TransferReadService {
 
     if (!fileRecord.isChunked && fileRecord.telegramFileId) {
       return {
+        fileId: fileRecord.id,
         filename: fileRecord.filename,
         size: fileRecord.size,
         telegramFileId: fileRecord.telegramFileId,
@@ -266,6 +342,7 @@ export class TransferReadService {
     }));
 
     return {
+      fileId: fileRecord.id,
       filename: fileRecord.filename,
       size: fileRecord.size,
       isChunked: true,
@@ -397,7 +474,17 @@ export class TransferReadService {
     downloadInfo: DownloadInfo,
     res: Response,
     rangeHeader?: string,
+    cache?: { scope?: TransferCacheScope; ifNoneMatch?: string },
   ) {
+    if (
+      await this.applyTransferCacheHeaders(res, {
+        downloadInfo,
+        scope: cache?.scope,
+        ifNoneMatch: cache?.ifNoneMatch,
+      })
+    ) {
+      return;
+    }
     if (rangeHeader && (await this.isMultiThreadEnabled())) {
       return this.processRangeDownload(downloadInfo, rangeHeader, res);
     }
@@ -558,7 +645,17 @@ export class TransferReadService {
     downloadInfo: DownloadInfo,
     rangeHeader: string | undefined,
     res: Response,
+    cache?: { scope?: TransferCacheScope; ifNoneMatch?: string },
   ) {
+    if (
+      await this.applyTransferCacheHeaders(res, {
+        downloadInfo,
+        scope: cache?.scope,
+        ifNoneMatch: cache?.ifNoneMatch,
+      })
+    ) {
+      return;
+    }
     return this.processRangeRequest(downloadInfo, rangeHeader, res, 'inline');
   }
 

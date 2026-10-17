@@ -161,7 +161,7 @@ func (h *FileHandler) S3GetObject(c echo.Context) error {
 	// The bandwidth lock runs before any byte is written, so a quota rejection
 	// surfaces here as a clean error we can map to a 429 XML body.
 	rangeHeader := c.Request().Header.Get("Range")
-	if streamErr := h.downloader.ServeDownload(c, info, rangeHeader, "inline"); streamErr != nil {
+	if streamErr := h.downloader.ServeDownload(c, info, rangeHeader, "inline", telegram.CacheScopeNone); streamErr != nil {
 		if ble, ok := telegram.AsBandwidthLimitError(streamErr); ok {
 			log.Warn("s3 bandwidth limit", "fileId", obj.FileId, "code", ble.Code, "resetAt", ble.ResetAt)
 			if ble.ResetAt != "" {

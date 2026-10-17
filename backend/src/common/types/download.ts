@@ -10,6 +10,8 @@ interface ChunkInfo {
 }
 
 export interface SingleFileDownloadInfo {
+  /** Owner record id — used for the shared CDN-cache ETag fingerprint. */
+  fileId: string;
   filename: string;
   size: bigint | number;
   telegramFileId: string;
@@ -23,6 +25,8 @@ export interface SingleFileDownloadInfo {
 }
 
 export interface ChunkedDownloadInfo {
+  /** Owner record id — used for the shared CDN-cache ETag fingerprint. */
+  fileId: string;
   filename: string;
   size: bigint | number;
   isChunked: true;
@@ -33,6 +37,8 @@ export interface ChunkedDownloadInfo {
 }
 
 export interface BufferedDownloadInfo {
+  /** Owner record id — used for the shared CDN-cache ETag fingerprint. */
+  fileId: string;
   filename: string;
   size: bigint | number;
   isBuffered: true;

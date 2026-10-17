@@ -205,10 +205,16 @@ func (d *Downloader) GetDownloadInfo(meta *pb.FileMetadata) (*DownloadInfo, erro
 	}, nil
 }
 
-func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHeader string, disposition string) error {
+func (d *Downloader) ServeDownload(c echo.Context, info *DownloadInfo, rangeHeader string, disposition string, scope DownloadCacheScope) error {
 	fileSize := info.Size
 	start := int64(0)
 	end := fileSize - 1
+
+	// CDN-cache headers + conditional-GET revalidation (P0). Applied before the
+	// bandwidth lock so a revalidation 304 never burns a quota check.
+	if d.ApplyCacheHeaders(c.Request().Context(), c.Response().Writer, scope, info.ID, info.Size, c.Request().Header.Get("If-None-Match")) {
+		return nil
+	}
 
 	// Multi-thread (Range) support is admin-gated (ENABLE_MULTI_THREAD_DOWNLOAD).
 	// When disabled, the Range header is ignored — the full file is served and
@@ -481,9 +487,13 @@ func (d *Downloader) streamChunked(ctx context.Context, w io.Writer, info *Downl
 	return nil
 }
 
-func (d *Downloader) ServeStream(w http.ResponseWriter, r *http.Request, meta *pb.FileMetadata) error {
+func (d *Downloader) ServeStream(w http.ResponseWriter, r *http.Request, meta *pb.FileMetadata, scope DownloadCacheScope) error {
 	ctx := r.Context()
 	size := meta.Size
+	// CDN-cache headers + conditional-GET revalidation (P0).
+	if d.ApplyCacheHeaders(ctx, w, scope, meta.Id, size, r.Header.Get("If-None-Match")) {
+		return nil
+	}
 
 	rangeHeader := r.Header.Get("Range")
 	start, end := int64(0), size-1

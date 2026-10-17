@@ -11,6 +11,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	pb "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto"
+	"github.com/realldz/tele-drive/backend-transfer-go/internal/telegram"
 )
 
 func (h *FileHandler) GetCachedMetadata(ctx context.Context, fileID string) (*pb.FileMetadata, error) {
@@ -112,7 +113,7 @@ func (h *FileHandler) DownloadBySigned(c echo.Context) error {
 			return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
 		}
 
-		return h.downloader.ServeStream(c.Response(), c.Request(), meta)
+		return h.downloader.ServeStream(c.Response(), c.Request(), meta, telegram.CacheScopeSigned)
 	}
 
 	// Fallback: crypto-signed token (existing signed URL flow)
@@ -141,7 +142,7 @@ func (h *FileHandler) DownloadBySigned(c echo.Context) error {
 	}
 
 	rangeHeader := c.Request().Header.Get("Range")
-	return h.downloader.ServeDownload(c, info, rangeHeader, "attachment")
+	return h.downloader.ServeDownload(c, info, rangeHeader, "attachment", telegram.CacheScopeSigned)
 }
 
 func (h *FileHandler) CheckSignedToken(c echo.Context) error {
@@ -307,7 +308,7 @@ func (h *FileHandler) StreamByCookie(c echo.Context) error {
 	}
 
 	rangeHeader := c.Request().Header.Get("Range")
-	return h.downloader.ServeDownload(c, info, rangeHeader, "inline")
+	return h.downloader.ServeDownload(c, info, rangeHeader, "inline", telegram.CacheScopePrivate)
 }
 
 func (h *FileHandler) StreamSharedByCookie(c echo.Context) error {
@@ -324,7 +325,7 @@ func (h *FileHandler) StreamSharedByCookie(c echo.Context) error {
 	}
 
 	rangeHeader := c.Request().Header.Get("Range")
-	return h.downloader.ServeDownload(c, info, rangeHeader, "inline")
+	return h.downloader.ServeDownload(c, info, rangeHeader, "inline", telegram.CacheScopeSigned)
 }
 
 func (h *FileHandler) DownloadSharedFile(c echo.Context) error {
@@ -348,7 +349,7 @@ func (h *FileHandler) DownloadSharedFile(c echo.Context) error {
 	}
 
 	rangeHeader := c.Request().Header.Get("Range")
-	return h.downloader.ServeDownload(c, info, rangeHeader, "attachment")
+	return h.downloader.ServeDownload(c, info, rangeHeader, "attachment", telegram.CacheScopeSigned)
 }
 
 func (h *FileHandler) StreamSharedFolderFile(c echo.Context) error {
@@ -372,7 +373,7 @@ func (h *FileHandler) StreamSharedFolderFile(c echo.Context) error {
 	}
 
 	rangeHeader := c.Request().Header.Get("Range")
-	return h.downloader.ServeDownload(c, info, rangeHeader, "inline")
+	return h.downloader.ServeDownload(c, info, rangeHeader, "inline", telegram.CacheScopeSigned)
 }
 
 func (h *FileHandler) PurgeFiles(c echo.Context) error {

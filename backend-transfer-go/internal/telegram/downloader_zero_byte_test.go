@@ -54,7 +54,7 @@ func (d *Downloader) serveDownloadWithRange(rangeHeader string) *httptest.Respon
 	rec := httptest.NewRecorder()
 	c := e.NewContext(req, rec)
 
-	err := d.ServeDownload(c, zeroByteInfo(), rangeHeader, "inline")
+	err := d.ServeDownload(c, zeroByteInfo(), rangeHeader, "inline", CacheScopePrivate)
 	if err != nil {
 		panic(err)
 	}
@@ -121,7 +121,7 @@ func (d *Downloader) serveStreamWithRange(rangeHeader string) *httptest.Response
 		req.Header.Set("Range", rangeHeader)
 	}
 	rec := httptest.NewRecorder()
-	err := d.ServeStream(rec, req, zeroByteMeta())
+	err := d.ServeStream(rec, req, zeroByteMeta(), CacheScopePrivate)
 	if err != nil {
 		panic(err)
 	}

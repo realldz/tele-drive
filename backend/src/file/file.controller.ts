@@ -298,6 +298,7 @@ export class FileController {
       downloadInfo,
       res,
       req.headers.range,
+      { scope: 'signed', ifNoneMatch: req.headers['if-none-match'] },
     );
   }
 
@@ -406,6 +407,7 @@ export class FileController {
       downloadInfo,
       req.headers.range,
       res,
+      { scope: 'signed', ifNoneMatch: req.headers['if-none-match'] },
     );
   }
 
@@ -473,6 +475,7 @@ export class FileController {
       downloadInfo,
       res,
       req.headers.range,
+      { scope: 'signed', ifNoneMatch: req.headers['if-none-match'] },
     );
   }
 
@@ -491,6 +494,7 @@ export class FileController {
       downloadInfo,
       req.headers.range,
       res,
+      { scope: 'signed', ifNoneMatch: req.headers['if-none-match'] },
     );
   }
 
