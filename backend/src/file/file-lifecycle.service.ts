@@ -11,6 +11,7 @@ import { TelegramService } from '../telegram/telegram.service';
 import { REDIS_CLIENT } from '../redis';
 import { TEMP_STORAGE } from '../common/temp-storage';
 import type { TempStorage } from '../common/temp-storage';
+import { CdnPurgeService } from '../common/cdn-purge.service';
 
 @Injectable()
 export class FileLifecycleService {
@@ -22,6 +23,7 @@ export class FileLifecycleService {
     private readonly telegram: TelegramService,
     @Inject(TEMP_STORAGE) private readonly tempStorage: TempStorage,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    private readonly cdnPurge: CdnPurgeService,
   ) {}
 
   private async acquireDeletionLock(userId: string): Promise<() => void> {
@@ -228,6 +230,9 @@ export class FileLifecycleService {
         }
       });
 
+      // Best-effort CDN eviction for shared routes (safe no-op when disabled).
+      await this.cdnPurge.purgeDeletedFiles([fileRecord]);
+
       this.logger.log(
         `File permanently deleted: "${fileRecord.filename}" (fileId: ${id}, freed: ${fileRecord.size} bytes)`,
       );
@@ -272,6 +277,9 @@ export class FileLifecycleService {
           });
         }
       });
+
+      // Best-effort CDN eviction for shared routes (safe no-op when disabled).
+      await this.cdnPurge.purgeDeletedFiles(files);
 
       this.logger.log(
         `Bulk permanently deleted ${files.length} files, freed: ${freedSize} bytes`,
@@ -342,6 +350,9 @@ export class FileLifecycleService {
           });
         }
       });
+
+      // Best-effort CDN eviction for shared routes (safe no-op when disabled).
+      await this.cdnPurge.purgeDeletedFiles(files);
 
       this.logger.log(
         `Emptied trash for userId ${userId}: ${files.length} files, ${folders.length} folders, freed: ${freedSize} bytes`,

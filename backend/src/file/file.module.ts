@@ -6,6 +6,7 @@ import { SettingsModule } from '../settings/settings.module';
 import { AuthModule } from '../auth/auth.module';
 import { NameConflictModule } from '../common/name-conflict.module';
 import { TrashCleanupService } from '../common/trash-cleanup.service';
+import { CdnPurgeService } from '../common/cdn-purge.service';
 import { TransferReadService } from './transfer-read.service';
 import { UploadSessionService } from './upload-session.service';
 import { FileMetadataService } from './file-metadata.service';
@@ -36,6 +37,7 @@ import { GrpcTransferModule } from '../grpc/grpc-transfer.module';
     FileStorageUploadService,
     FileMaintenanceService,
     TrashCleanupService,
+    CdnPurgeService,
     TransferReadService,
     UploadSessionService,
     UploadBufferService,
