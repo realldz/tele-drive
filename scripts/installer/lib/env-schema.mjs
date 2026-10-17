@@ -32,6 +32,28 @@ export const isImageTag = (v) =>
   /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(v || '')
     ? null
     : 'must be a valid image tag (letters, digits, . _ -)';
+// ─── CDN data-plane cache (docs/cdn-cache/README.md) ─────────────────────────
+// These ENV values are seeded ONCE into SystemSetting at backend-core boot;
+// the Go data plane reads them over gRPC from the same table. Blank = default.
+const CDN_CACHE_MODES = ['disabled', 'revalidate', 'full'];
+export const isCdnMode = (v) =>
+  (CDN_CACHE_MODES.includes(v) ? null : 'must be one of: disabled | revalidate | full');
+export const isCdnTtl = (v) => {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 30 && n <= 604800 ? null : 'must be an integer 30..604800';
+};
+export const isCdnWindow = (v) => {
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 && n <= 86400 ? null : 'must be an integer 0..86400';
+};
+// Purge (NestJS core process.env only).
+export const isPurgeProvider = (v) =>
+  (['none', 'cloudflare'].includes(v) ? null : 'must be one of: none | cloudflare');
+export const isZoneId = (v) =>
+  (/^[0-9a-fA-F]{32}$/.test(v) ? null : 'must be the 32-hex-char Cloudflare zone ID');
+export const isOriginUrl = (v) =>
+  (/^https?:\/\/[A-Za-z0-9.-]+(:\d+)?$/.test(v || '') ? null : 'must be an http(s)://origin with no path');
+
 export const isImagePrefix = (v) =>
   /^[a-z0-9][a-z0-9./_-]*$/.test(v || '')
     ? null
@@ -40,6 +62,22 @@ export const isImagePrefix = (v) =>
 const IMAGE_FIELDS = (file) => [
   { key: 'TELE_DRIVE_IMAGE_TAG', file, prompt: 'Image tag to deploy (blank = latest; e.g. sha-1a2b3c4)', validate: isImageTag, required: false },
   { key: 'TELE_DRIVE_IMAGE_PREFIX', file, prompt: 'Image registry prefix (blank = ghcr.io/realldz/tele-drive)', validate: isImagePrefix, required: false },
+];
+
+// CDN data-plane cache (seeded into SystemSetting at core boot) + purge.
+// Optional everywhere: blank keeps the previous value already in the file,
+// or leaves the key unset (= in-code defaults). Cache knobs only matter on
+// hosts that boot a NestJS core/mono process; the Go host reads over gRPC.
+const CDN_CACHE = (file) => [
+  { key: 'CDN_CACHE_MODE', file, prompt: 'Data-plane CDN cache mode (blank = disabled; disabled|revalidate|full)', validate: isCdnMode, required: false },
+  { key: 'CDN_CACHE_TTL_SECONDS', file, prompt: 'CDN cache TTL seconds for full mode (blank = default 3600)', validate: isCdnTtl, required: false },
+  { key: 'CDN_CACHE_WINDOW_SECONDS', file, prompt: 'Token-exp quantization window seconds (blank = off; recommend 300 when caching)', validate: isCdnWindow, required: false },
+];
+const CDN_PURGE = (file) => [
+  { key: 'CDN_PURGE_PROVIDER', file, prompt: 'CDN purge provider (blank = none; none|cloudflare)', validate: isPurgeProvider, required: false },
+  { key: 'CLOUDFLARE_API_TOKEN', file, prompt: 'Cloudflare API token with Zone.Cache Purge (blank = unused)', validate: null, required: false, secret: true },
+  { key: 'CDN_CACHE_PURGE_ZONE', file, prompt: 'Cloudflare zone ID 32-hex (blank = unused)', validate: isZoneId, required: false },
+  { key: 'CDN_CACHE_PURGE_BASE', file, prompt: 'Data-plane origin for purge URLs (blank = PUBLIC_TRANSFER_URL; https://host[:port])', validate: isOriginUrl, required: false },
 ];
 
 // Shared backend/.env fields (all topologies boot the NestJS backend).
@@ -67,12 +105,16 @@ const SCHEMA = {
     REDIS('.env'),
     ...IMAGE_FIELDS('.env'),
     ...BACKEND_FIELDS,
+    ...CDN_CACHE('backend/.env'),
+    ...CDN_PURGE('backend/.env'),
   ],
   scale: [
     ...TELEGRAM_APP('.env'),
     REDIS('.env'),
     ...IMAGE_FIELDS('.env'),
     ...BACKEND_FIELDS,
+    ...CDN_CACHE('backend/.env'),
+    ...CDN_PURGE('backend/.env'),
   ],
   core: [
     { key: 'GO_HOST', file: '.env.core', prompt: 'Go data-plane host (name or IP reachable from core)', validate: req(), required: true },
@@ -81,6 +123,8 @@ const SCHEMA = {
     REDIS('.env.core'),
     ...IMAGE_FIELDS('.env.core'),
     ...BACKEND_FIELDS,
+    ...CDN_CACHE('backend/.env'),
+    ...CDN_PURGE('backend/.env'),
   ],
   go: [
     { key: 'CORE_HOST', file: '.env.transfer', prompt: 'Core control-plane host (name or IP)', validate: req(), required: true },
