@@ -237,6 +237,9 @@ export class BandwidthInterceptor implements NestInterceptor {
     } catch (err: unknown) {
       if (err instanceof Error && err.message.includes('BANDWIDTH_LIMIT')) {
         const [code, resetAt] = err.message.split(':');
+        // Deny must never seed/refresh a CDN cache entry (4xx is not cached by
+        // default, but 'Cache Everything' setups would otherwise keep the entry).
+        res.setHeader('Cache-Control', 'no-store');
         res.setHeader('X-Bandwidth-Reset', resetAt);
         this.logger.warn(
           `[${req.requestId || 'unknown'}] Bandwidth limit exceeded: userId=${userId || 'guest'}, ip=${ip}, estimated=${formatBytes(estimatedSize)}`,

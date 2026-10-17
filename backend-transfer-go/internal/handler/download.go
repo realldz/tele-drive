@@ -104,6 +104,8 @@ func (h *FileHandler) DownloadBySigned(c echo.Context) error {
 			Type   string `json:"type"`
 		}
 		if err := json.Unmarshal([]byte(tokenDataStr), &tokenData); err != nil || tokenData.Type != "download" {
+			// Deny must never seed/refresh a CDN cache entry.
+			c.Response().Header().Set("Cache-Control", "no-store")
 			return c.JSON(http.StatusForbidden, map[string]string{"message": "Invalid token format"})
 		}
 
@@ -121,6 +123,8 @@ func (h *FileHandler) DownloadBySigned(c echo.Context) error {
 	// Fallback: crypto-signed token (existing signed URL flow)
 	payload, err := h.cryptoEngine.VerifySignedToken(token)
 	if err != nil {
+		// Deny must never seed/refresh a CDN cache entry.
+		c.Response().Header().Set("Cache-Control", "no-store")
 		return c.JSON(http.StatusGone, map[string]string{"message": "Invalid or expired download link"})
 	}
 
@@ -151,6 +155,8 @@ func (h *FileHandler) CheckSignedToken(c echo.Context) error {
 	token := c.Param("token")
 	_, err := h.cryptoEngine.VerifySignedToken(token)
 	if err != nil {
+		// Deny must never seed/refresh a CDN cache entry.
+		c.Response().Header().Set("Cache-Control", "no-store")
 		return c.JSON(http.StatusUnauthorized, map[string]string{"message": "Invalid or expired download link"})
 	}
 	return c.NoContent(http.StatusOK)

@@ -206,7 +206,9 @@ func main() {
 	// through to Echo's default handler.
 	defaultErrorHandler := e.HTTPErrorHandler
 	e.HTTPErrorHandler = func(err error, c echo.Context) {
-		if ble, ok := telegram.AsBandwidthLimitError(err); ok {
+		if ble, ok := telegram.AsBandwidthLimitError(err); ok { // Deny must never seed/refresh a CDN cache entry.
+			c.Response().Header().Set("Cache-Control", "no-store")
+
 			if c.Response().Committed {
 				return
 			}

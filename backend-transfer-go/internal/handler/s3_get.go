@@ -168,6 +168,8 @@ func (h *FileHandler) S3GetObject(c echo.Context) error {
 				c.Response().Header().Set("X-Bandwidth-Reset", ble.ResetAt)
 				c.Response().Header().Set("Retry-After", "3600")
 			}
+			// Deny must never seed/refresh a CDN cache entry.
+			c.Response().Header().Set("Cache-Control", "no-store")
 			return s3ErrorXML(c, http.StatusTooManyRequests, "SlowDown",
 				"Bandwidth quota exceeded ("+ble.Code+"). Retry after the quota resets.")
 		}
