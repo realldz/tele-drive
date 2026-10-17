@@ -39,7 +39,7 @@ on:
         description: "Target platforms for buildx (comma separated). Default single-arch amd64."
         type: string
         required: false
-        default: "linux/amd64"
+        default: "linux/amd64,linux/arm64"
 
 # One publish per ref: a newer push supersedes an in-flight build of the same ref.
 concurrency:
@@ -71,9 +71,11 @@ jobs:
         run: |
           set -euo pipefail
           prefix="${REGISTRY}/$(printf '%s' "$OWNER" | tr '[:upper:]' '[:lower:]')/${IMAGE_BASENAME}"
-          # workflow_dispatch can request linux/amd64,linux/arm64; every other
-          # event stays single-arch amd64 (multi-arch means QEMU for the Node builds).
-          platforms="${REQUESTED_PLATFORMS:-linux/amd64}"
+          # workflow_dispatch overrides; every other ref publishes BOTH arches.
+          # arm64 legs run under QEMU (docker/setup-qemu-action below), so the
+          # Node builds (npm ci + nest/next build) are the slow ones — the Go
+          # image cross-compiles on amd64 via TARGETARCH instead of emulating.
+          platforms="${REQUESTED_PLATFORMS:-linux/amd64,linux/arm64}"
           echo "prefix=$prefix" >> "$GITHUB_OUTPUT"
           echo "platforms=$platforms" >> "$GITHUB_OUTPUT"
           echo "Publishing ${prefix}-<service> for ${platforms}"
@@ -82,7 +84,8 @@ jobs:
     name: ${{ matrix.name }}
     needs: prepare
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    # Multi-arch (amd64 + QEMU arm64) needs headroom for npm ci + next build.
+    timeout-minutes: 120
     permissions:
       contents: read
       packages: write
@@ -127,6 +130,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      # QEMU lets the arm64 Node/nginx legs build without an arm64 runner.
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v4

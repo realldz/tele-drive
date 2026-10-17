@@ -1,6 +1,10 @@
 # Build stage
-FROM golang:1.25-alpine AS builder
+# --platform=BUILDPLATFORM + TARGETOS/TARGETARCH cross-compile: multi-arch
+# builds (linux/amd64,linux/arm64) run the compiler on the native amd64
+# runner instead of emulating Go under QEMU (much faster, CGO off anyway).
+FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
 
+ARG TARGETOS TARGETARCH
 WORKDIR /app
 
 # Copy go module files
@@ -11,7 +15,7 @@ RUN go mod download
 COPY . .
 
 # Build the Go application
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o server ./cmd/server
+RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -ldflags="-w -s" -o server ./cmd/server
 
 # Run stage
 FROM alpine:3.19
