@@ -25,7 +25,9 @@ import {
   ifNoneMatchSatisfied,
   TRANSFER_CACHE_MODE_KEY,
   TRANSFER_CACHE_TTL_KEY,
+  TRANSFER_CACHE_WINDOW_KEY,
   type TransferCacheDirectories,
+  quantizeTokenExp,
   type TransferCacheMode,
   type TransferCacheScope,
 } from '../common/transfer-cache.util';
@@ -57,6 +59,26 @@ export class TransferReadService {
       300,
       (v) => parseInt(v, 10),
     );
+  }
+
+  /**
+   * Absolute expiry (unix seconds) for a new signed download URL.
+   * P1: when the CDN cache is enabled, quantize exp to
+   * CDN_CACHE_WINDOW_SECONDS buckets so repeated frontend requests in one
+   * window mint the SAME token (stable CDN cache key). Cache-disabled or
+   * window<=0 falls back to now+ttl.
+   */
+  async getSignedTokenExpiry(ttlSeconds: number): Promise<number> {
+    const nowSec = Math.floor(Date.now() / 1000);
+    const [dirs, window] = await Promise.all([
+      this.getCacheDirectories(),
+      this.settingsService.getCachedSetting(TRANSFER_CACHE_WINDOW_KEY, 0, (v) =>
+        parseInt(v, 10),
+      ),
+    ]);
+    const exp = nowSec + ttlSeconds;
+    if (dirs.mode === 'disabled' || window <= 0) return exp;
+    return quantizeTokenExp(exp, window);
   }
 
   async getStreamTtl(): Promise<number> {
@@ -154,13 +176,15 @@ export class TransferReadService {
     if (!file) throw new NotFoundException('File not found');
 
     const ttl = await this.getDownloadTtl();
+    const exp = await this.getSignedTokenExpiry(ttl);
     const token = this.cryptoService.createSignedToken(
       fileId,
       'u',
       ttl,
       userId,
+      exp,
     );
-    const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+    const expiresAt = new Date(exp * 1000).toISOString();
 
     this.logger.debug(
       `Download token generated: fileId=${fileId}, userId=${userId}, ttl=${ttl}s`,
@@ -183,8 +207,15 @@ export class TransferReadService {
     }
 
     const ttl = await this.getDownloadTtl();
-    const token = this.cryptoService.createSignedToken(file.id, 's', ttl);
-    const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+    const exp = await this.getSignedTokenExpiry(ttl);
+    const token = this.cryptoService.createSignedToken(
+      file.id,
+      's',
+      ttl,
+      undefined,
+      exp,
+    );
+    const expiresAt = new Date(exp * 1000).toISOString();
 
     this.logger.debug(
       `Share download token generated: shareToken=${shareToken}, fileId=${file.id}, ttl=${ttl}s`,

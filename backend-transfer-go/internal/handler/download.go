@@ -55,12 +55,13 @@ func (h *FileHandler) GenerateDownloadToken(c echo.Context) error {
 	}
 
 	ttl := h.downloadURLTTL(c.Request().Context())
-	token, err := h.cryptoEngine.CreateSignedToken(id, "u", ttl, userID)
+	exp := h.downloader.QuantizeTokenExp(c.Request().Context(), time.Now().Unix()+ttl)
+	token, err := h.cryptoEngine.CreateSignedTokenWithExp(id, "u", exp, userID)
 	if err != nil {
 		return err
 	}
 
-	expiresAt := formatISO8601(time.Now().Add(time.Duration(ttl) * time.Second))
+	expiresAt := formatISO8601(time.Unix(exp, 0))
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"url":       fmt.Sprintf("/files/d/%s", token),
 		"expiresAt": expiresAt,
@@ -76,12 +77,13 @@ func (h *FileHandler) GenerateShareDownloadToken(c echo.Context) error {
 	}
 
 	ttl := h.downloadURLTTL(c.Request().Context())
-	signedToken, err := h.cryptoEngine.CreateSignedToken(meta.Id, "s", ttl, "")
+	exp := h.downloader.QuantizeTokenExp(c.Request().Context(), time.Now().Unix()+ttl)
+	signedToken, err := h.cryptoEngine.CreateSignedTokenWithExp(meta.Id, "s", exp, "")
 	if err != nil {
 		return err
 	}
 
-	expiresAt := formatISO8601(time.Now().Add(time.Duration(ttl) * time.Second))
+	expiresAt := formatISO8601(time.Unix(exp, 0))
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"url":       fmt.Sprintf("/files/d/%s", signedToken),
 		"expiresAt": expiresAt,

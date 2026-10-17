@@ -6,6 +6,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http/httptest"
+	"strconv"
 	"testing"
 
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/settings"
@@ -57,8 +58,8 @@ func TestApplyCacheHeadersModes(t *testing.T) {
 	}{
 		{"disabled signed", CacheModeDisabled, CacheScopeSigned, "", "private, no-store", false},
 		{"disabled private", CacheModeDisabled, CacheScopePrivate, "", "private, no-store", false},
-		{"revalidate private bypass", CacheModeRevalidate, CacheScopePrivate, "", "private, no-store", false},
 		{"revalidate signed", CacheModeRevalidate, CacheScopeSigned, "", "no-cache", false},
+		{"revalidate private bypass", CacheModeRevalidate, CacheScopePrivate, "", "private, no-store", false},
 		{"full signed", CacheModeFull, CacheScopeSigned, "", "public, max-age=3600", false},
 		{"full private bypass", CacheModeFull, CacheScopePrivate, "", "private, no-store", false},
 		{"revalidate 304", CacheModeRevalidate, CacheScopeSigned, etag, "no-cache", true},
@@ -67,7 +68,7 @@ func TestApplyCacheHeadersModes(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			d := &Downloader{}
-			d.settingsResolver = newCdnFakeResolver(tc.mode)
+			d.settingsResolver = newCdnFakeWindowResolver(tc.mode, 0)
 
 			rec := httptest.NewRecorder()
 			shortCircuited := d.ApplyCacheHeaders(
@@ -94,7 +95,7 @@ func TestApplyCacheHeadersModes(t *testing.T) {
 
 func TestApplyCacheHeadersSkipsS3Scope(t *testing.T) {
 	d := &Downloader{}
-	d.settingsResolver = newCdnFakeResolver(CacheModeFull)
+	d.settingsResolver = newCdnFakeWindowResolver(CacheModeFull, 0)
 
 	rec := httptest.NewRecorder()
 	shortCircuited := d.ApplyCacheHeaders(
@@ -129,20 +130,62 @@ func TestClampCacheTTL(t *testing.T) {
 	}
 }
 
-// cdnFakeFetcher satisfies settings.settingsFetcher from the test package side.
-type cdnFakeFetcher struct {
-	mode DownloadCacheMode
+func TestQuantizeTokenExp(t *testing.T) {
+	// window=1000, mode full → ceiling bucket.
+	d := &Downloader{}
+	d.settingsResolver = newCdnFakeWindowResolver(CacheModeFull, 1000)
+	if got := d.QuantizeTokenExp(t.Context(), 1999); got != 2000 {
+		t.Errorf("got %d, want 2000", got)
+	}
+	if got := d.QuantizeTokenExp(t.Context(), 2000); got != 2000 {
+		t.Errorf("exact boundary: got %d, want 2000", got)
+	}
+
+	// window=0 → off.
+	d2 := &Downloader{}
+	d2.settingsResolver = newCdnFakeWindowResolver(CacheModeFull, 0)
+	if got := d2.QuantizeTokenExp(t.Context(), 1999); got != 1999 {
+		t.Errorf("window=0: got %d, want raw exp 1999", got)
+	}
+
+	// mode disabled → off even with a window.
+	d3 := &Downloader{}
+	d3.settingsResolver = newCdnFakeWindowResolver(CacheModeDisabled, 1000)
+	if got := d3.QuantizeTokenExp(t.Context(), 1999); got != 1999 {
+		t.Errorf("disabled mode: got %d, want raw exp", got)
+	}
+
+	// revalidate mode honors the window too.
+	d4 := &Downloader{}
+	d4.settingsResolver = newCdnFakeWindowResolver(CacheModeRevalidate, 1000)
+	if got := d4.QuantizeTokenExp(t.Context(), 1); got != 1000 {
+		t.Errorf("revalidate: got %d, want 1000", got)
+	}
+
+	// no resolver → off.
+	plain := &Downloader{}
+	if got := plain.QuantizeTokenExp(t.Context(), 1999); got != 1999 {
+		t.Errorf("nil resolver: got %d, want raw exp", got)
+	}
 }
 
-func (f *cdnFakeFetcher) GetSystemSettings(_ context.Context, _ []string) (map[string]string, error) {
+// cdnFakeWindowFetcher satisfies settings.settingsFetcher from the test
+// package side, exposing CDN_CACHE_MODE and CDN_CACHE_WINDOW_SECONDS.
+type cdnFakeWindowFetcher struct {
+	mode   DownloadCacheMode
+	window int
+}
+
+func (f *cdnFakeWindowFetcher) GetSystemSettings(_ context.Context, _ []string) (map[string]string, error) {
 	out := map[string]string{}
 	if f.mode != CacheModeDisabled {
 		out[string(cacheModeSettingKey)] = string(f.mode)
 	}
+	out["CDN_CACHE_WINDOW_SECONDS"] = strconv.Itoa(f.window)
 	return out, nil
 }
 
-func newCdnFakeResolver(mode DownloadCacheMode) *settings.Resolver {
+func newCdnFakeWindowResolver(mode DownloadCacheMode, window int) *settings.Resolver {
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return settings.NewResolver(&cdnFakeFetcher{mode: mode}, logger)
+	return settings.NewResolver(&cdnFakeWindowFetcher{mode: mode, window: window}, logger)
 }

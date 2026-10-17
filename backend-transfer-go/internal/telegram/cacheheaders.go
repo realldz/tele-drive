@@ -173,3 +173,23 @@ func (d *Downloader) ApplyCacheHeaders(
 	return false
 }
 
+
+// QuantizeTokenExp (P1): when CDN caching is enabled, snap the signed-token
+// expiry up to CDN_CACHE_WINDOW_SECONDS buckets so repeated frontend requests
+// inside one window mint the SAME token string — a stable CDN cache key.
+// Off (returns exp unchanged) when mode is disabled or the window setting is
+// <= 0. Cost: a token may live up to W-1 s beyond the nominal TTL.
+func (d *Downloader) QuantizeTokenExp(ctx context.Context, exp int64) int64 {
+	if d.settingsResolver == nil {
+		return exp
+	}
+	mode, _ := d.cdnCacheConfig(ctx)
+	if mode == CacheModeDisabled {
+		return exp
+	}
+	window := d.settingsResolver.GetInt(ctx, "CDN_CACHE_WINDOW_SECONDS", 0)
+	if window <= 0 {
+		return exp
+	}
+	return ((exp + int64(window) - 1) / int64(window)) * int64(window)
+}

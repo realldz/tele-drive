@@ -163,7 +163,14 @@ func (e *CryptoEngine) hmacSign(data string) string {
 
 // CreateSignedToken generates a base64url-encoded signed download token
 func (e *CryptoEngine) CreateSignedToken(fileID string, tokenType string, ttlSeconds int64, userID string) (string, error) {
-	exp := time.Now().Unix() + ttlSeconds
+	return e.CreateSignedTokenWithExp(fileID, tokenType, time.Now().Unix()+ttlSeconds, userID)
+}
+
+// CreateSignedTokenWithExp generates a signed download token with an explicit
+// absolute expiry. Handlers quantize exp into CDN_CACHE_WINDOW_SECONDS buckets
+// (P1) so repeated mints inside one window share the token string - a stable
+// CDN cache key per URL.
+func (e *CryptoEngine) CreateSignedTokenWithExp(fileID string, tokenType string, exp int64, userID string) (string, error) {
 	var sigStr string
 	if userID != "" {
 		sigStr = fmt.Sprintf("%s:%d:%s:%s", fileID, exp, tokenType, userID)

@@ -192,15 +192,18 @@ export class CryptoService {
   }
 
   /**
-   * Tạo signed download token (base64url-encoded JSON)
+   * Tạo signed download token (base64url-encoded JSON).
+   * expSeconds (optional, absolute) overrides now+ttl — caller uses it to pass
+   * the P1 CDN-cache-quantized expiry so URLs stay stable cache keys.
    */
   createSignedToken(
     fileId: string,
     type: 'u' | 's' | 'sf',
     ttlSeconds: number,
     userId?: string,
+    expSeconds?: number,
   ): string {
-    const exp = Math.floor(Date.now() / 1000) + ttlSeconds;
+    const exp = expSeconds ?? Math.floor(Date.now() / 1000) + ttlSeconds;
     const sigStr = userId
       ? `${fileId}:${exp}:${type}:${userId}`
       : `${fileId}:${exp}:${type}`;

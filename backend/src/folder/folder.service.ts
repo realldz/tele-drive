@@ -1390,8 +1390,15 @@ export class FolderService {
       throw new BadRequestException('File is not part of this shared link');
 
     const ttl = await this.transferReadService.getDownloadTtl();
-    const token = this.cryptoService.createSignedToken(fileId, 'sf', ttl);
-    const expiresAt = new Date(Date.now() + ttl * 1000).toISOString();
+    const exp = await this.transferReadService.getSignedTokenExpiry(ttl);
+    const token = this.cryptoService.createSignedToken(
+      fileId,
+      'sf',
+      ttl,
+      undefined,
+      exp,
+    );
+    const expiresAt = new Date(exp * 1000).toISOString();
 
     this.logger.debug(
       `Share folder download token generated: shareToken=${shareToken}, fileId=${fileId}, ttl=${ttl}s`,

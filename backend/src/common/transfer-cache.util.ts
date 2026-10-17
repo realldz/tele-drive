@@ -100,3 +100,22 @@ export function computeTransferCacheHeaders(
     ETag: etag,
   };
 }
+
+export const TRANSFER_CACHE_WINDOW_KEY = 'CDN_CACHE_WINDOW_SECONDS';
+
+/**
+ * P1: raw exp = now + ttl mints a fresh token per second, so every signed-URL
+ * request produces a different value and the CDN cache key churns. Quantize
+ * the absolute exp to the window bucket: two URLs minted inside the same
+ * window share the token string (and therefore the same cache key). Cost: the
+ * token lives up to W-1 s beyond the nominal TTL. Only applied when the CDN
+ * cache mode is not 'disabled'.
+ */
+export function quantizeTokenExp(
+  expSeconds: number,
+  windowSeconds: number,
+): number {
+  const w = Number.isFinite(windowSeconds) ? Math.floor(windowSeconds) : 0;
+  if (w <= 0) return expSeconds;
+  return Math.ceil(expSeconds / w) * w;
+}

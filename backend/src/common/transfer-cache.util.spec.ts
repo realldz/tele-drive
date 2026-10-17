@@ -2,6 +2,7 @@ import {
   clampTransferCacheTtl,
   computeTransferCacheHeaders,
   ifNoneMatchSatisfied,
+  quantizeTokenExp,
   transferCacheETag,
 } from './transfer-cache.util';
 
@@ -101,5 +102,19 @@ describe('transfer-cache.util', () => {
       expect(clampTransferCacheTtl(10)).toBe(30);
       expect(clampTransferCacheTtl(10 ** 9)).toBe(7 * 24 * 60 * 60);
     });
+  });
+});
+
+describe('quantizeTokenExp', () => {
+  it('snaps exp up to the window bucket', () => {
+    expect(quantizeTokenExp(1999, 1000)).toBe(2000);
+    expect(quantizeTokenExp(2000, 1000)).toBe(2000);
+    expect(quantizeTokenExp(2001, 1000)).toBe(3000);
+  });
+
+  it('passes through when the window is off', () => {
+    expect(quantizeTokenExp(1999, 0)).toBe(1999);
+    expect(quantizeTokenExp(1999, -5)).toBe(1999);
+    expect(quantizeTokenExp(1999, Number.NaN)).toBe(1999);
   });
 });
