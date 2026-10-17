@@ -39,6 +39,44 @@ export interface TransferCacheDirectories {
 export const TRANSFER_CACHE_MODE_KEY = 'CDN_CACHE_MODE';
 export const TRANSFER_CACHE_TTL_KEY = 'CDN_CACHE_TTL_SECONDS';
 
+/**
+ * Tier-2 (public S3 route): optional mode override for
+ * `GET /public/:userId/:bucket/*key`. `inherit` (default) uses the global
+ * `CDN_CACHE_MODE`; explicit values let operators run `revalidate` for the
+ * per-user signed routes and `full` for the immutable public buckets.
+ */
+export const PUBLIC_S3_CACHE_MODE_KEY = 'CDN_CACHE_MODE_PUBLIC_S3';
+export type PublicS3CacheOverride =
+  | 'inherit'
+  | 'disabled'
+  | 'revalidate'
+  | 'full';
+
+/**
+ * Resolves the effective mode for the public-S3 route. Returns `null` when the
+ * override value is garbage (caller falls back to the global mode).
+ */
+export function resolvePublicS3Mode(
+  override: string | undefined | null,
+  baseMode: TransferCacheMode,
+): TransferCacheMode | null {
+  if (
+    override === undefined ||
+    override === null ||
+    override === 'inherit' ||
+    override === ''
+  ) {
+    return null;
+  }
+  if (
+    override === 'disabled' ||
+    override === 'revalidate' ||
+    override === 'full'
+  ) {
+    return override;
+  }
+  return null;
+}
 /** Guard against absurd values slipping in through the settings table. */
 export const TRANSFER_CACHE_MIN_TTL = 30;
 export const TRANSFER_CACHE_MAX_TTL = 7 * 24 * 60 * 60;

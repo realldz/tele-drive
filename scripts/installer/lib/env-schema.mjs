@@ -36,6 +36,9 @@ export const isImageTag = (v) =>
 // These ENV values are seeded ONCE into SystemSetting at backend-core boot;
 // the Go data plane reads them over gRPC from the same table. Blank = default.
 const CDN_CACHE_MODES = ['disabled', 'revalidate', 'full'];
+const CDN_PUBLIC_S3_MODES = ['inherit', ...CDN_CACHE_MODES];
+export const isCdnPublicS3Mode = (v) =>
+  (CDN_PUBLIC_S3_MODES.includes(v) ? null : 'must be one of: inherit | disabled | revalidate | full');
 export const isCdnMode = (v) =>
   (CDN_CACHE_MODES.includes(v) ? null : 'must be one of: disabled | revalidate | full');
 export const isCdnTtl = (v) => {
@@ -72,6 +75,7 @@ const CDN_CACHE = (file) => [
   { key: 'CDN_CACHE_MODE', file, prompt: 'Data-plane CDN cache mode (blank = disabled; disabled|revalidate|full)', validate: isCdnMode, required: false },
   { key: 'CDN_CACHE_TTL_SECONDS', file, prompt: 'CDN cache TTL seconds for full mode (blank = default 3600)', validate: isCdnTtl, required: false },
   { key: 'CDN_CACHE_WINDOW_SECONDS', file, prompt: 'Token-exp quantization window seconds (blank = off; recommend 300 when caching)', validate: isCdnWindow, required: false },
+  { key: 'CDN_CACHE_MODE_PUBLIC_S3', file, prompt: 'Public S3 route cache mode override (blank = inherit CDN_CACHE_MODE)', validate: isCdnPublicS3Mode, required: false },
 ];
 const CDN_PURGE = (file) => [
   { key: 'CDN_PURGE_PROVIDER', file, prompt: 'CDN purge provider (blank = none; none|cloudflare)', validate: isPurgeProvider, required: false },

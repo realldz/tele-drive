@@ -198,7 +198,47 @@ export class FileLifecycleService {
       `File deleted: "${fileRecord.filename}" (fileId: ${id}, chunks: ${fileRecord.chunks.length}, freed: ${fileRecord.size} bytes)`,
     );
   }
-
+  /**
+   * Tier-2: computes the /public/<userId>/<bucket>/<path> URL path for CDN purge
+   * when the deleted file lived under a root folder with s3PublicAccess=true.
+   * Returns null otherwise. Encodes each path segment (folder names become
+   * bucket/object keys on the S3 surface), capped at a sane ancestor depth.
+   */
+  private async buildPublicS3Path(fileRecord: {
+    userId: string;
+    folderId: string | null;
+    filename: string;
+  }): Promise<string | null> {
+    if (!fileRecord.folderId) return null;
+    const segments: string[] = [];
+    let folderId: string | null = fileRecord.folderId;
+    let rootPublic = false;
+    let depth = 0;
+    while (folderId && depth++ < 32) {
+      const folder = (await this.prisma.folder.findUnique({
+        where: { id: folderId },
+        select: { name: true, parentId: true, s3PublicAccess: true },
+      })) as {
+        name: string;
+        parentId: string | null;
+        s3PublicAccess: boolean;
+      } | null;
+      if (!folder) return null;
+      segments.unshift(folder.name);
+      if (!folder.parentId) {
+        rootPublic = folder.s3PublicAccess;
+        break;
+      }
+      folderId = folder.parentId;
+    }
+    if (depth > 32 && folderId) return null;
+    if (!rootPublic) return null;
+    const encoded = [
+      ...segments.map(encodeURIComponent),
+      encodeURIComponent(fileRecord.filename),
+    ].join('/');
+    return '/public/' + fileRecord.userId + '/' + encoded;
+  }
   async permanentDelete(id: string, userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -230,8 +270,13 @@ export class FileLifecycleService {
         }
       });
 
-      // Best-effort CDN eviction for shared routes (safe no-op when disabled).
-      await this.cdnPurge.purgeDeletedFiles([fileRecord]);
+      // Best-effort CDN eviction for shared + public-S3 routes (no-op when disabled).
+      await this.cdnPurge.purgeDeletedFiles([
+        {
+          ...fileRecord,
+          publicS3Path: await this.buildPublicS3Path(fileRecord),
+        },
+      ]);
 
       this.logger.log(
         `File permanently deleted: "${fileRecord.filename}" (fileId: ${id}, freed: ${fileRecord.size} bytes)`,
@@ -278,8 +323,14 @@ export class FileLifecycleService {
         }
       });
 
-      // Best-effort CDN eviction for shared routes (safe no-op when disabled).
-      await this.cdnPurge.purgeDeletedFiles(files);
+      // Best-effort CDN eviction for shared + public-S3 routes (no-op when disabled).
+      const purgeTargets = await Promise.all(
+        files.map(async (f) => ({
+          ...f,
+          publicS3Path: await this.buildPublicS3Path(f),
+        })),
+      );
+      await this.cdnPurge.purgeDeletedFiles(purgeTargets);
 
       this.logger.log(
         `Bulk permanently deleted ${files.length} files, freed: ${freedSize} bytes`,
@@ -351,8 +402,14 @@ export class FileLifecycleService {
         }
       });
 
-      // Best-effort CDN eviction for shared routes (safe no-op when disabled).
-      await this.cdnPurge.purgeDeletedFiles(files);
+      // Best-effort CDN eviction for shared + public-S3 routes (no-op when disabled).
+      const purgeTargets = await Promise.all(
+        files.map(async (f) => ({
+          ...f,
+          publicS3Path: await this.buildPublicS3Path(f),
+        })),
+      );
+      await this.cdnPurge.purgeDeletedFiles(purgeTargets);
 
       this.logger.log(
         `Emptied trash for userId ${userId}: ${files.length} files, ${folders.length} folders, freed: ${freedSize} bytes`,

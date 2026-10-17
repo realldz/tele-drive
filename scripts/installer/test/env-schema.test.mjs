@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   isExact32, isNumeric, isPositiveInt, isIpv4, isFilename, isHostname,
-  fieldsFor, validateValues, isCdnMode, isCdnTtl, isCdnWindow, isPurgeProvider, isZoneId, isOriginUrl,
+  fieldsFor, validateValues, isCdnMode, isCdnTtl, isCdnWindow, isPurgeProvider, isZoneId, isOriginUrl, isCdnPublicS3Mode,
 } from '../lib/env-schema.mjs';
 
 test('isExact32 accepts exactly 32 chars, rejects otherwise', () => {
@@ -161,4 +161,16 @@ test('validateValues accepts a full CDN set and rejects bad mode', () => {
   }), []);
   assert.ok(validateValues('mono', { ...base, CDN_CACHE_MODE: 'elite' })
     .some((e) => e.startsWith('CDN_CACHE_MODE')));
+});
+test('isCdnPublicS3Mode accepts inherit and the cache modes', () => {
+  assert.equal(isCdnPublicS3Mode('inherit'), null);
+  assert.equal(isCdnPublicS3Mode('full'), null);
+  assert.equal(isCdnPublicS3Mode('revalidate'), null);
+  assert.equal(isCdnPublicS3Mode('disabled'), null);
+});
+
+test('isCdnPublicS3Mode rejects garbage and whitespace-padded values', () => {
+  assert.notEqual(isCdnPublicS3Mode('inherit '), null);
+  assert.notEqual(isCdnPublicS3Mode('url'), null);
+  assert.notEqual(isCdnPublicS3Mode(''), null);
 });

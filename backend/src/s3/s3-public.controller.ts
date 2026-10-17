@@ -21,6 +21,10 @@ import type { Response } from 'express';
 import * as crypto from 'crypto';
 import { parseMaxKeys, resolveListStartAfter } from './s3-list-pagination.util';
 import { S3_STATUS_MAP, splitS3ErrorCode } from './s3-error.util';
+import {
+  ifNoneMatchSatisfied,
+  transferCacheETag,
+} from '../common/transfer-cache.util';
 
 /**
  * S3PublicController — S3 public access (không cần AWS Signature V4).
@@ -167,6 +171,20 @@ export class S3PublicController {
       res.setHeader('ETag', etag);
       res.setHeader('Last-Modified', lastModified);
       res.setHeader('Accept-Ranges', 'bytes');
+      // RFC 7232 HEAD revalidation: mirror the GET behavior so CDN conditional
+      // HEADs (Cloudflare) get a 304 instead of a full header recheck. Both the
+      // stored DB etag and the td- ETag are accepted as validators.
+      const ifNoneMatch = req.headers['if-none-match'];
+      const tdEtag = transferCacheETag(file.id, file.size);
+      if (
+        ifNoneMatchSatisfied(ifNoneMatch, etag) ||
+        ifNoneMatchSatisfied(ifNoneMatch, tdEtag)
+      ) {
+        res.status(304);
+        res.setHeader('ETag', etag);
+        res.end();
+        return;
+      }
       res.status(200).end();
     } catch (err: unknown) {
       this.logger.warn(`S3 Public HeadObject not found: s3://${bucket}/${key}`);
@@ -182,7 +200,6 @@ export class S3PublicController {
         );
     }
   }
-
   // ---------------------------------------------------------------------------
   // GET /s3/public/:userId/:bucket/*key → GetObject
   // ---------------------------------------------------------------------------
@@ -227,9 +244,23 @@ export class S3PublicController {
           downloadInfo,
           rangeHeader,
           res,
+          {
+            scope: 'signed',
+            ifNoneMatch: req.headers['if-none-match'],
+            publicS3: true,
+          },
         );
       }
-      return this.transferReadService.processDownload(downloadInfo, res);
+      return this.transferReadService.processDownload(
+        downloadInfo,
+        res,
+        undefined,
+        {
+          scope: 'signed',
+          ifNoneMatch: req.headers['if-none-match'],
+          publicS3: true,
+        },
+      );
     } catch (err: unknown) {
       this.logger.error(
         `S3 Public GetObject error: ${err instanceof Error ? err.message : String(err)}`,

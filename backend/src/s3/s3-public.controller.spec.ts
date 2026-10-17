@@ -21,7 +21,19 @@ describe('S3PublicController', () => {
       ...overrides,
     };
 
-    const controller = new S3PublicController(s3Service as never, {} as never);
+    const transferReadService = {
+      getDownloadMetadata: jest
+        .fn<unknown, unknown[]>()
+        .mockImplementation((...args: unknown[]) => { const file = args[0] as { id: string; size: number }; return { fileId: file.id, size: file.size }; }),
+      processStream: jest.fn<Promise<unknown>, unknown[]>().mockResolvedValue(undefined),
+      processDownload: jest.fn<Promise<unknown>, unknown[]>().mockResolvedValue(undefined),
+    };
+
+    const controller = new S3PublicController(
+      s3Service as never,
+      transferReadService as never,
+    );
+
 
     const res = {
       status: jest.fn().mockReturnThis(),
@@ -311,5 +323,104 @@ describe('S3PublicController', () => {
         'NoSuchBucket',
       );
     });
+  });
+
+});
+describe('public-S3 byte route cache wiring (Tier-2)', () => {
+  const fileRecord = {
+    id: 'fileid-1',
+    size: 2048,
+    mimeType: 'application/octet-stream',
+    etag: '"abc123"',
+    createdAt: new Date('2024-01-01T00:00:00Z'),
+  };
+
+  const buildByteEnv = () => {
+    const s3Service = {
+      findObjectPublic: jest
+        .fn<Promise<unknown>, unknown[]>()
+        .mockResolvedValue(fileRecord),
+      buildErrorXml: jest.fn(
+        (code: string, message: string) => `<Error>${code}:${message}</Error>`,
+      ),
+    };
+    const transferReadService = {
+      getDownloadMetadata: jest
+        .fn<unknown, unknown[]>()
+        .mockImplementation((...args: unknown[]) => { const f = args[0] as { id: string; size: number }; return { fileId: f.id, size: f.size }; }),
+      processStream: jest
+        .fn<Promise<unknown>, unknown[]>()
+        .mockResolvedValue(undefined),
+      processDownload: jest
+        .fn<Promise<unknown>, unknown[]>()
+        .mockResolvedValue(undefined),
+    };
+    const controller = new S3PublicController(
+      s3Service as never,
+      transferReadService as never,
+    );
+    const res = {
+      status: jest.fn().mockReturnThis(),
+      setHeader: jest.fn().mockReturnThis(),
+      send: jest.fn().mockReturnThis(),
+      end: jest.fn().mockReturnThis(),
+    };
+    return { s3Service, transferReadService, controller, res };
+  };
+
+  const byteRequest = (headers: Record<string, string> = {}) =>
+    ({
+      path: '/public/userX/bucketY/folder/file.bin',
+      params: { userId: 'userX', bucket: 'bucketY', key: 'folder/file.bin' },
+      headers,
+      query: {},
+    }) as never;
+
+  const KEY = { userId: 'userX', bucket: 'bucketY', '0': 'folder/file.bin' };
+
+  it('full-byte GET: processDownload sees the signed publicS3 cache hint', async () => {
+    const { controller, transferReadService, res } = buildByteEnv();
+    await controller.getObject(
+      'userX',
+      'bucketY',
+      KEY as never,
+      byteRequest(),
+      res as never,
+    );
+    expect(transferReadService.processDownload).toHaveBeenCalledWith(
+      expect.objectContaining({ fileId: 'fileid-1', size: 2048 }),
+      res,
+      undefined,
+      { scope: 'signed', ifNoneMatch: undefined, publicS3: true },
+    );
+  });
+
+  it('range GET: processStream sees the signed publicS3 cache hint', async () => {
+    const { controller, transferReadService, res } = buildByteEnv();
+    await controller.getObject(
+      'userX',
+      'bucketY',
+      KEY as never,
+      byteRequest({ range: 'bytes=0-99' }),
+      res as never,
+    );
+    expect(transferReadService.processStream).toHaveBeenCalledWith(
+      expect.objectContaining({ fileId: 'fileid-1', size: 2048 }),
+      'bytes=0-99',
+      res,
+      { scope: 'signed', ifNoneMatch: undefined, publicS3: true },
+    );
+  });
+
+  it('conditional HEAD matching the stored etag short-circuits 304', async () => {
+    const { controller, res } = buildByteEnv();
+    await controller.headObject(
+      'userX',
+      'bucketY',
+      KEY as never,
+      byteRequest({ 'if-none-match': '"abc123"' }),
+      res as never,
+    );
+    expect(res.status).toHaveBeenCalledWith(304);
   });
 });

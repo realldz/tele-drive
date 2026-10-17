@@ -4,6 +4,7 @@ import {
   ifNoneMatchSatisfied,
   quantizeTokenExp,
   transferCacheETag,
+  resolvePublicS3Mode,
 } from './transfer-cache.util';
 
 describe('transfer-cache.util', () => {
@@ -102,6 +103,27 @@ describe('transfer-cache.util', () => {
       expect(clampTransferCacheTtl(10)).toBe(30);
       expect(clampTransferCacheTtl(10 ** 9)).toBe(7 * 24 * 60 * 60);
     });
+  });
+});
+
+
+describe('resolvePublicS3Mode', () => {
+  it('inherit / empty falls back to the base mode (null signal)', () => {
+    expect(resolvePublicS3Mode('inherit', 'revalidate')).toBeNull();
+    expect(resolvePublicS3Mode('', 'revalidate')).toBeNull();
+    expect(resolvePublicS3Mode(undefined, 'revalidate')).toBeNull();
+    expect(resolvePublicS3Mode(null, 'revalidate')).toBeNull();
+  });
+
+  it('explicit overrides win over the base mode', () => {
+    expect(resolvePublicS3Mode('full', 'disabled')).toBe('full');
+    expect(resolvePublicS3Mode('revalidate', 'disabled')).toBe('revalidate');
+    expect(resolvePublicS3Mode('disabled', 'full')).toBe('disabled');
+  });
+
+  it('garbage values fall back to the base mode', () => {
+    expect(resolvePublicS3Mode('bumblebee', 'revalidate')).toBeNull();
+    expect(resolvePublicS3Mode('FULL', 'revalidate')).toBeNull();
   });
 });
 

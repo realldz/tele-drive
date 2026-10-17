@@ -57,17 +57,27 @@ export class CdnPurgeService {
    * must not fail the deletion itself.
    */
   async purgeDeletedFiles(
-    files: Array<{ id: string; shareToken?: string | null }>,
+    files: Array<{
+      id: string;
+      shareToken?: string | null;
+      /** Tier-2: /public/<userId>/<rootFolder>/<path> when the file lived in a
+       * public folder chain; lifecycle computes it, purge stays DB-free. */
+      publicS3Path?: string | null;
+    }>,
   ): Promise<void> {
     if (this.provider === 'none') return;
     const tokens = files
       .map((f) => f.shareToken)
       .filter((t): t is string => !!t);
     if (tokens.length === 0) return;
+    const publicPaths = files
+      .map((f) => f.publicS3Path)
+      .filter((p): p is string => !!p);
+    if (tokens.length === 0 && publicPaths.length === 0) return;
 
     if (!this.baseUrl) {
       this.logger.warn(
-        `CDN_PURGE_PROVIDER=${this.provider} but no CDN_CACHE_PURGE_BASE/PUBLIC_TRANSFER_URL set — skipping purge of ${tokens.length} shared URL(s)`,
+        `CDN_PURGE_PROVIDER=${this.provider} but no CDN_CACHE_PURGE_BASE/PUBLIC_TRANSFER_URL set — skipping purge of ${tokens.length + publicPaths.length} URL(s)`,
       );
       return;
     }
@@ -80,11 +90,25 @@ export class CdnPurgeService {
         `${this.baseUrl}/files/share/stream/${token}`,
       );
     }
+    for (const path of publicPaths) {
+      urls.push(`${this.baseUrl}${path}`);
+    }
 
-    this.logger.log(
-      `CDN purge (${this.provider}): evicting ${urls.length} URL(s) for ${tokens.length} deleted shared file(s)`,
+    await this.flush(
+      urls,
+      `for ${tokens.length} shared + ${publicPaths.length} public-S3 deleted file(s)`,
     );
+  }
 
+  /**
+   * Purges `urls` in Cloudflare-sized batches. Shared error handling so
+   * multiple purge call sites log consistently (best-effort, never throws).
+   */
+  private async flush(urls: string[], label: string): Promise<void> {
+    if (urls.length === 0) return;
+    this.logger.log(
+      `CDN purge (${this.provider}): evicting ${urls.length} URL(s) ${label}`,
+    );
     for (const batch of this.chunk(urls, CdnPurgeService.CF_MAX_URLS)) {
       try {
         await this.purgeCloudflare(batch);
@@ -95,7 +119,6 @@ export class CdnPurgeService {
       }
     }
   }
-
   private async purgeCloudflare(files: string[]): Promise<void> {
     if (!this.apiToken || !this.zoneId) {
       this.logger.warn(

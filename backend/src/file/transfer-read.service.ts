@@ -30,6 +30,8 @@ import {
   quantizeTokenExp,
   type TransferCacheMode,
   type TransferCacheScope,
+  PUBLIC_S3_CACHE_MODE_KEY,
+  resolvePublicS3Mode,
 } from '../common/transfer-cache.util';
 
 @Injectable()
@@ -121,13 +123,29 @@ export class TransferReadService {
       downloadInfo: DownloadInfo;
       scope: TransferCacheScope | undefined;
       ifNoneMatch: string | undefined;
+      /** Route-level override: public S3 buckets may run a different mode. */
+      publicS3?: boolean;
     },
   ): Promise<boolean> {
     const fileId = deps.downloadInfo.fileId;
     if (!fileId) return false;
 
     const scope: TransferCacheScope = deps.scope ?? 'private';
-    const dirs = await this.getCacheDirectories();
+    const baseDirs = await this.getCacheDirectories();
+    // Public-S3 override: 'inherit' (or garbage) keeps the global mode.
+    let mode: TransferCacheMode = baseDirs.mode;
+    if (deps.publicS3 && scope === 'signed') {
+      const override = await this.settingsService.getCachedSetting<string>(
+        PUBLIC_S3_CACHE_MODE_KEY,
+        'inherit',
+      );
+      const resolved = resolvePublicS3Mode(override, baseDirs.mode);
+      if (resolved) mode = resolved;
+    }
+    const dirs: TransferCacheDirectories = {
+      mode,
+      ttlSeconds: baseDirs.ttlSeconds,
+    };
     const headers = computeTransferCacheHeaders(
       scope,
       dirs,
@@ -512,13 +530,18 @@ export class TransferReadService {
     downloadInfo: DownloadInfo,
     res: Response,
     rangeHeader?: string,
-    cache?: { scope?: TransferCacheScope; ifNoneMatch?: string },
+    cache?: {
+      scope?: TransferCacheScope;
+      ifNoneMatch?: string;
+      publicS3?: boolean;
+    },
   ) {
     if (
       await this.applyTransferCacheHeaders(res, {
         downloadInfo,
         scope: cache?.scope,
         ifNoneMatch: cache?.ifNoneMatch,
+        publicS3: cache?.publicS3,
       })
     ) {
       return;
@@ -683,13 +706,18 @@ export class TransferReadService {
     downloadInfo: DownloadInfo,
     rangeHeader: string | undefined,
     res: Response,
-    cache?: { scope?: TransferCacheScope; ifNoneMatch?: string },
+    cache?: {
+      scope?: TransferCacheScope;
+      ifNoneMatch?: string;
+      publicS3?: boolean;
+    },
   ) {
     if (
       await this.applyTransferCacheHeaders(res, {
         downloadInfo,
         scope: cache?.scope,
         ifNoneMatch: cache?.ifNoneMatch,
+        publicS3: cache?.publicS3,
       })
     ) {
       return;
