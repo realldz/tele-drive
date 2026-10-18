@@ -13,7 +13,7 @@
     "axios": "^1.16.0",
     "highlight.js": "^11.11.1",
     "lucide-react": "^0.577.0",
-    "next": "16.2.6",
+    "next": "16.4.2",
     "nextjs-toploader": "^3.9.17",
     "pdfjs-dist": "^5.4.296",
     "react": "19.2.4",
@@ -25,7 +25,8 @@
     "xgplayer-music": "^3.0.24"
   },
   "overrides": {
-    "postcss": "$postcss"
+    "postcss": "$postcss",
+    "eslint-plugin-react-hooks": "7.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -34,7 +35,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.0",
-    "postcss": "^8.5.10",
+    "postcss": "^8.5.30",
     "tailwindcss": "^4",
     "typescript": "^5"
   }
