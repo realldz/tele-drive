@@ -9,3 +9,7 @@ export async function fetchSettings(): Promise<AdminSetting[]> {
 export async function updateSetting(key: string, value: string) {
   return api.put(`/settings/${key}`, { value });
 }
+export async function fetchRegistrationStatus(): Promise<{ enabled: boolean }> {
+  const res = await api.get('/auth/registration-status');
+  return res.data;
+}

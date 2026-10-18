@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/providers/auth-context';
 import AppLink from '@/components/atoms/app-link';
 import { useI18n } from '@/providers/i18n-context';
 import { useNavigation } from '@/components/molecules/navigation-loader';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import { LogIn, Loader2 } from 'lucide-react';
-import { getApiErrorMessage } from '@/lib/api';
+import { fetchRegistrationStatus, getApiErrorMessage } from '@/lib/api';
 import { useAppNavigate } from '@/hooks/use-app-navigate';
 
 export default function LoginPage() {
@@ -19,6 +19,14 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // Admin có thể tắt đăng ký: ẩn link sang /register (fail-open nếu không fetch được)
+  const [regEnabled, setRegEnabled] = useState(true);
+
+  useEffect(() => {
+    fetchRegistrationStatus()
+      .then((res) => setRegEnabled(res.enabled))
+      .catch(() => undefined);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -92,12 +100,14 @@ export default function LoginPage() {
           </button>
         </form>
 
+        {regEnabled && (
         <p className="text-center text-sm text-gray-500 mt-6">
           {t('login.noAccount')}{' '}
           <AppLink href="/register" className="text-blue-600 hover:underline font-medium">
             {t('login.register')}
           </AppLink>
         </p>
+        )}
       </div>
     </div>
   );

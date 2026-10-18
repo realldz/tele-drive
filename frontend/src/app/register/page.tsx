@@ -1,13 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '@/providers/auth-context';
 import AppLink from '@/components/atoms/app-link';
 import { useI18n } from '@/providers/i18n-context';
 import { useNavigation } from '@/components/molecules/navigation-loader';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import { UserPlus, Loader2 } from 'lucide-react';
-import { getApiErrorMessage } from '@/lib/api';
+import { fetchRegistrationStatus, getApiErrorMessage } from '@/lib/api';
 import { useAppNavigate } from '@/hooks/use-app-navigate';
 
 export default function RegisterPage() {
@@ -20,6 +20,14 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  // null = đang tải; false = admin đã tắt đăng ký (fail-open, backend vẫn chặn ở tầng API)
+  const [regEnabled, setRegEnabled] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    fetchRegistrationStatus()
+      .then((res) => setRegEnabled(res.enabled))
+      .catch(() => setRegEnabled(true));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -57,7 +65,13 @@ export default function RegisterPage() {
           <p className="text-gray-500 mt-2">{t('register.title')}</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        {
+        regEnabled === false ? (
+          <div className="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg text-sm text-center">
+            {t('register.disabled')}
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-5">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">{t('register.username')}</label>
             <input
@@ -114,6 +128,7 @@ export default function RegisterPage() {
             {loading ? t('register.submitting') : t('register.submit')}
           </button>
         </form>
+        )}
 
         <p className="text-center text-sm text-gray-500 mt-6">
           {t('register.hasAccount')}{' '}

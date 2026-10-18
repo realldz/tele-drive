@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import type { AdminSetting } from '@/lib/types';
-import { Database, Activity, Server, Cloud, Info, Check } from 'lucide-react';
+import { Database, Activity, Server, Cloud, Info, Check, Users } from 'lucide-react';
 
 const BYTE_SETTING_KEYS = [
   'DEFAULT_USER_QUOTA',
@@ -38,6 +38,7 @@ function getSettingHint(
 }
 
 const TABS = [
+  { id: 'account', icon: Users, label: 'admin.tabAccount' },
   { id: 'storage', icon: Database, label: 'admin.tabStorage' },
   { id: 'bandwidth', icon: Activity, label: 'admin.tabBandwidth' },
   { id: 'buffer', icon: Server, label: 'admin.tabBuffer' },
@@ -47,6 +48,7 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id'];
 
 const KEY_TO_GROUP: Record<string, TabId> = {
+  REGISTRATION_ENABLED: 'account',
   DEFAULT_USER_QUOTA: 'storage',
   MAX_CONCURRENT_CHUNKS: 'storage',
   DOWNLOAD_URL_TTL_SECONDS: 'storage',
@@ -89,7 +91,10 @@ function SettingCard({
 
   const hint = getSettingHint(setting.key, currentValue, formatBytes, t);
 
-  const isBoolean = setting.key === 'ENABLE_MULTI_THREAD_DOWNLOAD' || setting.key === 'S3_PUBLIC_ACCESS_ENABLED';
+  const isBoolean =
+    setting.key === 'ENABLE_MULTI_THREAD_DOWNLOAD' ||
+    setting.key === 'S3_PUBLIC_ACCESS_ENABLED' ||
+    setting.key === 'REGISTRATION_ENABLED';
 
   const titleKey = `settings.${setting.key}.title`;
   const descKey = `settings.${setting.key}.description`;

@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 /** Giá trị mặc định seed khi hệ thống khởi tạo lần đầu */
 const DEFAULT_SETTINGS: Record<string, string> = {
+  REGISTRATION_ENABLED: 'true', // Cho phép người dùng mới tự đăng ký tài khoản
   DEFAULT_USER_QUOTA: '15000000000', // 15 GB
   DEFAULT_GUEST_BANDWIDTH: '1000000000', // 1 GB/day
   DEFAULT_FILE_DOWNLOAD_LIMIT: '0', // 0 = không giới hạn

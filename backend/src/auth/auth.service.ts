@@ -3,10 +3,12 @@ import {
   Logger,
   UnauthorizedException,
   ConflictException,
+  ForbiddenException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service';
+import { SettingsService } from '../settings/settings.service';
 
 @Injectable()
 export class AuthService {
@@ -15,6 +17,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
+    private readonly settingsService: SettingsService,
   ) {}
 
   /**
@@ -34,7 +37,22 @@ export class AuthService {
     }
 
     // User đầu tiên → ADMIN, còn lại → USER
-    const userCount = await this.prisma.user.count();
+    // Admin có thể bật/tắt tính năng đăng ký qua System Settings (REGISTRATION_ENABLED).
+    const [registrationEnabled, userCount] = await Promise.all([
+      this.settingsService.getCachedSetting(
+        'REGISTRATION_ENABLED',
+        true,
+        (v) => v !== 'false',
+      ),
+      this.prisma.user.count(),
+    ]);
+    if (!registrationEnabled && userCount > 0) {
+      // Vẫn cho phép tạo user đầu tiên (bootstrap admin) kể cả khi đăng ký đã bị tắt.
+      this.logger.warn(
+        `Registration rejected: registration is disabled (attempted username "${username}")`,
+      );
+      throw new ForbiddenException('Registration is currently disabled');
+    }
     const role = userCount === 0 ? 'ADMIN' : 'USER';
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -68,6 +86,17 @@ export class AuthService {
         role: user.role,
       },
     };
+  }
+
+  /**
+   * Trạng thái cho phép đăng ký (public — dùng cho UI login/register).
+   */
+  async isRegistrationEnabled(): Promise<boolean> {
+    return this.settingsService.getCachedSetting(
+      'REGISTRATION_ENABLED',
+      true,
+      (v) => v !== 'false',
+    );
   }
 
   /**
