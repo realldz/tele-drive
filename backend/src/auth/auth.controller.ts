@@ -23,7 +23,6 @@ export class AuthController {
     return this.authService.register(body.username, body.password);
   }
 
-  @Public()
   /**
    * GET /auth/registration-status — Public: client dùng để ẩn/hiện form đăng ký
    * khi admin bật/tắt tính năng đăng ký tài khoản (REGISTRATION_ENABLED).
@@ -35,6 +34,7 @@ export class AuthController {
     return { enabled };
   }
 
+  @Public()
   @Post('login')
   @HttpCode(HttpStatus.OK)
   async login(@Body() body: LoginDto) {
