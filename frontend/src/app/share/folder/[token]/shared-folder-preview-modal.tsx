@@ -28,7 +28,15 @@ export default function SharedFolderPreviewModal({ shareToken, file, onClose }: 
       return;
     }
 
-    setupStream(getShareFolderStreamUrl(shareToken, file.id));
+    // URL stream gio la async (cho config runtime tu backend) nen phai doi
+    // resolve; huy neu file doi truoc khi co URL.
+    let cancelled = false;
+    getShareFolderStreamUrl(shareToken, file.id).then((url) => {
+      if (!cancelled) setupStream(url);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [file, shareToken, setupStream, teardownStream]);
 
   // ESC key handler

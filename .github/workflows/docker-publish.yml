@@ -105,12 +105,12 @@ jobs:
             context: ./frontend
             dockerfile: ./frontend/Dockerfile
             description: Tele-Drive Next.js frontend (standalone output)
-            # NEXT_PUBLIC_* are baked into the bundle at build time, so the URLs an
-            # operator sets as repository variables are compiled into the image.
+            # NEXT_PUBLIC_API_URL is baked into the bundle at build time. The
+            # transfer origin + S3 domain are no longer build args: the frontend
+            # fetches them at runtime from backend-core (/api/v1/client-config,
+            # sourced from PUBLIC_TRANSFER_URL / S3_DOMAIN).
             build-args: |
               NEXT_PUBLIC_API_URL=${{ vars.NEXT_PUBLIC_API_URL || '/api/v1' }}
-              NEXT_PUBLIC_TRANSFER_URL=${{ vars.NEXT_PUBLIC_TRANSFER_URL }}
-              NEXT_PUBLIC_S3_DOMAIN=${{ vars.NEXT_PUBLIC_S3_DOMAIN }}
           - name: nginx
             context: ./nginx
             dockerfile: ./nginx/Dockerfile

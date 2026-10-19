@@ -46,7 +46,7 @@ export default function SharePage() {
         const info = res.data;
         setFileInfo(info);
         if (isPreviewable(info.mimeType)) {
-          await setupStream(getShareStreamUrl(token));
+          await setupStream(await getShareStreamUrl(token));
         }
       } catch (err: unknown) {
         setError(getApiErrorMessage(err, t('sharePage.fileNotFound')));

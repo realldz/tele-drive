@@ -14,19 +14,13 @@ RUN npm ci --prefer-offline
 
 COPY . .
 
-# NEXT_PUBLIC_* vars are baked at build time
+# NEXT_PUBLIC_* vars are baked at build time. Only the control-plane origin
+# stays here: the data-plane transfer origin + S3 domain are served at runtime
+# by backend-core (GET /api/v1/client-config, sourced from PUBLIC_TRANSFER_URL
+# and S3_DOMAIN) and applied by src/lib/api/client-config.ts, so enabling them
+# no longer requires a frontend rebuild.
 ARG NEXT_PUBLIC_API_URL=/api
 ENV NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
-
-# Optional dedicated S3 domain (e.g. s3.example.com); empty = path-based only
-ARG NEXT_PUBLIC_S3_DOMAIN=
-ENV NEXT_PUBLIC_S3_DOMAIN=${NEXT_PUBLIC_S3_DOMAIN}
-
-# Optional data-plane/transfer origin (e.g. https://transfer.example.com) for
-# stream/download/config XHR; empty = falls back to NEXT_PUBLIC_API_URL
-# (src/lib/api/client.ts). Compose already passes this build arg.
-ARG NEXT_PUBLIC_TRANSFER_URL=
-ENV NEXT_PUBLIC_TRANSFER_URL=${NEXT_PUBLIC_TRANSFER_URL}
 
 RUN npm run build
 

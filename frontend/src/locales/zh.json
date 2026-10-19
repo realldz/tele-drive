@@ -364,7 +364,7 @@
   "s3.infoBanner": "将 Tele-Drive 用作 S3 兼容存储后端",
   "s3.infoDesc": "在下方创建一个 Access Key，然后配合 aws-cli、s3cmd 或任意 AWS SDK 使用。可用端点：",
   "s3.endpointDomain": "专用域名：",
-  "s3.endpointUnconfigured": "S3 域名未配置（NEXT_PUBLIC_S3_DOMAIN）。配置后将在此显示端点。",
+  "s3.endpointUnconfigured": "S3 域名未配置。配置后将在此显示端点。",
   "s3.infoDescEndpoint": "作为 Endpoint URL。",
   "s3.newCredWarning": "请立即复制凭证信息 — Secret 将不会再次显示。",
   "s3.accessKeyId": "Access Key ID",

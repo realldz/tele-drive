@@ -6,6 +6,7 @@ import { SettingsModule } from './settings/settings.module';
 import { AdminLogModule } from './admin-log/admin-log.module';
 import { AdminDashboardModule } from './admin-dashboard/admin-dashboard.module';
 import { FileModule } from './file/file.module';
+import { ClientConfigModule } from './client-config/client-config.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { FileModule } from './file/file.module';
     FileModule,
     AdminLogModule,
     AdminDashboardModule,
+    ClientConfigModule,
   ],
   exports: [
     AuthModule,
@@ -25,6 +27,7 @@ import { FileModule } from './file/file.module';
     FileModule,
     AdminLogModule,
     AdminDashboardModule,
+    ClientConfigModule,
   ],
 })
 export class CoreAppModule {}

@@ -1,4 +1,5 @@
-import { api, transferApi, API_URL, TRANSFER_URL } from './client';
+import { api, transferApi, API_URL } from './client';
+import { ensureTransferOrigin } from './client-config';
 
 export interface SignedDownloadUrl {
   url: string;
@@ -27,8 +28,9 @@ export interface DownloadZipStatus {
   error: string | null;
 }
 
-// Data-plane calls dùng transferApi (base = TRANSFER_URL). Khi TRANSFER_URL
-// rỗng → fallback API_URL → hành vi single-origin không đổi.
+// Data-plane calls dùng transferApi; baseURL do config runtime từ backend
+// quyết định (xem client-config.ts). Chưa resolve → fallback API_URL →
+// hành vi single-origin không đổi.
 export async function requestDownloadToken(fileId: string): Promise<SignedDownloadUrl> {
   const res = await transferApi.post(`/transfer/${fileId}/download-token`);
   return res.data;
@@ -60,16 +62,18 @@ export async function clearStreamCookie(): Promise<void> {
   await transferApi.delete('/transfer/stream-cookie', { withCredentials: true });
 }
 
-export function getStreamUrl(fileId: string): string {
-  return `${TRANSFER_URL}/transfer/stream/${fileId}`;
+// URL stream phải chờ config runtime (async) để trùng origin với stream cookie
+// do transferApi phát hành — lệch origin ⇒ 401 cross-site.
+export async function getStreamUrl(fileId: string): Promise<string> {
+  return `${await ensureTransferOrigin()}/transfer/stream/${fileId}`;
 }
 
-export function getShareStreamUrl(shareToken: string): string {
-  return `${TRANSFER_URL}/transfer/share/stream/${shareToken}`;
+export async function getShareStreamUrl(shareToken: string): Promise<string> {
+  return `${await ensureTransferOrigin()}/transfer/share/stream/${shareToken}`;
 }
 
-export function getShareFolderStreamUrl(shareToken: string, fileId: string): string {
-  return `${TRANSFER_URL}/folders/share/${shareToken}/stream/${fileId}`;
+export async function getShareFolderStreamUrl(shareToken: string, fileId: string): Promise<string> {
+  return `${await ensureTransferOrigin()}/folders/share/${shareToken}/stream/${fileId}`;
 }
 
 /** @deprecated Use requestDownloadToken */

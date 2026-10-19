@@ -1,4 +1,5 @@
 export * from './client';
+export * from './client-config';
 export * from './helpers';
 export * from './folders';
 export * from './files';

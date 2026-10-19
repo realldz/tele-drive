@@ -178,10 +178,11 @@ Multi-host deployments use the matching overlays and **the same tag on both host
 `docker-compose.core.ghcr.yml` (control plane) and `docker-compose.transfer.ghcr.yml`
 (data plane). `TELE_DRIVE_IMAGE_PREFIX` overrides the registry path for forks.
 
-> `NEXT_PUBLIC_*` values are baked into the frontend image at build time. CI reads
-> them from repository variables (`NEXT_PUBLIC_API_URL` — default `/api/v1`,
-> `NEXT_PUBLIC_TRANSFER_URL`, `NEXT_PUBLIC_S3_DOMAIN`), so set those before
-> publishing when the frontend talks to a dedicated transfer/S3 domain.
+> `NEXT_PUBLIC_API_URL` (repository variable, default `/api/v1`) is the only
+> frontend build-time value. The dedicated transfer origin and S3 domain are
+> served at runtime by backend-core (`GET /api/v1/client-config`, sourced from
+> `PUBLIC_TRANSFER_URL` and `S3_DOMAIN` in `backend/.env`), so enabling them no
+> longer requires rebuilding the frontend image.
 
 ### Per-service commands
 

@@ -6,8 +6,9 @@ import { useRequireAuth } from '@/hooks/use-require-auth';
 import Sidebar from '@/components/sidebar';
 import { Key, Plus, Trash2, Terminal, Loader2, KeyRound } from 'lucide-react';
 import toast from 'react-hot-toast';
-import { fetchS3Credentials, createS3Credential, deleteS3Credential, getApiErrorMessage, getS3Endpoint } from '@/lib/api';
+import { fetchS3Credentials, createS3Credential, deleteS3Credential, getApiErrorMessage } from '@/lib/api';
 import { useAppSelector } from '@/lib/store';
+import { useS3Endpoint } from '@/hooks/use-client-config';
 import S3NewCredentialPanel from './s3-new-credential-panel';
 import S3UsageGuide from './s3-usage-guide';
 
@@ -82,9 +83,11 @@ export default function S3KeysPage() {
     }
   }
 
-  const s3Endpoint = getS3Endpoint();
+  // Endpoint den tu config runtime cua backend (S3_DOMAIN qua /client-config);
+  // co the ve sau lan render dau nen useS3Endpoint() tu subscribe re-render.
+  const s3Endpoint = useS3Endpoint();
   // CLI snippets need a concrete endpoint; fall back to a placeholder so the
-  // examples stay illustrative when NEXT_PUBLIC_S3_DOMAIN is not configured.
+  // examples stay illustrative when the backend advertises no S3 domain.
   const endpointUrl = s3Endpoint ?? 'https://<your-s3-domain>';
   const maxConcurrent = uploadConfig.maxConcurrentChunks;
   const recommendedChunk = uploadConfig.maxChunkSize;

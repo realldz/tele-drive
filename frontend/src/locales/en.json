@@ -364,7 +364,7 @@
   "s3.createKey": "Create Access Key",
   "s3.infoBanner": "Use Tele-Drive as an S3-compatible storage backend",
   "s3.infoDesc": "Create an access key below, then use it with aws-cli, s3cmd, or any AWS SDK. Available endpoints:",
-  "s3.endpointUnconfigured": "S3 domain not configured — set NEXT_PUBLIC_S3_DOMAIN to enable the S3 API.",
+  "s3.endpointUnconfigured": "S3 domain not configured — ask an administrator to enable the S3 API.",
   "s3.endpointDomain": "Dedicated domain:",
   "s3.infoDescEndpoint": "as the endpoint URL.",
   "s3.newCredWarning": "Copy the credentials now — the secret will not be shown again.",

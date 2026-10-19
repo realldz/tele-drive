@@ -47,7 +47,7 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
       .get(`/files/${fileId}/info`)
       .then(async (res) => {
         setFileInfo(res.data);
-        await setupStream(getStreamUrl(fileId));
+        await setupStream(await getStreamUrl(fileId));
       })
       .catch((err: unknown) => {
         setError(getApiErrorMessage(err, 'Failed to load file'));

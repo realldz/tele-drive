@@ -124,6 +124,7 @@ const SCHEMA = {
     { key: 'GO_HOST', file: '.env.core', prompt: 'Go data-plane host (name or IP reachable from core)', validate: req(), required: true },
     { key: 'CORE_PRIVATE_IP', file: '.env.core', prompt: 'Core private IP (bind address for Redis + gRPC)', validate: req(isIpv4), required: true },
     { key: 'UPLOAD_BUFFER_NFS', file: '.env.core', prompt: 'Shared upload buffer path (NFS mount)', validate: req(), required: true },
+    { key: 'PUBLIC_TRANSFER_URL', file: 'backend/.env', prompt: 'Dedicated transfer origin (abs. data-plane URLs + frontend runtime config; blank = same origin)', validate: isOriginUrl, required: false },
     REDIS('.env.core'),
     ...IMAGE_FIELDS('.env.core'),
     ...BACKEND_FIELDS,

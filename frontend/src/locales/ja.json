@@ -364,7 +364,7 @@
   "s3.infoBanner": "Tele-DriveをS3互換ストレージバックエンドとして使用",
   "s3.infoDesc": "以下でアクセスキーを作成し、aws-cli、s3cmd、または任意のAWS SDKで使用してください。利用可能なエンドポイント：",
   "s3.endpointDomain": "専用ドメイン：",
-  "s3.endpointUnconfigured": "S3ドメインが未設定です（NEXT_PUBLIC_S3_DOMAIN）。設定後にエンドポイントが表示されます。",
+  "s3.endpointUnconfigured": "S3ドメインが未設定です。設定後にエンドポイントが表示されます。",
   "s3.infoDescEndpoint": "をエンドポイントURLとして指定してください。",
   "s3.newCredWarning": "認証情報を今すぐコピーしてください — シークレットは再表示されません。",
   "s3.accessKeyId": "アクセスキーID",

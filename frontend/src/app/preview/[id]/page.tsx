@@ -42,7 +42,7 @@ export default function FilePreviewPage() {
     api.get(`/files/${fileId}/info`)
       .then(async (res) => {
         setFileInfo(res.data);
-        await setupStream(getStreamUrl(fileId));
+        await setupStream(await getStreamUrl(fileId));
       })
       .catch((err: unknown) => {
         setError(getApiErrorMessage(err, 'Failed to load file information'));

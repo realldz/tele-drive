@@ -365,7 +365,7 @@
   "s3.infoBanner": "Sử dụng Tele-Drive như một S3-compatible storage backend",
   "s3.infoDesc": "Tạo một access key bên dưới, sau đó dùng với aws-cli, s3cmd hoặc bất kì AWS SDK nào. Các endpoint khả dụng:",
   "s3.endpointDomain": "Domain riêng:",
-  "s3.endpointUnconfigured": "Chưa cấu hình domain S3 (NEXT_PUBLIC_S3_DOMAIN). Liên hệ quản trị viên.",
+  "s3.endpointUnconfigured": "Chưa cấu hình domain S3 . Liên hệ quản trị viên.",
   "s3.infoDescEndpoint": "như endpoint URL.",
   "s3.newCredWarning": "Sao chép thông tin xác thực ngay — secret sẽ không được hiển thị lại.",
   "s3.accessKeyId": "Access Key ID",
