@@ -18,7 +18,12 @@ function unquote(value) {
 }
 
 export function parseEnv(text) {
-  const rawLines = text.length === 0 ? [] : text.replace(/\n$/, '').split('\n');
+  // Normalize CRLF/CR first: an env file edited on Windows stores `KEY=value\r`,
+  // and `(.*)$` would leave the \r inside the value (the key then reads as
+  // missing and required-field validation fails for a value the operator can
+  // see). Rendering writes LF only, so a round-trip normalizes the file.
+  const normalized = text.replace(/\r\n?/g, '\n');
+  const rawLines = normalized.length === 0 ? [] : normalized.replace(/\n$/, '').split('\n');
   const lines = rawLines.map((raw) => {
     const m = raw.match(KV_RE);
     if (m) return { raw, key: m[1], value: unquote(m[2]) };

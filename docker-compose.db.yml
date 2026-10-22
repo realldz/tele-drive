@@ -1,0 +1,59 @@
+# ─── HOST-DB (database only) ─────────────────────────────────────────────────
+# Dedicated Postgres host: ONE service, nothing else. Nothing here builds an app
+# image — the only pull is the upstream `postgres:16-alpine`.
+#
+# Deploy:
+#   cp .env.db.example .env.db     # set DB_PRIVATE_IP + POSTGRES_PASSWORD
+#   docker compose --env-file .env.db -f docker-compose.db.yml up -d
+#
+# The control-plane host then reaches this database over the PRIVATE network:
+#   - .env.core: DB_HOST=<this host>, DB_PORT, POSTGRES_USER/DB, SAME POSTGRES_PASSWORD
+#   - deploy core WITH -f docker-compose.core.extdb.yml so its local Postgres
+#     container is profile-gated out of the project (never started).
+#
+# Bind address: DB_PRIVATE_IP (private NIC) — never 0.0.0.0. Firewall 5432 on
+# this host to the core host only. Postgres itself authenticates with
+# scram-sha-256 (the image's default pg_hba allows `host all all all`), so the
+# password is the second layer, not the only one.
+
+services:
+  # ─── PostgreSQL (the whole stack) ───────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-tele_drive}
+      POSTGRES_USER: ${POSTGRES_USER:-tele_drive}
+      # :? aborts `up` with a clear message instead of booting a passwordless DB.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.db}
+      # Checksums are only applied by initdb, i.e. on FIRST boot of the volume.
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+    # A db-only host should not run on defaults: raise connections for the
+    # NestJS pool(s) and give Postgres real shared memory. Both knobs are
+    # optional in .env.db; the defaults below are safe for a 2-4 GB host.
+    command:
+      - postgres
+      - -c
+      - max_connections=${POSTGRES_MAX_CONNECTIONS:-200}
+      - -c
+      - shared_buffers=${POSTGRES_SHARED_BUFFERS:-256MB}
+      - -c
+      - wal_compression=on
+    ports:
+      # Private NIC only. Host-local psql: docker compose exec postgres psql -U ...
+      - "${DB_PRIVATE_IP:?set DB_PRIVATE_IP in .env.db}:${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    # /dev/shm defaults to 64 MB in Docker, which caps parallel query workers.
+    shm_size: 256mb
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-tele_drive} -d ${POSTGRES_DB:-tele_drive}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    # A checkpoint on SIGTERM keeps crash recovery cheap after `down`.
+    stop_grace_period: 1m
+    restart: unless-stopped
+
+volumes:
+  postgres-data:

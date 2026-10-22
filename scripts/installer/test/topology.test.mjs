@@ -3,8 +3,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { TOPOLOGIES, resolveTopology } from '../lib/topology.mjs';
 
-test('TOPOLOGIES lists all four', () => {
-  assert.deepEqual(TOPOLOGIES, ['mono', 'scale', 'core', 'go']);
+test('TOPOLOGIES lists all five', () => {
+  assert.deepEqual(TOPOLOGIES, ['mono', 'scale', 'core', 'go', 'db']);
 });
 
 test('mono maps to docker-compose.yml, scale 1', () => {
@@ -38,6 +38,20 @@ test('go maps to docker-compose.transfer.yml + .env.transfer', () => {
   assert.equal(r.composeFile, 'docker-compose.transfer.yml');
   assert.equal(r.role, 'go');
   assert.deepEqual(r.envFiles, ['.env.transfer']);
+});
+
+test('go needs no certs minted on its host (core hands them over)', () => {
+  assert.equal(resolveTopology('go').needCerts, false);
+});
+
+test('db maps to docker-compose.db.yml + .env.db, no overlay, no certs', () => {
+  const r = resolveTopology('db');
+  assert.equal(r.composeFile, 'docker-compose.db.yml');
+  assert.equal(r.role, 'db');
+  assert.equal(r.ghcrOverlay, '');
+  assert.equal(r.needCerts, false);
+  assert.equal(r.scale, 1);
+  assert.deepEqual(r.envFiles, ['.env.db']);
 });
 
 test('unknown topology throws', () => {

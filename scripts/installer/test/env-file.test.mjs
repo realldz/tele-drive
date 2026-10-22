@@ -49,6 +49,13 @@ test('unbalanced or inner quotes are left intact', () => {
   assert.equal(getValue(parseEnv('C=""\n'), 'C'), '');
 });
 
+test('CRLF input parses cleanly and re-renders as LF', () => {
+  const parsed = parseEnv('FOO=1\r\nBAR=two\r\n');
+  assert.equal(getValue(parsed, 'FOO'), '1');
+  assert.equal(getValue(parsed, 'BAR'), 'two');
+  assert.equal(renderEnv(parsed, {}), 'FOO=1\nBAR=two\n');
+});
+
 test('empty input renders only appended keys with trailing newline', () => {
   const parsed = parseEnv('');
   assert.equal(renderEnv(parsed, { A: '1', B: '2' }), 'A=1\nB=2\n');

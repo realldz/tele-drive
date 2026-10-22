@@ -43,15 +43,25 @@ OVERLAY_FILE="$(read_plan overlayFile)"
 SCALE_TRANSFER="$(read_plan scaleTransfer)"
 NEED_CERTS="$(read_plan needCerts)"
 ROLE="$(read_plan role)"
-log "Plan: compose=$COMPOSE_FILE role=$ROLE images=$IMAGE_SOURCE${OVERLAY_FILE:+ overlay=$OVERLAY_FILE} scale=${SCALE_TRANSFER:-none}"
+ENV_FILE="$(read_plan envFile)"
+EXTERNAL_DB="$(read_plan externalDb)"
+DB_ADDR="$(read_plan dbHost)"
+log "Plan: compose=$COMPOSE_FILE role=$ROLE images=$IMAGE_SOURCE${OVERLAY_FILE:+ overlay=$OVERLAY_FILE}${ENV_FILE:+ env=$ENV_FILE}${DB_ADDR:+ db=$DB_ADDR} scale=${SCALE_TRANSFER:-none}"
 
 # 3b. Compose file list. GHCR deploys append the pull-only overlay AFTER the
 # base file, so the published image refs win over the base build: definitions.
 # NOTE: the overlay cannot delete the base build: keys — "pull" below is what
 # guarantees the published image actually exists locally before "up".
 COMPOSE_FILES=(-f "$COMPOSE_FILE")
-if [ "$IMAGE_SOURCE" = "ghcr" ]; then
+# db hosts build/pull nothing of ours, so the plan leaves overlayFile empty —
+# never hand compose a bare `-f ""`.
+if [ "$IMAGE_SOURCE" = "ghcr" ] && [ -n "$OVERLAY_FILE" ]; then
   COMPOSE_FILES+=(-f "$OVERLAY_FILE")
+fi
+# core + external Postgres: this overlay profile-gates the local `postgres`
+# service out, so the control plane never starts a second database.
+if [ "$ROLE" = "core" ] && [ "$EXTERNAL_DB" = "true" ]; then
+  COMPOSE_FILES+=(-f docker-compose.core.extdb.yml)
 fi
 
 # The CORE host is the control plane and the CA origin: it must run first, mint
@@ -60,22 +70,29 @@ fi
 # core stays configure-and-hand-off (print exact deploy steps, do not deploy).
 # go auto-deploys further below — it only VERIFIES the copied certs, never mints.
 if [ "$ROLE" = "core" ]; then
-  ENV_FILE=".env.core"
+  FILES="${COMPOSE_FILES[*]}"
+  NEXT_STEP=4
   log "Core host config written. install.sh does NOT auto-deploy the core control plane."
   printf '\n  Complete the core deploy manually on THIS host:\n\n'
   printf '  1. Mint the shared gRPC CA on this CORE host only:\n'
   printf '       ./scripts/gen-grpc-certs.sh\n'
   printf '  2. Copy certs/grpc/{ca.crt,backend-transfer.crt,backend-transfer.key} to the go host.\n'
   printf '  3. REDIS_PASSWORD in %s must match the value on the go host.\n' "$ENV_FILE"
-  printf '  4. Bring up the control plane:\n'
+  if [ "$EXTERNAL_DB" = "true" ]; then
+    printf '  4. Postgres runs on the DB-ONLY host (%s), not on this one:\n' "${DB_ADDR:-<DB_HOST>}"
+    printf '     - the commands below include docker-compose.core.extdb.yml, which\n'
+    printf '       profile-gates the local Postgres container out.\n'
+    printf '     - firewall 5432 on that host to THIS host only.\n'
+    NEXT_STEP=5
+  fi
+  printf '  %s. Bring up the control plane:\n' "$NEXT_STEP"
   if [ "$IMAGE_SOURCE" = "ghcr" ]; then
-    FILES="${COMPOSE_FILES[*]}"
     printf '       docker compose --env-file %s %s pull\n' "$ENV_FILE" "$FILES"
     printf '       docker compose --env-file %s %s up -d\n' "$ENV_FILE" "$FILES"
     printf '     (pin a fixed release: TELE_DRIVE_IMAGE_TAG=sha-<short> in %s)\n' "$ENV_FILE"
     printf '  Build images on this host instead: %s --build\n\n' "$0"
   else
-    printf '       docker compose --env-file %s -f %s up -d --build\n\n' "$ENV_FILE" "$COMPOSE_FILE"
+    printf '       docker compose --env-file %s %s up -d --build\n\n' "$ENV_FILE" "$FILES"
   fi
   rm -f "$PLAN_FILE"
   exit 0
@@ -117,7 +134,12 @@ fi
 # 5. Bring the stack up. go must load .env.transfer explicitly (compose only
 # auto-loads ./.env); the --env-file global flag precedes the up subcommand.
 ENV_FILE_ARGS=()
-[ "$ROLE" = "go" ] && ENV_FILE_ARGS=(--env-file .env.transfer)
+# Compose auto-loads only ./.env, so every split role names its file (.env.db on
+# a db-only host, .env.transfer on the go host; core exits above). mono/scale
+# keep using the auto-loaded ./.env — the plan leaves envFile empty for them.
+if [ -n "$ENV_FILE" ]; then
+  ENV_FILE_ARGS=(--env-file "$ENV_FILE")
+fi
 # ${arr[@]+"${arr[@]}"} expands to nothing when the array is empty (mono/scale),
 # instead of a spurious "" arg — and stays safe under `set -u` on bash 3.2+.
 
@@ -158,7 +180,15 @@ for _ in $(seq 1 30); do
   STATUS="$(docker compose ${ENV_FILE_ARGS[@]+"${ENV_FILE_ARGS[@]}"} "${COMPOSE_FILES[@]}" ps --format '{{.Service}} {{.Health}}' 2>/dev/null || true)"
   BT_TOTAL="$(printf '%s\n' "$STATUS" | awk '$1=="backend-transfer"' | wc -l | tr -d ' ')"
   BT_OK="$(printf '%s\n' "$STATUS" | awk '$1=="backend-transfer" && $2=="healthy"' | wc -l | tr -d ' ')"
-  if [ "$ROLE" = "go" ]; then
+  if [ "$ROLE" = "db" ]; then
+    # Database-only host: `postgres` healthy is the entire signal.
+    PG_TOTAL="$(printf '%s\n' "$STATUS" | awk '$1=="postgres"' | wc -l | tr -d ' ')"
+    PG_OK="$(printf '%s\n' "$STATUS" | awk '$1=="postgres" && $2=="healthy"' | wc -l | tr -d ' ')"
+    if [ "$PG_TOTAL" -ge 1 ] && [ "$PG_OK" -eq "$PG_TOTAL" ]; then
+      HEALTHY=1
+      break
+    fi
+  elif [ "$ROLE" = "go" ]; then
     # No backend-core on this host — backend-transfer healthy is the signal.
     if [ "$BT_TOTAL" -ge 1 ] && [ "$BT_OK" -eq "$BT_TOTAL" ]; then
       HEALTHY=1
@@ -182,6 +212,21 @@ else
     | grep -iE "wrongpass|noauth|cert|tls|can't resolve|permission denied" | tail -20 || true
   rm -f "$PLAN_FILE"
   exit 1
+fi
+
+# 6b. db-only host: print the cross-host handoff. No certs, no Redis, no backend
+# here — the only thing the core host needs is this database's address + password.
+if [ "$ROLE" = "db" ]; then
+  log "Postgres is up on this host (${DB_ADDR:-<private-ip>})."
+  printf '\n  On the CONTROL-PLANE host, set in .env.core:\n'
+  printf '    DB_HOST=%s\n' "${DB_ADDR:-<private-ip>}"
+  printf '    POSTGRES_PASSWORD=<the value in .env.db on this host>\n'
+  printf '  Then deploy core WITH the external-db overlay:\n'
+  printf '    docker compose --env-file .env.core \\\n'
+  printf '      -f docker-compose.core.yml -f docker-compose.core.extdb.yml up -d\n'
+  printf '  Firewall 5432 on this host to the CORE host only.\n'
+  printf '  Backups: docker compose --env-file .env.db -f docker-compose.db.yml \\\n'
+  printf '    exec -T postgres pg_dump -U tele_drive -Fc tele_drive > tele_drive.dump\n\n'
 fi
 
 # 7. Cleanup scratch plan.

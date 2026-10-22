@@ -147,6 +147,7 @@ pull-first deploy (no compiler on the host):
 ./install.sh            # topology wizard -> env files -> GHCR pull -> up -d
 ./install.sh --build    # compile everything on this host instead
 ./install.sh --topology=go --image-tag=sha-1a2b3c4   # scripted + pinned release
+./install.sh --topology=db    # database-only host: Postgres, nothing else
 ```
 
 Manual commands:
@@ -217,12 +218,13 @@ stays small and private on another.
                          (one or more hosts, round-robined by the edge)
 ```
 
-Two compose files drive it:
+Two or three compose files drive it (the database file is optional):
 
 | File | Host | Brings up |
 |------|------|-----------|
-| `docker-compose.core.yml` | control-plane | postgres, redis, backend-core, nginx-edge, frontend |
+| `docker-compose.core.yml` | control-plane | postgres (skipped with the `extdb` overlay), redis, backend-core, nginx-edge, frontend |
 | `docker-compose.transfer.yml` | data-plane | backend-transfer (Go), telegram-bot-api, nginx-fastpath |
+| `docker-compose.db.yml` | database-only | postgres, and nothing else |
 
 ```bash
 # On the control-plane host
@@ -233,6 +235,38 @@ docker compose --env-file .env.core -f docker-compose.core.yml up -d
 cp .env.transfer.example .env.transfer   # set CORE_HOST, GO_PRIVATE_IP, SAME REDIS_PASSWORD
 docker compose --env-file .env.transfer -f docker-compose.transfer.yml up -d
 ```
+
+### Database-only host
+
+Give Postgres its own host (its own storage, backup, and upgrade path) with
+`docker-compose.db.yml` — a single `postgres:16-alpine` service. No backend, no
+Redis, no gRPC certs, no application image built or pulled:
+
+```bash
+# On the database host. DB_PRIVATE_IP binds the private NIC — never 0.0.0.0.
+cp .env.db.example .env.db          # set DB_PRIVATE_IP + POSTGRES_PASSWORD
+docker compose --env-file .env.db -f docker-compose.db.yml up -d
+```
+
+```bash
+# On the control-plane host, set in .env.core:
+#   DB_HOST=<db host>   DB_PORT=5432   POSTGRES_USER/DB/PASSWORD (SAME password)
+#   DATABASE_URL=postgresql://tele_drive:<password>@<db host>:5432/tele_drive
+docker compose --env-file .env.core \
+  -f docker-compose.core.yml -f docker-compose.core.extdb.yml up -d
+```
+
+`docker-compose.core.extdb.yml` profile-gates the core host's own `postgres`
+service out of the project, so the local container is defined but never created
+(`depends_on ... required: false` in the base file makes that legal). Only one
+database ever exists, and only the control plane dials it — the Go data plane
+reaches Postgres through the core gRPC server.
+
+`./install.sh --topology=db` performs every db-host step above and prints the
+values the core host needs; answering `DB_HOST` in the `core` wizard derives
+`DATABASE_URL` into `.env.core` and adds the overlay for you. Firewall 5432 on the
+db host to the core host only. `backend-core` runs `prisma db push` at boot, so the
+database has to be up before the core host starts.
 
 Requirements and guarantees:
 

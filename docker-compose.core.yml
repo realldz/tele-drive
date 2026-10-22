@@ -19,6 +19,9 @@
 
 services:
   # ─── PostgreSQL ─────────────────────────────────────────────────────
+  # LOCAL database. Skipped entirely when Postgres lives on a db-only host: add
+  # `-f docker-compose.core.extdb.yml`, which profile-gates this service, and
+  # point DATABASE_URL (below) at that host. See docker-compose.db.yml.
   postgres:
     image: postgres:16-alpine
     environment:
@@ -67,7 +70,10 @@ services:
     environment:
       NODE_ENV: production
       PORT: 3001
-      DATABASE_URL: postgresql://tele_drive:tele_drive@postgres:5432/tele_drive
+      # Interpolated from .env.core so the DB can live on its own host. The
+      # default keeps today's single-host behavior (local `postgres` service).
+      # With docker-compose.core.extdb.yml the default is unusable — set it.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://tele_drive:tele_drive@postgres:5432/tele_drive}
       # Cross-host Telegram fast-path on the Go host. NestJS core keeps ONE live
       # Telegram path: S3 multipart UploadPart/Abort (s3-multipart.service.ts),
       # which is NOT gated by S3_DATA_PLANE_OWNER. Without this it would fall back
@@ -115,6 +121,10 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+        # Optional: docker-compose.core.extdb.yml profile-gates `postgres` out
+        # when the database runs on its own host. Without this, `up` would fail
+        # on the dependency to a disabled service.
+        required: false
       redis:
         condition: service_healthy
     healthcheck:

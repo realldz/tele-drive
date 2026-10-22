@@ -3,11 +3,13 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseArgs } from '../lib/args.mjs';
 
-test('defaults: build true, interactive true, no topology', () => {
+test('defaults: ghcr source, interactive true, no topology', () => {
   const a = parseArgs([]);
-  assert.equal(a.build, true);
+  assert.equal(a.source, 'ghcr');
   assert.equal(a.interactive, true);
   assert.equal(a.topology, null);
+  assert.equal(a.imageTag, null);
+  assert.equal(a.imagePrefix, null);
   assert.deepEqual(a.errors, []);
 });
 
@@ -18,10 +20,18 @@ test('parses topology and scale', () => {
   assert.deepEqual(a.errors, []);
 });
 
-test('--no-build and --non-interactive', () => {
-  const a = parseArgs(['--no-build', '--non-interactive']);
-  assert.equal(a.build, false);
+test('parses the db-only topology', () => {
+  const a = parseArgs(['--topology=db', '--non-interactive']);
+  assert.equal(a.topology, 'db');
   assert.equal(a.interactive, false);
+  assert.deepEqual(a.errors, []);
+});
+
+test('--build and --no-build select the image source', () => {
+  assert.equal(parseArgs(['--build']).source, 'build');
+  assert.equal(parseArgs(['--no-build']).source, 'ghcr');
+  assert.equal(parseArgs(['--source=build']).source, 'build');
+  assert.ok(parseArgs(['--source=nope']).errors.length > 0);
 });
 
 test('rejects unknown topology', () => {

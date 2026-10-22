@@ -4,7 +4,9 @@ import assert from 'node:assert/strict';
 import {
   isExact32, isNumeric, isPositiveInt, isIpv4, isFilename, isHostname,
   fieldsFor, validateValues, isCdnMode, isCdnTtl, isCdnWindow, isPurgeProvider, isZoneId, isOriginUrl, isCdnPublicS3Mode,
+  isPort, isDbHost, isDbIdentifier, isDbPassword, deriveValues,
 } from '../lib/env-schema.mjs';
+import { promptFields } from '../lib/prompts.mjs';
 
 test('isExact32 accepts exactly 32 chars, rejects otherwise', () => {
   assert.equal(isExact32('a'.repeat(32)), null);
@@ -173,4 +175,110 @@ test('isCdnPublicS3Mode rejects garbage and whitespace-padded values', () => {
   assert.notEqual(isCdnPublicS3Mode('inherit '), null);
   assert.notEqual(isCdnPublicS3Mode('url'), null);
   assert.notEqual(isCdnPublicS3Mode(''), null);
+});
+
+test('db-only validators: port, host, identifier, password', () => {
+  assert.equal(isPort('5432'), null);
+  assert.notEqual(isPort('0'), null);
+  assert.notEqual(isPort('70000'), null);
+  assert.notEqual(isPort('54a'), null);
+  assert.equal(isDbHost('10.0.0.9'), null);
+  assert.equal(isDbHost('db.internal'), null);
+  assert.notEqual(isDbHost('postgresql://h:5432'), null);
+  assert.notEqual(isDbHost('dc1 host'), null);
+  assert.equal(isDbIdentifier('tele_drive'), null);
+  assert.notEqual(isDbIdentifier('Tele-Drive'), null);
+  assert.equal(isDbPassword('a-b_c.9'), null);
+  assert.notEqual(isDbPassword('has space'), null);
+});
+
+test('fieldsFor(db) is just bind IP + Postgres credentials', () => {
+  const keys = fieldsFor('db').map((f) => f.key);
+  assert.deepEqual(keys, ['DB_PRIVATE_IP', 'DB_PORT', 'POSTGRES_USER', 'POSTGRES_DB', 'POSTGRES_PASSWORD']);
+  // No backend/Redis/telegram fields: a db host runs none of those processes.
+  for (const k of ['DATABASE_URL', 'REDIS_PASSWORD', 'TELEGRAM_BOT_TOKEN', 'MASTER_SECRET']) {
+    assert.ok(!keys.includes(k), k);
+  }
+});
+
+test('validateValues(db) requires DB_PRIVATE_IP and tolerates a blank password', () => {
+  assert.ok(validateValues('db', {}).some((e) => e.startsWith('DB_PRIVATE_IP')));
+  assert.deepEqual(validateValues('db', { DB_PRIVATE_IP: '10.0.0.9', POSTGRES_PASSWORD: '' }), []);
+  assert.ok(validateValues('db', { DB_PRIVATE_IP: 'nope' }).some((e) => e.startsWith('DB_PRIVATE_IP')));
+});
+
+const CORE_BASE = {
+  GO_HOST: '10.0.0.2',
+  CORE_PRIVATE_IP: '10.0.0.1',
+  UPLOAD_BUFFER_NFS: '/mnt/buffer',
+  REDIS_PASSWORD: 'redispass',
+  TELEGRAM_BOT_TOKEN: '123:abc',
+  TELEGRAM_CHAT_ID: '-100123',
+  DATABASE_URL: 'postgresql://u:p@postgres:5432/app',
+  JWT_SECRET: 'jwtsecret',
+  MASTER_SECRET: 'a'.repeat(32),
+};
+
+test('validateValues(core) demands POSTGRES_PASSWORD once DB_HOST is set', () => {
+  assert.deepEqual(validateValues('core', CORE_BASE), []);
+  const errs = validateValues('core', { ...CORE_BASE, DB_HOST: '10.0.0.9' });
+  assert.ok(errs.some((e) => e.startsWith('POSTGRES_PASSWORD')));
+  assert.deepEqual(validateValues('core', { ...CORE_BASE, DB_HOST: '10.0.0.9', POSTGRES_PASSWORD: 'pw' }), []);
+});
+
+test('deriveValues builds DATABASE_URL only for an external-db core host', () => {
+  assert.deepEqual(deriveValues('core', {}), []);
+  assert.deepEqual(deriveValues('core', { DB_HOST: '', POSTGRES_PASSWORD: 'pw' }), []);
+  assert.deepEqual(deriveValues('mono', { DB_HOST: '10.0.0.9', POSTGRES_PASSWORD: 'pw' }), []);
+  // No password → no URL (validation already failed the run).
+  assert.deepEqual(deriveValues('core', { DB_HOST: '10.0.0.9', POSTGRES_PASSWORD: '' }), []);
+
+  const [d] = deriveValues('core', {
+    DB_HOST: '10.0.0.9',
+    POSTGRES_PASSWORD: 'p@ss',
+    POSTGRES_DB: 'td',
+    DB_PORT: '5440',
+  });
+  assert.equal(d.key, 'DATABASE_URL');
+  assert.equal(d.file, '.env.core');
+  assert.equal(d.value, 'postgresql://tele_drive:p%40ss@10.0.0.9:5440/td');
+});
+
+test('deriveValues defaults user/db/port when the optional fields are blank', () => {
+  const [d] = deriveValues('core', { DB_HOST: 'db.internal', POSTGRES_PASSWORD: 'pw' });
+  assert.equal(d.value, 'postgresql://tele_drive:pw@db.internal:5432/tele_drive');
+});
+
+test('validateValues(core) accepts an empty DATABASE_URL when it will be derived', () => {
+  const errs = validateValues('core', {
+    ...CORE_BASE,
+    DATABASE_URL: '',
+    DB_HOST: '10.0.0.9',
+    POSTGRES_PASSWORD: 'pw',
+  });
+  assert.deepEqual(errs, []);
+  // Without DB_HOST the field is still mandatory: nothing would derive it.
+  assert.ok(validateValues('core', { ...CORE_BASE, DATABASE_URL: '' }).some((e) => e.startsWith('DATABASE_URL')));
+});
+
+test('promptFields never asks for DATABASE_URL on an external-DB core host', async () => {
+  const asked = [];
+  const rl = { question: async (q) => { asked.push(q); return ''; } };
+  const fields = [
+    { key: 'DB_HOST', prompt: 'DB host', required: true },
+    { key: 'DATABASE_URL', prompt: 'Postgres connection URL', required: true },
+    { key: 'DB_PORT', prompt: 'DB port', required: false },
+  ];
+  const values = await promptFields(rl, fields, { DB_HOST: '10.0.0.9' });
+  assert.equal(asked.length, 2);
+  assert.ok(asked.every((q) => !q.includes('DATABASE_URL')));
+  assert.equal(values.DATABASE_URL, undefined);
+});
+
+test('promptFields still asks for DATABASE_URL when the DB is local', async () => {
+  const asked = [];
+  const rl = { question: async (q) => { asked.push(q); return 'postgresql://u:p@postgres:5432/app'; } };
+  const values = await promptFields(rl, [{ key: 'DATABASE_URL', prompt: 'Postgres URL', required: true }], {});
+  assert.equal(asked.length, 1);
+  assert.equal(values.DATABASE_URL, 'postgresql://u:p@postgres:5432/app');
 });

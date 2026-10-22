@@ -20,3 +20,11 @@ export function ensureRedisPassword(existing) {
   if (typeof existing === 'string' && existing.length > 0) return existing;
   return generateRedisPassword(40);
 }
+
+// Same alphabet/size for the Postgres password: alphanumeric needs no
+// percent-encoding, so the value survives the DATABASE_URL round-trip from the
+// db host to .env.core untouched. Never overwrites an existing value.
+export function ensurePostgresPassword(existing) {
+  if (typeof existing === 'string' && existing.length > 0) return existing;
+  return generateRedisPassword(40);
+}

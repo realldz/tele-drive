@@ -24,6 +24,20 @@ export const isFilename = (v) => {
 // a stray nginx directive via server_name.
 export const isHostname = (v) => (/^[A-Za-z0-9.-]+(:\d+)?$/.test(v || '') ? null : 'must be a bare hostname (no scheme, path, or spaces)');
 
+// Postgres role / database name — an unquoted SQL identifier. Keep it boring:
+// lowercase, no quoting, no shell/URL surprises.
+export const isDbIdentifier = (v) =>
+  /^[a-z_][a-z0-9_]{0,62}$/.test(v || '') ? null : 'must be a lowercase identifier [a-z_][a-z0-9_]* (max 63 chars)';
+// TCP port (DB_PORT on both the db host and the core host).
+export const isPort = (v) =>
+  (/^\d{1,5}$/.test(v || '') && Number(v) >= 1 && Number(v) <= 65535 ? null : 'must be an integer 1..65535');
+// Host a DB host is reachable at — bare hostname or IPv4 (no scheme/path).
+export const isDbHost = (v) =>
+  /^[A-Za-z0-9.-]+$/.test(v || '') ? null : 'must be a bare hostname or IPv4 (no scheme, path, or spaces)';
+// Password embedded in DATABASE_URL: anything without whitespace is allowed —
+// deriveValues percent-encodes the rest.
+export const isDbPassword = (v) => (/\s/.test(v || '') ? 'must not contain whitespace' : null);
+
 const req = (validate) => (v) => isRequired(v) ?? (validate ? validate(v) : null);
 
 // Deploy-image knobs consumed by the docker-compose*.ghcr.yml overlays. Both
@@ -99,6 +113,15 @@ const TELEGRAM_APP = (file) => [
   { key: 'TELEGRAM_API_HASH', file, prompt: 'Telegram API hash', validate: req(), required: true, secret: true },
 ];
 
+// Postgres credentials. On the db-only host (.env.db) they create the role +
+// database; on a core host that points at it (.env.core) they are the input
+// DATABASE_URL is derived from (see deriveValues). Blank password = generated.
+const POSTGRES = (file) => [
+  { key: 'POSTGRES_USER', file, prompt: 'Postgres role (blank = tele_drive)', validate: isDbIdentifier, required: false },
+  { key: 'POSTGRES_DB', file, prompt: 'Postgres database (blank = tele_drive)', validate: isDbIdentifier, required: false },
+  { key: 'POSTGRES_PASSWORD', file, prompt: 'Postgres password (auto-generated if blank)', validate: isDbPassword, required: false, secret: true },
+];
+
 const REDIS = (file) => ({
   key: 'REDIS_PASSWORD', file, prompt: 'Redis password (auto-generated if blank)', validate: null, required: true, secret: true,
 });
@@ -124,6 +147,13 @@ const SCHEMA = {
     { key: 'GO_HOST', file: '.env.core', prompt: 'Go data-plane host (name or IP reachable from core)', validate: req(), required: true },
     { key: 'CORE_PRIVATE_IP', file: '.env.core', prompt: 'Core private IP (bind address for Redis + gRPC)', validate: req(isIpv4), required: true },
     { key: 'UPLOAD_BUFFER_NFS', file: '.env.core', prompt: 'Shared upload buffer path (NFS mount)', validate: req(), required: true },
+    // External DB (db-only host). Blank DB_HOST keeps the local Postgres
+    // container in docker-compose.core.yml; set it when Postgres runs on
+    // docker-compose.db.yml, and deploy core with
+    // -f docker-compose.core.extdb.yml so the local container never starts.
+    { key: 'DB_HOST', file: '.env.core', prompt: 'Postgres host reachable from this core (blank = local container)', validate: isDbHost, required: false },
+    { key: 'DB_PORT', file: '.env.core', prompt: 'Postgres port on DB_HOST (blank = 5432)', validate: isPort, required: false },
+    ...POSTGRES('.env.core'),
     { key: 'PUBLIC_TRANSFER_URL', file: 'backend/.env', prompt: 'Dedicated transfer origin (abs. data-plane URLs + frontend runtime config; blank = same origin)', validate: isOriginUrl, required: false },
     REDIS('.env.core'),
     ...IMAGE_FIELDS('.env.core'),
@@ -143,6 +173,13 @@ const SCHEMA = {
     ...IMAGE_FIELDS('.env.transfer'),
     ...BACKEND_FIELDS,
   ],
+  // Database-only host: ONE Postgres container. No backend, no Redis, no gRPC
+  // certs (see docker-compose.db.yml + .env.db.example).
+  db: [
+    { key: 'DB_PRIVATE_IP', file: '.env.db', prompt: 'Private IP THIS db host publishes Postgres on', validate: req(isIpv4), required: true },
+    { key: 'DB_PORT', file: '.env.db', prompt: 'Host port for Postgres (blank = 5432)', validate: isPort, required: false },
+    ...POSTGRES('.env.db'),
+  ],
 };
 
 export function fieldsFor(topology) {
@@ -151,13 +188,37 @@ export function fieldsFor(topology) {
   return fields;
 }
 
+// Values that are COMPUTED rather than prompted, written alongside the prompted
+// ones. Only external-DB core hosts produce anything today: compose interpolates
+// DATABASE_URL from .env.core (docker-compose.core.yml), so the wizard must
+// materialise it from DB_HOST + POSTGRES_*, or the control plane would keep
+// pointing at the local container that docker-compose.core.extdb.yml hides.
+export function deriveValues(topology, values) {
+  const out = [];
+  if (topology === 'core' && values.DB_HOST) {
+    const user = values.POSTGRES_USER || 'tele_drive';
+    const pass = values.POSTGRES_PASSWORD || '';
+    const db = values.POSTGRES_DB || 'tele_drive';
+    const port = values.DB_PORT || '5432';
+    // validateValues already failed the run when DB_HOST is set without a
+    // password; never write a half-built URL if that path is ever skipped.
+    if (!pass) return out;
+    const url = `postgresql://${encodeURIComponent(user)}:${encodeURIComponent(pass)}@${values.DB_HOST}:${port}/${encodeURIComponent(db)}`;
+    out.push({ key: 'DATABASE_URL', file: '.env.core', value: url });
+  }
+  return out;
+}
+
 export function validateValues(topology, values) {
   const errors = [];
   for (const f of fieldsFor(topology)) {
     const v = values[f.key];
     if (v === undefined || v === '') {
       // REDIS_PASSWORD is allowed empty here — secrets.mjs fills it before write.
-      if (f.required && f.key !== 'REDIS_PASSWORD') errors.push(`${f.key}: required`);
+      // DATABASE_URL is COMPUTED by deriveValues on an external-DB core host, so
+      // an empty one there is expected input, not a missing field.
+      const derived = f.key === 'DATABASE_URL' && topology === 'core' && (values.DB_HOST ?? '') !== '';
+      if (f.required && !derived && f.key !== 'REDIS_PASSWORD') errors.push(`${f.key}: required`);
       continue;
     }
     if (f.validate) {
@@ -165,5 +226,13 @@ export function validateValues(topology, values) {
       if (err) errors.push(`${f.key}: ${err}`);
     }
   }
+
+  // Cross-field: an external DB is only usable when the password that created
+  // its role is known here too — DATABASE_URL is rebuilt from it (deriveValues).
+  // The db topology itself may leave it blank (secrets.mjs generates one).
+  if (topology === 'core' && (values.DB_HOST ?? '') !== '' && (values.POSTGRES_PASSWORD ?? '') === '') {
+    errors.push('POSTGRES_PASSWORD: required when DB_HOST is set (use the password the db host generated)');
+  }
+
   return errors;
 }

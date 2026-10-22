@@ -1,0 +1,25 @@
+# ─── Overlay: control plane WITHOUT a local Postgres ────────────────────────
+# Use when Postgres runs on its own host (docker-compose.db.yml). This file
+# profile-gates the base file's `postgres` service, so it stays DEFINED (the
+# backend-core `depends_on` entry — which carries `required: false` — still
+# resolves) but is never CREATED nor started.
+#
+# Deploy the control plane like this instead of the plain core file:
+#
+#   docker compose --env-file .env.core \
+#     -f docker-compose.core.yml -f docker-compose.core.extdb.yml up -d
+#
+# Requirements in `.env.core` (the wizard writes them for you when you answer
+# DB_HOST):
+#   DATABASE_URL=postgresql://tele_drive:<password>@<db-host>:5432/tele_drive
+#
+# The base default DATABASE_URL still points at the local `postgres` container,
+# which no longer exists under this overlay — an unset DATABASE_URL therefore
+# fails to connect. Always set it.
+#
+# Do NOT pass `--profile external-db`: that would start the local container too
+# and collide on the published port.
+
+services:
+  postgres:
+    profiles: ["external-db"]
