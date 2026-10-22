@@ -2,9 +2,11 @@ import { ValidationPipe, VersioningType, type Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import helmet from 'helmet';
+import type { Express } from 'express';
 import * as bodyParser from 'body-parser';
 import cookieParser from 'cookie-parser';
 import { requestIdMiddleware } from './common/middleware/request-id.middleware';
+import { rejectBrotliRequestEncoding } from './common/middleware/reject-brotli-request.middleware';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 
 type BootstrapOptions = {
@@ -72,6 +74,12 @@ export async function bootstrapNestApp(
       next();
     });
 
+    // CVE-2026-111497: block Brotli-encoded request bodies before body-parser
+    // hands them to zlib.createBrotliDecompress(). Registered after the S3
+    // rewrites above so `/s3` paths are already normalised and stay exempt
+    // (S3 reads raw streams and uses Content-Encoding as object metadata).
+    (expressApp as Express).use(rejectBrotliRequestEncoding);
+
     expressApp.use((req: any, res: any, next: any) => {
       if (req.path && (req.path.startsWith('/s3/') || req.path === '/s3')) {
         return next();
@@ -86,6 +94,7 @@ export async function bootstrapNestApp(
       });
     });
   } else {
+    (expressApp as Express).use(rejectBrotliRequestEncoding);
     expressApp.use(bodyParser.json({ limit: '10mb' }));
     expressApp.use(bodyParser.urlencoded({ extended: true, limit: '10mb' }));
   }
