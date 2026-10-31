@@ -1,6 +1,23 @@
 import { lookup } from 'mime-types';
+import { extname } from 'path';
 
 const GENERIC_MIME = 'application/octet-stream';
+const GENERIC_MIME_TYPES = new Set([
+  GENERIC_MIME,
+  'application/x-octet-stream',
+  'binary/octet-stream',
+]);
+const MIME_OVERRIDES = new Map<string, string>([
+  ['.smali', 'text/plain'],
+  ['.kt', 'text/plain'],
+  ['.kts', 'text/plain'],
+]);
+
+/** Whether a client MIME value carries no useful type information. */
+export function isGenericMimeType(value?: string | null): boolean {
+  const mediaType = value?.split(';', 1)[0].trim().toLowerCase();
+  return !mediaType || GENERIC_MIME_TYPES.has(mediaType);
+}
 
 /**
  * Resolve the authoritative MIME type for a stored file.
@@ -16,10 +33,11 @@ export function resolveMimeType(
   clientMimeType?: string | null,
 ): string {
   const trimmed = clientMimeType?.trim();
-  if (trimmed && trimmed !== GENERIC_MIME) {
+  if (trimmed && !isGenericMimeType(trimmed)) {
     return trimmed;
   }
 
-  const fromExtension = lookup(filename);
+  const extension = extname(filename).toLowerCase();
+  const fromExtension = MIME_OVERRIDES.get(extension) || lookup(filename);
   return fromExtension || GENERIC_MIME;
 }
