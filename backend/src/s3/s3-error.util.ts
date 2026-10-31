@@ -10,6 +10,11 @@
 /** S3 error codes mapped to their HTTP status by the error renderers. */
 export const S3_STATUS_MAP: Record<string, number> = {
   NoSuchBucket: 404,
+  NoSuchUpload: 404,
+  InvalidPart: 400,
+  InvalidPartOrder: 400,
+  MalformedXML: 400,
+  NotImplemented: 501,
   NoSuchKey: 404,
   BucketNotEmpty: 409,
   InvalidArgument: 400,

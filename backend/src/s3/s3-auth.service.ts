@@ -50,17 +50,15 @@ export class S3AuthService {
 
       // Date skew check — reject requests more than 15 minutes old
       const dateTime = (req.headers['x-amz-date'] as string) || '';
-      if (dateTime.length === 16) {
-        const reqTime = new Date(
-          `${dateTime.slice(0, 4)}-${dateTime.slice(4, 6)}-${dateTime.slice(6, 8)}T${dateTime.slice(9, 11)}:${dateTime.slice(11, 13)}:${dateTime.slice(13, 15)}Z`,
+      const requestTime = this.parseSigningTime(dateTime);
+      if (
+        !Number.isFinite(requestTime) ||
+        Math.abs(Date.now() - requestTime) > 15 * 60 * 1000
+      ) {
+        this.logger.warn(
+          'S3 auth denied: invalid or expired request timestamp',
         );
-        const skewMs = Math.abs(Date.now() - reqTime.getTime());
-        if (skewMs > 15 * 60 * 1000) {
-          this.logger.warn(
-            `S3 auth denied: request timestamp too old (skew=${Math.round(skewMs / 1000)}s)`,
-          );
-          return null;
-        }
+        return null;
       }
 
       // Look up S3Credential by accessKeyId
@@ -190,22 +188,18 @@ export class S3AuthService {
       const credentialScope = credParts.slice(1).join('/');
 
       // Expiration check
-      const expires = parseInt(expiresStr, 10);
-      if (isNaN(expires) || expires < 1 || expires > 604800) {
-        this.logger.warn(`Presigned URL: invalid Expires value: ${expiresStr}`);
-        return null;
-      }
-
-      if (dateTime.length !== 16) {
-        this.logger.debug('Presigned URL: invalid X-Amz-Date format');
-        return null;
-      }
-      const reqTime = new Date(
-        `${dateTime.slice(0, 4)}-${dateTime.slice(4, 6)}-${dateTime.slice(6, 8)}T${dateTime.slice(9, 11)}:${dateTime.slice(11, 13)}:${dateTime.slice(13, 15)}Z`,
-      );
-      const expirationTime = reqTime.getTime() + expires * 1000;
-      if (Date.now() > expirationTime) {
-        this.logger.warn('Presigned URL: URL has expired');
+      const expires = /^\d+$/.test(expiresStr) ? Number(expiresStr) : NaN;
+      const requestTime = this.parseSigningTime(dateTime);
+      const now = Date.now();
+      if (
+        !Number.isFinite(expires) ||
+        expires < 1 ||
+        expires > 604800 ||
+        !Number.isFinite(requestTime) ||
+        requestTime > now + 15 * 60 * 1000 ||
+        now > requestTime + expires * 1000
+      ) {
+        this.logger.warn('Presigned URL: invalid timestamp or expiration');
         return null;
       }
 
@@ -280,6 +274,20 @@ export class S3AuthService {
   /**
    * Parse AWS4-HMAC-SHA256 Authorization header.
    */
+  private parseSigningTime(value: string): number {
+    if (!/^\d{8}T\d{6}Z$/.test(value)) return NaN;
+    const time = Date.parse(
+      `${value.slice(0, 4)}-${value.slice(4, 6)}-${value.slice(6, 8)}T${value.slice(9, 11)}:${value.slice(11, 13)}:${value.slice(13, 15)}Z`,
+    );
+    if (!Number.isFinite(time)) return NaN;
+    return new Date(time)
+      .toISOString()
+      .replace(/[-:]/g, '')
+      .replace('.000', '') === value
+      ? time
+      : NaN;
+  }
+
   private parseAuthHeader(authHeader: string): {
     accessKeyId: string;
     credentialScope: string;

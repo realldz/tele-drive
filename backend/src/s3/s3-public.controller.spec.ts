@@ -24,16 +24,22 @@ describe('S3PublicController', () => {
     const transferReadService = {
       getDownloadMetadata: jest
         .fn<unknown, unknown[]>()
-        .mockImplementation((...args: unknown[]) => { const file = args[0] as { id: string; size: number }; return { fileId: file.id, size: file.size }; }),
-      processStream: jest.fn<Promise<unknown>, unknown[]>().mockResolvedValue(undefined),
-      processDownload: jest.fn<Promise<unknown>, unknown[]>().mockResolvedValue(undefined),
+        .mockImplementation((...args: unknown[]) => {
+          const file = args[0] as { id: string; size: number };
+          return { fileId: file.id, size: file.size };
+        }),
+      processStream: jest
+        .fn<Promise<unknown>, unknown[]>()
+        .mockResolvedValue(undefined),
+      processDownload: jest
+        .fn<Promise<unknown>, unknown[]>()
+        .mockResolvedValue(undefined),
     };
 
     const controller = new S3PublicController(
       s3Service as never,
       transferReadService as never,
     );
-
 
     const res = {
       status: jest.fn().mockReturnThis(),
@@ -46,7 +52,8 @@ describe('S3PublicController', () => {
   };
 
   /** Minimal public request stub carrying only the query string. */
-  const listRequest = (query: Record<string, string>) => ({ query }) as never;
+  const listRequest = (query: Record<string, string>) =>
+    ({ query: { 'list-type': '2', ...query } }) as never;
 
   const emptyPage = {
     objects: [],
@@ -324,7 +331,6 @@ describe('S3PublicController', () => {
       );
     });
   });
-
 });
 describe('public-S3 byte route cache wiring (Tier-2)', () => {
   const fileRecord = {
@@ -347,7 +353,10 @@ describe('public-S3 byte route cache wiring (Tier-2)', () => {
     const transferReadService = {
       getDownloadMetadata: jest
         .fn<unknown, unknown[]>()
-        .mockImplementation((...args: unknown[]) => { const f = args[0] as { id: string; size: number }; return { fileId: f.id, size: f.size }; }),
+        .mockImplementation((...args: unknown[]) => {
+          const f = args[0] as { id: string; size: number };
+          return { fileId: f.id, size: f.size };
+        }),
       processStream: jest
         .fn<Promise<unknown>, unknown[]>()
         .mockResolvedValue(undefined),

@@ -38,6 +38,22 @@ map "$request_method:$s3_has_upload_id:$s3_has_copy_source" $s3_object_upstream 
 # Access log line that records which upstream served each S3 request — makes the
 # data/control split auditable from logs alone. $request_id chains with the
 # X-Request-ID forwarded to upstreams so a request is greppable edge → Go → NestJS.
+# Signed S3 bucket names take precedence over legacy transfer/public URLs.
+map $args $s3_presigned_request {
+    default 0;
+    "~(^|&)X-Amz-Algorithm=AWS4-HMAC-SHA256(&|$)" 1;
+}
+map "$http_authorization:$s3_presigned_request" $s3_signed_request {
+    default 0;
+    ~^AWS4-HMAC-SHA256 1;
+    ~:1$ 1;
+}
+map "$s3_signed_request:$s3_object_upstream" $s3_legacy_target {
+    default "";
+    "1:data" backend-transfer:3001;
+    "1:control" backend-core:3001;
+}
+
 log_format s3_split '$remote_addr - reqid=$request_id "$request" $status $body_bytes_sent '
                     'upstream=$upstream_addr classified=$s3_object_upstream '
                     'rt=$request_time uct=$upstream_connect_time';
@@ -414,6 +430,10 @@ server {
 
     # Redirect target for data I/O — goes to Go transfer service
     location /transfer {
+        if ($s3_legacy_target != "") {
+            proxy_pass http://$s3_legacy_target$request_uri;
+            break;
+        }
         set $transfer_upstream backend-transfer;
         rewrite ^/transfer/(.*) /v1/transfer/$1 break;
         proxy_pass http://$transfer_upstream:3001;
@@ -429,6 +449,10 @@ server {
 
     # Public URLs — goes to Go transfer service
     location /public {
+        if ($s3_legacy_target != "") {
+            proxy_pass http://$s3_legacy_target$request_uri;
+            break;
+        }
         set $transfer_upstream backend-transfer;
         rewrite ^/public/(.*) /v1/transfer/public/$1 break;
         proxy_pass http://$transfer_upstream:3001;

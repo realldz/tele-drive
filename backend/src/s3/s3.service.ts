@@ -11,6 +11,7 @@ import * as crypto from 'crypto';
 import { escapeXml, decodeXmlEntities } from '../common/utils/xml';
 import {
   buildListPage,
+  decodeContinuationToken,
   type S3ListObject,
   type S3ListPage,
 } from './s3-list-pagination.util';
@@ -803,6 +804,8 @@ export class S3Service {
     isTruncated: boolean,
     encodingType?: string,
     cursors?: {
+      listVersion?: 1 | 2;
+      marker?: string;
       nextContinuationToken?: string;
       continuationToken?: string;
       startAfter?: string;
@@ -851,14 +854,22 @@ export class S3Service {
         ? `\n  <NextContinuationToken>${escapeXml(cursors.nextContinuationToken)}</NextContinuationToken>`
         : '';
 
+    const isV1 = cursors?.listVersion === 1;
+    const markerXml = isV1
+      ? `\n  <Marker>${escapeXml(encodeValue(cursors?.marker || ''))}</Marker>` +
+        (isTruncated && cursors?.nextContinuationToken
+          ? `\n  <NextMarker>${escapeXml(encodeValue(decodeContinuationToken(cursors.nextContinuationToken)))}</NextMarker>`
+          : '')
+      : '';
+
     return `<?xml version="1.0" encoding="UTF-8"?>
 <ListBucketResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
   <Name>${escapeXml(bucketName)}</Name>
   <Prefix>${escapeXml(encodeValue(prefix))}</Prefix>
-  <KeyCount>${keyCount}</KeyCount>
+  ${isV1 ? '' : `<KeyCount>${keyCount}</KeyCount>`}
   <MaxKeys>${maxKeys}</MaxKeys>
   <Delimiter>${escapeXml(encodeValue(delimiter))}</Delimiter>${encodingTypeXml}
-  <IsTruncated>${isTruncated}</IsTruncated>${continuationTokenXml}${startAfterXml}${nextContinuationTokenXml}${objectsXml}${prefixesXml}
+  <IsTruncated>${isTruncated}</IsTruncated>${isV1 ? markerXml : continuationTokenXml + startAfterXml + nextContinuationTokenXml}${objectsXml}${prefixesXml}
 </ListBucketResult>`;
   }
 

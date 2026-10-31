@@ -34,11 +34,9 @@ func s3PutContentLength(c echo.Context) int64 {
 		if n, err := strconv.ParseInt(v, 10, 64); err == nil && n >= 0 {
 			return n
 		}
+		return -1
 	}
-	if n := c.Request().ContentLength; n > 0 {
-		return n
-	}
-	return 0
+	return c.Request().ContentLength
 }
 
 // S3PutObject serves PUT /:bucket/*key by ingesting the body directly (encrypt
@@ -65,6 +63,10 @@ func (h *FileHandler) S3PutObject(c echo.Context) error {
 
 	requestID := c.Response().Header().Get("X-Request-ID")
 	contentLength := s3PutContentLength(c)
+	if contentLength < 0 {
+		h.logger.Warn("s3 PutObject rejected unknown or invalid content length", "requestId", requestID, "bucket", bucket)
+		return s3ErrorXML(c, http.StatusLengthRequired, "MissingContentLength", "Provide a valid Content-Length or X-Amz-Decoded-Content-Length.")
+	}
 	contentType := c.Request().Header.Get("Content-Type")
 	if contentType == "" {
 		contentType = "application/octet-stream"

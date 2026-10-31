@@ -1,4 +1,9 @@
 import {
+  parseMultipartManifest,
+  validateMultipartManifest,
+  type CompletedS3Part,
+} from './s3-multipart-manifest.util';
+import {
   Injectable,
   Logger,
   NotFoundException,
@@ -255,17 +260,17 @@ export class S3MultipartService {
    * The client sends an XML body listing all parts with their ETags.
    * We verify all expected parts are uploaded, then mark the FileRecord complete.
    *
-   * @param partCount  number of parts declared by the client (parsed from XML body)
+   * @param declaredParts ordered part numbers and ETags from the client
    */
   async completeMultipartUpload(
     uploadId: string,
     userId: string,
     bucket: string,
     key: string,
-    declaredPartCount: number,
+    declaredParts: CompletedS3Part[],
   ): Promise<{ location: string; etag: string }> {
     this.logger.log(
-      `S3 CompleteMultipartUpload: uploadId=${uploadId}, declaredParts=${declaredPartCount}`,
+      `S3 CompleteMultipartUpload: uploadId=${uploadId}, declaredParts=${declaredParts.length}`,
     );
 
     const fileRecord = await this.prisma.fileRecord.findFirst({
@@ -274,6 +279,20 @@ export class S3MultipartService {
     });
     if (!fileRecord)
       throw new NotFoundException(`Upload not found: uploadId=${uploadId}`);
+    const target = await this.s3Service.resolveKey(userId, bucket, key, false);
+    if (
+      fileRecord.deletedAt ||
+      fileRecord.folderId !== target.folderId ||
+      fileRecord.filename !== target.filename
+    ) {
+      throw new NotFoundException('NoSuchUpload');
+    }
+    try {
+      validateMultipartManifest(declaredParts, fileRecord.chunks);
+    } catch (error) {
+      this.logger.warn(`S3 multipart manifest rejected: uploadId=${uploadId}`);
+      throw error;
+    }
     if (fileRecord.status === 'complete') {
       // Idempotent — return stored etag
       const storedEtag = (fileRecord as any).etag || `"${uploadId}"`;
@@ -281,12 +300,6 @@ export class S3MultipartService {
     }
 
     const uploadedCount = fileRecord.chunks.length;
-
-    if (uploadedCount < declaredPartCount) {
-      throw new BadRequestException(
-        `Missing parts: uploaded ${uploadedCount}/${declaredPartCount}`,
-      );
-    }
 
     // Calculate total size from all chunks
     const totalSize = fileRecord.chunks.reduce(
@@ -500,15 +513,14 @@ export class S3MultipartService {
   }
 
   /**
-   * Parse the CompleteMultipartUpload XML body to count declared parts.
+   * Parse the CompleteMultipartUpload XML body into a validated manifest.
    * XML body format:
    *   <CompleteMultipartUpload>
    *     <Part><PartNumber>1</PartNumber><ETag>"..."</ETag></Part>
    *     ...
    *   </CompleteMultipartUpload>
    */
-  parseCompleteMultipartXml(body: string): number {
-    const matches = body.match(/<PartNumber>/g);
-    return matches ? matches.length : 0;
+  parseCompleteMultipartXml(body: string): CompletedS3Part[] {
+    return parseMultipartManifest(body);
   }
 }
