@@ -108,25 +108,36 @@ export class S3AuthService {
       let expectedSignature = calculateSignature(canonicalRequest);
 
       // Cloudflare overwrites Accept-Encoding before forwarding requests to the
-      // origin. AWS SDK for Go (used by rclone) signs `accept-encoding: identity`,
-      // so retry that exact client value when the intermediary changed it.
+      // origin. rclone signs `accept-encoding: identity` for HEAD and `gzip` for
+      // GET (its S3 `use_accept_encoding_gzip` option), so retry those exact
+      // client values when the intermediary changed the header.
       if (
         expectedSignature !== signature &&
-        signedHeaders.includes('accept-encoding') &&
-        this.normalizeHeaderValue(req.headers['accept-encoding']) !== 'identity'
+        signedHeaders.includes('accept-encoding')
       ) {
-        const identityCanonicalRequest = this.buildCanonicalRequest(
-          req,
-          signedHeaders,
-          { 'accept-encoding': 'identity' },
+        const observed = this.normalizeHeaderValue(
+          req.headers['accept-encoding'],
         );
-        const identitySignature = calculateSignature(identityCanonicalRequest);
 
-        if (identitySignature === signature) {
-          expectedSignature = identitySignature;
-          this.logger.debug(
-            'S3 auth accepted signed accept-encoding value restored after intermediary rewrite',
+        for (const signedValue of ['identity', 'gzip']) {
+          if (observed === signedValue) {
+            continue;
+          }
+
+          const retryCanonicalRequest = this.buildCanonicalRequest(
+            req,
+            signedHeaders,
+            { 'accept-encoding': signedValue },
           );
+          const retrySignature = calculateSignature(retryCanonicalRequest);
+
+          if (retrySignature === signature) {
+            expectedSignature = retrySignature;
+            this.logger.debug(
+              `S3 auth accepted signed accept-encoding value "${signedValue}" restored after intermediary rewrite`,
+            );
+            break;
+          }
         }
       }
 

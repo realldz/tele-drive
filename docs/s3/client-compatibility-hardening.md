@@ -57,11 +57,13 @@ rejected before credential lookup.
 
 ### Cloudflare `Accept-Encoding` rewrite
 
-rclone uses the AWS SDK for Go, which signs `accept-encoding: identity` in
+rclone uses the AWS SDK for Go, which signs `accept-encoding: identity` for
+HEAD and `gzip` for GET (its S3 `use_accept_encoding_gzip` option) in
 `SignedHeaders`. Cloudflare rewrites that header before it reaches the origin
 (for example to `gzip, br`), so the ordinary canonical request no longer
-matches. Both verifiers retry the signature with `accept-encoding: identity`
-when that header is signed and the observed value differs:
+matches. Both verifiers retry the signature with the client-signed values
+(`identity` and `gzip`) when that header is signed and the observed value
+differs:
 
 - NestJS control plane: `backend/src/s3/s3-auth.service.ts`
 - Go data plane: `backend-transfer-go/internal/s3auth/verifier.go`
@@ -83,5 +85,5 @@ request IDs containing `&`, `<`, or other reserved characters remain valid XML.
 - `s3.controller.spec.ts`: UploadPart stays on the signed URL even when the
   legacy PutObject redirect flag is enabled.
 - `s3_error_xml_test.go`: escaped XML errors and PutObject length handling.
-- `verifier_test.go`: restores a client-signed `accept-encoding: identity`
-  after a Cloudflare rewrite on the Go data plane.
+- `verifier_test.go`: restores client-signed `accept-encoding: identity` and
+  `gzip` after a Cloudflare rewrite on the Go data plane.

@@ -100,72 +100,78 @@ describe('S3AuthService canonicalization', () => {
     expect(normalized).toBe('a b c');
   });
 
-  it('restores rclone signed accept-encoding after Cloudflare rewrites it', async () => {
-    const secretAccessKey = 'test-secret-access-key';
-    const accessKeyId = 'AKIATESTCLOUDFLARE01';
-    const dateTime = new Date().toISOString().replace(/[-:]|\.\d{3}/g, '');
-    const date = dateTime.slice(0, 8);
-    const credentialScope = `${date}/us-east-1/s3/aws4_request`;
-    const signedHeaders = [
-      'accept-encoding',
-      'host',
-      'x-amz-content-sha256',
-      'x-amz-date',
-    ];
-    const req: any = {
-      method: 'GET',
-      originalUrl: '/?x-id=ListBuckets',
-      headers: {
-        'accept-encoding': 'identity',
-        host: 's3.example.com',
-        'x-amz-content-sha256':
-          'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-        'x-amz-date': dateTime,
-      },
-    };
-    const canonicalRequest = (service as any).buildCanonicalRequest(
-      req,
-      signedHeaders,
-    );
-    const canonicalRequestHash = crypto
-      .createHash('sha256')
-      .update(canonicalRequest)
-      .digest('hex');
-    const stringToSign = [
-      'AWS4-HMAC-SHA256',
-      dateTime,
-      credentialScope,
-      canonicalRequestHash,
-    ].join('\n');
-    const signingKey = (service as any).deriveSigningKey(
-      secretAccessKey,
-      date,
-      'us-east-1',
-      's3',
-    );
-    const signature = crypto
-      .createHmac('sha256', signingKey)
-      .update(stringToSign)
-      .digest('hex');
+  it.each([
+    ['identity', 'br, gzip'],
+    ['gzip', 'gzip, br'],
+  ])(
+    'restores rclone signed accept-encoding %s after Cloudflare rewrites it to %s',
+    async (signedValue, rewrittenValue) => {
+      const secretAccessKey = 'test-secret-access-key';
+      const accessKeyId = 'AKIATESTCLOUDFLARE01';
+      const dateTime = new Date().toISOString().replace(/[-:]|\.\d{3}/g, '');
+      const date = dateTime.slice(0, 8);
+      const credentialScope = `${date}/us-east-1/s3/aws4_request`;
+      const signedHeaders = [
+        'accept-encoding',
+        'host',
+        'x-amz-content-sha256',
+        'x-amz-date',
+      ];
+      const req: any = {
+        method: 'GET',
+        originalUrl: '/?x-id=ListBuckets',
+        headers: {
+          'accept-encoding': signedValue,
+          host: 's3.example.com',
+          'x-amz-content-sha256':
+            'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+          'x-amz-date': dateTime,
+        },
+      };
+      const canonicalRequest = (service as any).buildCanonicalRequest(
+        req,
+        signedHeaders,
+      );
+      const canonicalRequestHash = crypto
+        .createHash('sha256')
+        .update(canonicalRequest)
+        .digest('hex');
+      const stringToSign = [
+        'AWS4-HMAC-SHA256',
+        dateTime,
+        credentialScope,
+        canonicalRequestHash,
+      ].join('\n');
+      const signingKey = (service as any).deriveSigningKey(
+        secretAccessKey,
+        date,
+        'us-east-1',
+        's3',
+      );
+      const signature = crypto
+        .createHmac('sha256', signingKey)
+        .update(stringToSign)
+        .digest('hex');
 
-    req.headers['accept-encoding'] = 'br, gzip';
-    req.headers['authorization'] =
-      `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, ` +
-      `SignedHeaders=${signedHeaders.join(';')}, Signature=${signature}`;
+      req.headers['accept-encoding'] = rewrittenValue;
+      req.headers['authorization'] =
+        `AWS4-HMAC-SHA256 Credential=${accessKeyId}/${credentialScope}, ` +
+        `SignedHeaders=${signedHeaders.join(';')}, Signature=${signature}`;
 
-    const prisma = {
-      s3Credential: {
-        findUnique: jest.fn().mockResolvedValue({
-          accessKeyId,
-          secretAccessKey,
-          isActive: true,
-          userId: 'user-1',
-          user: {},
-        }),
-      },
-    };
-    service = new S3AuthService(prisma as never);
+      const prisma = {
+        s3Credential: {
+          findUnique: jest.fn().mockResolvedValue({
+            accessKeyId,
+            secretAccessKey,
+            isActive: true,
+            userId: 'user-1',
+            user: {},
+          }),
+        },
+      };
+      service = new S3AuthService(prisma as never);
 
-    await expect(service.verifySignature(req)).resolves.toBe('user-1');
-  });
+      await expect(service.verifySignature(req)).resolves.toBe('user-1');
+    },
+  );
 });
