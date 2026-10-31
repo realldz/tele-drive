@@ -7,6 +7,21 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
+const s3PrivateCacheControl = "private, no-store"
+
+// s3PrivateNoStore prevents browsers and shared CDNs from caching authenticated
+// S3 responses. In particular, a CDN cache-miss must not normalize a signed
+// Range request before SigV4 verification at the origin.
+func s3PrivateNoStore(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		headers := c.Response().Header()
+		headers.Set("Cache-Control", s3PrivateCacheControl)
+		headers.Set("CDN-Cache-Control", "no-store")
+		headers.Set("Cloudflare-CDN-Cache-Control", "no-store")
+		return next(c)
+	}
+}
+
 // s3HostFilter rejects requests whose Host does not match the configured S3
 // domain. Defense-in-depth: nginx (Phase 8) routes only S3 traffic to these
 // root-level routes, but this guard ensures a stray request on another host
@@ -35,7 +50,7 @@ func (h *FileHandler) s3HostFilter(next echo.HandlerFunc) echo.HandlerFunc {
 //
 // GET (Phase 5), PUT (Phase 6), and HEAD (Phase 7) are wired here.
 func (h *FileHandler) RegisterS3Routes(e *echo.Echo) {
-	s3 := e.Group("", h.s3HostFilter)
+	s3 := e.Group("", s3PrivateNoStore, h.s3HostFilter)
 	s3.GET("/:bucket/*", h.S3GetObject)
 	s3.HEAD("/:bucket/*", h.S3HeadObject)
 	s3.PUT("/:bucket/*", h.S3PutObject)

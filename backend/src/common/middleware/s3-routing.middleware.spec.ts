@@ -46,4 +46,53 @@ describe('S3 host routing', () => {
       (await request(app).get('/photos').set('Host', 'app.example.com')).status,
     ).toBe(404);
   });
+  it('prevents shared caches from storing private S3 responses', async () => {
+    const res = await request(app)
+      .get('/photos/file.txt')
+      .set('Host', 's3.example.com');
+
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(res.headers['cdn-cache-control']).toBe('no-store');
+    expect(res.headers['cloudflare-cdn-cache-control']).toBe('no-store');
+  });
+  it.each(['/public', '/public/user/bucket/file.txt'])(
+    'keeps the public cache policy untouched for %s',
+    async (path) => {
+      const res = await request(app).get(path).set('Host', 's3.example.com');
+
+      expect(res.headers['cache-control']).toBeUndefined();
+      expect(res.headers['cdn-cache-control']).toBeUndefined();
+      expect(res.headers['cloudflare-cdn-cache-control']).toBeUndefined();
+    },
+  );
+  it.each([
+    {
+      name: 'Authorization header',
+      path: '/public/folder/file.txt',
+      authorization:
+        'AWS4-HMAC-SHA256 Credential=AKIAEXAMPLE/20261101/us-east-1/s3/aws4_request',
+    },
+    {
+      name: 'presigned query',
+      path: '/public/folder/file.txt?X-Amz-Algorithm=AWS4-HMAC-SHA256',
+      authorization: undefined,
+    },
+  ])('protects a signed bucket named public via $name', async (testCase) => {
+    let pending = request(app).get(testCase.path).set('Host', 's3.example.com');
+    if (testCase.authorization) {
+      pending = pending.set('Authorization', testCase.authorization);
+    }
+    const res = await pending;
+
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(res.headers['cdn-cache-control']).toBe('no-store');
+    expect(res.headers['cloudflare-cdn-cache-control']).toBe('no-store');
+  });
+  it('also protects the internal S3 API alias', async () => {
+    const res = await request(app).get('/api/s3?x=1').set('Host', 'localhost');
+
+    expect(res.headers['cache-control']).toBe('private, no-store');
+    expect(res.headers['cdn-cache-control']).toBe('no-store');
+    expect(res.headers['cloudflare-cdn-cache-control']).toBe('no-store');
+  });
 });
