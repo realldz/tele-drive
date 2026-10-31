@@ -78,20 +78,6 @@ export class S3AuthService {
       const secretAccessKey = this.decryptSecret(credential.secretAccessKey);
 
       // Build canonical request
-      const canonicalRequest = this.buildCanonicalRequest(req, signedHeaders);
-      const canonicalRequestHash = crypto
-        .createHash('sha256')
-        .update(canonicalRequest)
-        .digest('hex');
-
-      // Build string to sign
-      const stringToSign = [
-        'AWS4-HMAC-SHA256',
-        dateTime,
-        credentialScope,
-        canonicalRequestHash,
-      ].join('\n');
-
       // Derive signing key
       const signingKey = this.deriveSigningKey(
         secretAccessKey,
@@ -100,13 +86,61 @@ export class S3AuthService {
         service,
       );
 
-      // Compute expected signature
-      const expectedSignature = crypto
-        .createHmac('sha256', signingKey)
-        .update(stringToSign)
-        .digest('hex');
+      const canonicalRequest = this.buildCanonicalRequest(req, signedHeaders);
+      const calculateSignature = (request: string): string => {
+        const canonicalRequestHash = crypto
+          .createHash('sha256')
+          .update(request)
+          .digest('hex');
+        const stringToSign = [
+          'AWS4-HMAC-SHA256',
+          dateTime,
+          credentialScope,
+          canonicalRequestHash,
+        ].join('\n');
+
+        return crypto
+          .createHmac('sha256', signingKey)
+          .update(stringToSign)
+          .digest('hex');
+      };
+
+      let expectedSignature = calculateSignature(canonicalRequest);
+
+      // Cloudflare overwrites Accept-Encoding before forwarding requests to the
+      // origin. AWS SDK for Go (used by rclone) signs `accept-encoding: identity`,
+      // so retry that exact client value when the intermediary changed it.
+      if (
+        expectedSignature !== signature &&
+        signedHeaders.includes('accept-encoding') &&
+        this.normalizeHeaderValue(req.headers['accept-encoding']) !== 'identity'
+      ) {
+        const identityCanonicalRequest = this.buildCanonicalRequest(
+          req,
+          signedHeaders,
+          { 'accept-encoding': 'identity' },
+        );
+        const identitySignature = calculateSignature(identityCanonicalRequest);
+
+        if (identitySignature === signature) {
+          expectedSignature = identitySignature;
+          this.logger.debug(
+            'S3 auth accepted signed accept-encoding value restored after intermediary rewrite',
+          );
+        }
+      }
 
       if (expectedSignature !== signature) {
+        const canonicalRequestHash = crypto
+          .createHash('sha256')
+          .update(canonicalRequest)
+          .digest('hex');
+        const stringToSign = [
+          'AWS4-HMAC-SHA256',
+          dateTime,
+          credentialScope,
+          canonicalRequestHash,
+        ].join('\n');
         this.logger.warn(
           `S3 auth failed: signature mismatch for AccessKeyId: ${accessKeyId}`,
         );
@@ -340,7 +374,11 @@ export class S3AuthService {
   /**
    * Build canonical request string for Sig V4.
    */
-  private buildCanonicalRequest(req: any, signedHeaders: string[]): string {
+  private buildCanonicalRequest(
+    req: any,
+    signedHeaders: string[],
+    signedHeaderOverrides: Record<string, string> = {},
+  ): string {
     const method = req.method.toUpperCase();
     const requestTarget = this.getRequestTarget(req);
     const canonicalUri = this.buildCanonicalUri(requestTarget.path);
@@ -351,7 +389,13 @@ export class S3AuthService {
     // Canonical Headers — only signed headers, sorted
     const canonicalHeaderLines = signedHeaders
       .map((h) => {
-        const val = req.headers[h.toLowerCase()];
+        const headerName = h.toLowerCase();
+        const val = Object.prototype.hasOwnProperty.call(
+          signedHeaderOverrides,
+          headerName,
+        )
+          ? signedHeaderOverrides[headerName]
+          : req.headers[headerName];
         return `${h.toLowerCase()}:${this.normalizeHeaderValue(val)}`;
       })
       .join('\n');
