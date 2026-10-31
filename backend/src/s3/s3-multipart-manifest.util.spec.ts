@@ -56,6 +56,32 @@ it('accepts SDK ETag-first completion elements and escaped quotes', () => {
   ).toEqual([{ partNumber: 1, etag }]);
 });
 
+it.each([
+  'ChecksumCRC32',
+  'ChecksumCRC32C',
+  'ChecksumCRC64NVME',
+  'ChecksumSHA1',
+  'ChecksumSHA256',
+])('accepts the standard per-part %s field emitted by SDKs', (tag) => {
+  expect(
+    parseMultipartManifest(
+      body(
+        `<Part><ETag>"${etag}"</ETag><${tag}>YWJjZA==</${tag}><PartNumber>1</PartNumber></Part>`,
+      ),
+    ),
+  ).toEqual([{ partNumber: 1, etag }]);
+});
+
+it('rejects unknown checksum fields instead of silently dropping them', () => {
+  expect(() =>
+    parseMultipartManifest(
+      body(
+        `<Part><ETag>"${etag}"</ETag><ChecksumFuture>YWJjZA==</ChecksumFuture><PartNumber>1</PartNumber></Part>`,
+      ),
+    ),
+  ).toThrow('MalformedXML');
+});
+
 it.each(['&#34;', '&#x22;'])('accepts XML numeric quote entity %s', (quote) => {
   expect(
     parseMultipartManifest(

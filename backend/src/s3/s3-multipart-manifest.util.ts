@@ -13,20 +13,23 @@ export function parseMultipartManifest(body: string): CompletedS3Part[] {
       /^<CompleteMultipartUpload(?:\s+xmlns="[^"]*")?\s*>([\s\S]*)<\/CompleteMultipartUpload>$/,
     );
   if (!envelope) throw new BadRequestException('MalformedXML');
-  if (/<Checksum[A-Za-z0-9]*>/.test(envelope[1]))
-    throw new NotImplementedException(
-      'NotImplemented: multipart checksums are not supported',
-    );
   const parts: CompletedS3Part[] = [];
   const remaining = envelope[1].replace(
     /<Part>([\s\S]*?)<\/Part>/g,
     (_match: string, content: string) => {
       const number = content.match(/<PartNumber>(\d+)<\/PartNumber>/);
       const etag = content.match(/<ETag>([^<]*)<\/ETag>/);
+      // AWS CLI v2 sends a per-part checksum by default. We still validate the
+      // stored plaintext MD5 via ETag below; accept and ignore the additional
+      // standard checksum field so modern clients can complete the upload.
+      const withoutChecksums = content.replace(
+        /<(Checksum(?:CRC32C?|CRC64NVME|SHA1|SHA256))>[A-Za-z0-9+/]+={0,2}<\/\1>/g,
+        '',
+      );
       if (
         !number ||
         !etag ||
-        content.replace(number[0], '').replace(etag[0], '').trim()
+        withoutChecksums.replace(number[0], '').replace(etag[0], '').trim()
       )
         throw new BadRequestException('MalformedXML');
       parts.push({
