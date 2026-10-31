@@ -34,7 +34,7 @@
     "@nestjs/jwt": "^11.0.2",
     "@nestjs/microservices": "^11.2.7",
     "@nestjs/passport": "^11.0.5",
-    "@nestjs/platform-express": "^11.2.7",
+    "@nestjs/platform-express": "^12.3.2",
     "@nestjs/schedule": "^6.1.1",
     "@nestjs/throttler": "^6.5.0",
     "@prisma/client": "^6.19.2",
