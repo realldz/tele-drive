@@ -169,19 +169,29 @@ func (v *Verifier) verifyHeader(ctx context.Context, req *http.Request, authHead
 	expected := computeSignature(canonical, dateTime, parsed.CredentialScope, parsed.Date, parsed.Region, parsed.Service, secret)
 
 	// Cloudflare overwrites Accept-Encoding before forwarding requests to the
-	// origin. AWS SDK for Go (used by rclone) signs `accept-encoding: identity`,
-	// so retry that exact client value when the intermediary changed it. Mirrors
+	// origin. rclone signs `accept-encoding: identity` for HEAD and `gzip` for
+	// GET (its S3 `use_accept_encoding_gzip` option), so retry those exact
+	// client values when the intermediary changed the header. Mirrors
 	// backend/src/s3/s3-auth.service.ts.
 	if !hmac.Equal([]byte(expected), []byte(parsed.Signature)) &&
-		containsHeader(parsed.SignedHeaders, "accept-encoding") &&
-		normalizeHeaderValue(req.Header.Get("Accept-Encoding")) != "identity" {
-		identityCanonical := buildCanonicalRequestWithOverrides(
-			req, parsed.SignedHeaders, map[string]string{"accept-encoding": "identity"},
-		)
-		identitySignature := computeSignature(identityCanonical, dateTime, parsed.CredentialScope, parsed.Date, parsed.Region, parsed.Service, secret)
-		if hmac.Equal([]byte(identitySignature), []byte(parsed.Signature)) {
-			expected = identitySignature
-			v.logger.Debug("s3auth.signature.accept_encoding_restored", "requestId", requestID)
+		containsHeader(parsed.SignedHeaders, "accept-encoding") {
+		observed := normalizeHeaderValue(req.Header.Get("Accept-Encoding"))
+		for _, signedValue := range []string{"identity", "gzip"} {
+			if observed == signedValue {
+				continue
+			}
+			candidateCanonical := buildCanonicalRequestWithOverrides(
+				req, parsed.SignedHeaders, map[string]string{"accept-encoding": signedValue},
+			)
+			candidate := computeSignature(candidateCanonical, dateTime, parsed.CredentialScope, parsed.Date, parsed.Region, parsed.Service, secret)
+			if hmac.Equal([]byte(candidate), []byte(parsed.Signature)) {
+				expected = candidate
+				v.logger.Debug("s3auth.signature.accept_encoding_restored",
+					"requestId", requestID,
+					"signedValue", signedValue,
+				)
+				break
+			}
 		}
 	}
 

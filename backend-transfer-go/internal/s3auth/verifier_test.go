@@ -247,6 +247,46 @@ func TestVerifier_RestoresSignedAcceptEncodingAfterCloudflareRewrite(t *testing.
 	}
 }
 
+// TestVerifier_RestoresSignedGzipAcceptEncodingAfterCloudflareRewrite covers
+// rclone's GET path, which signs accept-encoding: gzip (its S3
+// use_accept_encoding_gzip option) instead of the identity used for HEAD.
+func TestVerifier_RestoresSignedGzipAcceptEncodingAfterCloudflareRewrite(t *testing.T) {
+	const (
+		secret      = "test-secret-access-key"
+		accessKeyID = "AKIATESTCLOUDFLARE02"
+	)
+	dateTime := time.Now().UTC().Format("20060102T150405Z")
+	date := dateTime[:8]
+	credentialScope := date + "/us-east-1/s3/aws4_request"
+	signedHeaders := []string{"accept-encoding", "host", "range", "x-amz-content-sha256", "x-amz-date"}
+
+	req := makeReq("GET", "/s3/backup/bin/ffmpeg.exe?x-id=GetObject", map[string]string{
+		"accept-encoding":      "gzip",
+		"range":                "bytes=0-0",
+		"x-amz-content-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		"x-amz-date":           dateTime,
+	})
+	req.Host = "s3.example.com"
+
+	canonical := buildCanonicalRequest(req, signedHeaders)
+	signature := computeSignature(canonical, dateTime, credentialScope, date, "us-east-1", "s3", secret)
+
+	// Cloudflare rewrites the header after the client signed it.
+	req.Header.Set("Accept-Encoding", "gzip, br")
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+accessKeyID+"/"+
+		credentialScope+", SignedHeaders="+strings.Join(signedHeaders, ";")+
+		", Signature="+signature)
+
+	v := New(&fakeLookup{secret: secret, userID: "user-1", active: true}, silentLogger())
+	result, err := v.Verify(context.Background(), req, "test-req")
+	if err != nil {
+		t.Fatalf("expected signature accepted after gzip accept-encoding restore, got %v", err)
+	}
+	if result.UserID != "user-1" {
+		t.Errorf("userId: got %q, want %q", result.UserID, "user-1")
+	}
+}
+
 func TestVerifier_RejectsUnknownAccessKey(t *testing.T) {
 	now := time.Now().UTC().Format("20060102T150405Z")
 	header := "AWS4-HMAC-SHA256 Credential=AKIAUNKNOWN/" + now[:8] +
