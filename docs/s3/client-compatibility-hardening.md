@@ -74,10 +74,27 @@ Keep the two in sync. Fixing only one plane makes rclone work for ListObjects
 Go S3 XML errors are built with XML encoding so object paths, messages, and
 request IDs containing `&`, `<`, or other reserved characters remain valid XML.
 
+### CDN cache isolation
+
+Authenticated S3 responses must never be stored by a browser or shared CDN.
+Cloudflare can normalize a signed `Range` header while filling a cold cache;
+because `Range` is part of rclone's SigV4 `SignedHeaders`, the origin then sees a
+different canonical request and rejects the first request with 403. A later warm
+request may take a different edge path and succeed, making the failure appear
+intermittent.
+
+Both data planes set `Cache-Control: private, no-store`,
+`CDN-Cache-Control: no-store`, and `Cloudflare-CDN-Cache-Control: no-store` on
+private S3 responses. The unsigned `/public/` route is intentionally excluded so
+its existing public cache policy remains effective. These headers are
+defense-in-depth: the Cloudflare Cache Rule must still bypass every path on the
+dedicated S3 hostname except `/public` and `/public/*`, because response headers
+cannot undo request-header normalization that occurred before the origin.
+
 ## Regression coverage
 
 - `s3-routing.middleware.spec.ts`: bucket-name collisions and signed URI
-  preservation.
+  preservation, private no-store headers, and public cache exclusion.
 - `s3-list-v1.spec.ts`: V1 marker paging and unsupported bucket subresources.
 - `s3-auth-time.spec.ts`: malformed, impossible, stale, and future timestamps.
 - `s3-multipart-manifest.util.spec.ts`: part order, ETag validation, standard
@@ -85,5 +102,6 @@ request IDs containing `&`, `<`, or other reserved characters remain valid XML.
 - `s3.controller.spec.ts`: UploadPart stays on the signed URL even when the
   legacy PutObject redirect flag is enabled.
 - `s3_error_xml_test.go`: escaped XML errors and PutObject length handling.
+- `s3_router_test.go`: private S3 responses disable browser and CDN storage.
 - `verifier_test.go`: restores client-signed `accept-encoding: identity` and
   `gzip` after a Cloudflare rewrite on the Go data plane.
