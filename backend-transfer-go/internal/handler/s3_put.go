@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"bytes"
 	"context"
 	"crypto/md5"
 	"encoding/base64"
@@ -39,6 +40,35 @@ func s3PutContentLength(c echo.Context) int64 {
 	return c.Request().ContentLength
 }
 
+func isGenericS3ContentType(value string) bool {
+	mediaType := strings.ToLower(strings.TrimSpace(strings.SplitN(value, ";", 2)[0]))
+	return mediaType == "" || mediaType == "application/octet-stream" ||
+		mediaType == "application/x-octet-stream" || mediaType == "binary/octet-stream"
+}
+
+// sniffS3ContentType examines only the first 512 decoded bytes when the client
+// supplied no useful type. The returned reader puts those bytes back so upload
+// size, ETag, encryption, and stored content remain byte-identical.
+func sniffS3ContentType(body io.Reader, contentType string, contentLength int64) (io.Reader, string, error) {
+	if contentLength <= 0 || !isGenericS3ContentType(contentType) {
+		return body, contentType, nil
+	}
+
+	prefix := make([]byte, 512)
+	n, err := io.ReadFull(body, prefix)
+	if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		return nil, contentType, err
+	}
+	prefix = prefix[:n]
+	if n > 0 {
+		detected := http.DetectContentType(prefix)
+		if !isGenericS3ContentType(detected) {
+			contentType = detected
+		}
+	}
+	return io.MultiReader(bytes.NewReader(prefix), body), contentType, nil
+}
+
 // S3PutObject serves PUT /:bucket/*key by ingesting the body directly (encrypt
 // → Telegram), replacing the legacy NestJS 307 redirect. Multipart UploadPart
 // (?uploadId&partNumber) and CopyObject (x-amz-copy-source) are left to NestJS
@@ -67,11 +97,21 @@ func (h *FileHandler) S3PutObject(c echo.Context) error {
 		h.logger.Warn("s3 PutObject rejected unknown or invalid content length", "requestId", requestID, "bucket", bucket)
 		return s3ErrorXML(c, http.StatusLengthRequired, "MissingContentLength", "Provide a valid Content-Length or X-Amz-Decoded-Content-Length.")
 	}
-	contentType := c.Request().Header.Get("Content-Type")
+	clientContentType := c.Request().Header.Get("Content-Type")
+	contentType := clientContentType
 	if contentType == "" {
 		contentType = "application/octet-stream"
 	}
 	contentMd5 := c.Request().Header.Get("Content-MD5")
+	var body io.Reader = c.Request().Body
+	if isAwsChunked(c) {
+		body = newAwsChunkedReader(c.Request().Body)
+	}
+	defer c.Request().Body.Close()
+	body, contentType, err = sniffS3ContentType(body, contentType, contentLength)
+	if err != nil {
+		return s3ErrorXML(c, http.StatusBadRequest, "InvalidRequest", "Failed to inspect upload content.")
+	}
 
 	log := h.logger.With(
 		"op", "s3.put",
@@ -82,6 +122,8 @@ func (h *FileHandler) S3PutObject(c echo.Context) error {
 	)
 	log.Info("s3 PutObject received",
 		"contentLength", contentLength,
+		"clientContentType", clientContentType,
+		"contentType", contentType,
 		"hasContentMd5", contentMd5 != "",
 		"awsChunked", isAwsChunked(c))
 
@@ -118,14 +160,7 @@ func (h *FileHandler) S3PutObject(c echo.Context) error {
 	log.Debug("s3 put resolved", "stage", "resolve", "fileId", prep.FileId,
 		"folderId", prep.FolderId, "isEncrypted", prep.IsEncrypted)
 
-	// 2. Build the body reader (decode aws-chunked if needed).
-	var body io.Reader = c.Request().Body
-	if isAwsChunked(c) {
-		body = newAwsChunkedReader(c.Request().Body)
-	}
-	defer c.Request().Body.Close()
-
-	// 3. Encrypt (if provisioned) + count + md5 while streaming to Telegram.
+	// 2. Encrypt (if provisioned) + count + md5 while streaming to Telegram.
 	var dek []byte
 	if prep.IsEncrypted {
 		dek, err = h.cryptoEngine.DecryptKey(prep.EncryptedKey)
@@ -163,7 +198,7 @@ func (h *FileHandler) S3PutObject(c echo.Context) error {
 		"botId", botID, "telegramFileId", telegramFileID, "bytes", counter.count,
 		"durationMs", time.Since(tgStart).Milliseconds())
 
-	// 4. Content-MD5 verification (if the client sent one). On mismatch, abort:
+	// 3. Content-MD5 verification (if the client sent one). On mismatch, abort:
 	// the FileRecord is left in 'uploading' and reaped by the stale-upload cron.
 	if contentMd5 != "" {
 		raw, derr := base64.StdEncoding.DecodeString(contentMd5)
@@ -175,7 +210,7 @@ func (h *FileHandler) S3PutObject(c echo.Context) error {
 		}
 	}
 
-	// 5. Finalize: mark complete, bump quota, overwrite prior versions.
+	// 4. Finalize: mark complete, bump quota, overwrite prior versions.
 	reportCtx, reportCancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer reportCancel()
 	if err := h.grpcClient.ReportS3PutComplete(reportCtx, &pb.ReportS3PutCompleteRequest{
