@@ -168,6 +168,23 @@ func (v *Verifier) verifyHeader(ctx context.Context, req *http.Request, authHead
 	canonical := buildCanonicalRequest(req, parsed.SignedHeaders)
 	expected := computeSignature(canonical, dateTime, parsed.CredentialScope, parsed.Date, parsed.Region, parsed.Service, secret)
 
+	// Cloudflare overwrites Accept-Encoding before forwarding requests to the
+	// origin. AWS SDK for Go (used by rclone) signs `accept-encoding: identity`,
+	// so retry that exact client value when the intermediary changed it. Mirrors
+	// backend/src/s3/s3-auth.service.ts.
+	if !hmac.Equal([]byte(expected), []byte(parsed.Signature)) &&
+		containsHeader(parsed.SignedHeaders, "accept-encoding") &&
+		normalizeHeaderValue(req.Header.Get("Accept-Encoding")) != "identity" {
+		identityCanonical := buildCanonicalRequestWithOverrides(
+			req, parsed.SignedHeaders, map[string]string{"accept-encoding": "identity"},
+		)
+		identitySignature := computeSignature(identityCanonical, dateTime, parsed.CredentialScope, parsed.Date, parsed.Region, parsed.Service, secret)
+		if hmac.Equal([]byte(identitySignature), []byte(parsed.Signature)) {
+			expected = identitySignature
+			v.logger.Debug("s3auth.signature.accept_encoding_restored", "requestId", requestID)
+		}
+	}
+
 	if !hmac.Equal([]byte(expected), []byte(parsed.Signature)) {
 		v.logger.Warn("s3auth.signature.mismatch",
 			"requestId", requestID,
@@ -319,6 +336,15 @@ func computeSignature(canonicalRequest, dateTime, credentialScope, date, region,
 	mac := hmac.New(sha256.New, signingKey)
 	mac.Write([]byte(stringToSign))
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func containsHeader(signedHeaders []string, name string) bool {
+	for _, header := range signedHeaders {
+		if strings.EqualFold(header, name) {
+			return true
+		}
+	}
+	return false
 }
 
 func absDuration(d time.Duration) time.Duration {

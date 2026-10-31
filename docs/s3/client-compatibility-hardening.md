@@ -55,6 +55,20 @@ SigV4 timestamps must match the complete `YYYYMMDDTHHMMSSZ` shape, represent a
 real calendar time, and pass skew/expiration checks. Invalid timestamps are
 rejected before credential lookup.
 
+### Cloudflare `Accept-Encoding` rewrite
+
+rclone uses the AWS SDK for Go, which signs `accept-encoding: identity` in
+`SignedHeaders`. Cloudflare rewrites that header before it reaches the origin
+(for example to `gzip, br`), so the ordinary canonical request no longer
+matches. Both verifiers retry the signature with `accept-encoding: identity`
+when that header is signed and the observed value differs:
+
+- NestJS control plane: `backend/src/s3/s3-auth.service.ts`
+- Go data plane: `backend-transfer-go/internal/s3auth/verifier.go`
+
+Keep the two in sync. Fixing only one plane makes rclone work for ListObjects
+(NestJS) but fail with 403 on GetObject/HeadObject/PutObject (Go).
+
 Go S3 XML errors are built with XML encoding so object paths, messages, and
 request IDs containing `&`, `<`, or other reserved characters remain valid XML.
 
@@ -69,3 +83,5 @@ request IDs containing `&`, `<`, or other reserved characters remain valid XML.
 - `s3.controller.spec.ts`: UploadPart stays on the signed URL even when the
   legacy PutObject redirect flag is enabled.
 - `s3_error_xml_test.go`: escaped XML errors and PutObject length handling.
+- `verifier_test.go`: restores a client-signed `accept-encoding: identity`
+  after a Cloudflare rewrite on the Go data plane.
