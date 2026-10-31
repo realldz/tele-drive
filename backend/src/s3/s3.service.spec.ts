@@ -7,7 +7,7 @@ describe('S3Service', () => {
 
   beforeEach(() => {
     // S3Service only needs prisma in constructor — mock it minimally
-    service = new S3Service({ folder: {}, fileRecord: {} } as any);
+    service = new S3Service({ folder: {}, fileRecord: {} } as any, {} as never);
   });
 
   describe('parseDeleteObjectsXml', () => {
@@ -76,7 +76,7 @@ describe('S3Service', () => {
         },
         fileRecord: {},
       } as any;
-      service = new S3Service(prisma);
+      service = new S3Service(prisma, {} as never);
 
       await expect(
         service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/reports/'),
@@ -130,7 +130,7 @@ describe('S3Service', () => {
         },
         fileRecord: {},
       } as any;
-      service = new S3Service(prisma);
+      service = new S3Service(prisma, {} as never);
 
       await expect(
         service.resolveKeyAsFolder('user-1', 'bucket-a', 'docs/reports/'),
@@ -315,7 +315,7 @@ describe('S3Service', () => {
           findFirst: jest.fn().mockResolvedValue(null),
         },
       } as any;
-      service = new S3Service(prisma);
+      service = new S3Service(prisma, {} as never);
 
       const result = await service.listObjects(
         'user-1',
@@ -359,7 +359,7 @@ describe('S3Service', () => {
 
     it('returns a resume token for >=1000 objects at the default max-keys (the sync-loop bug)', async () => {
       const files = Array.from({ length: 1200 }, (_, i) => fileOf(i));
-      service = new S3Service(publicBucket(files) as never);
+      service = new S3Service(publicBucket(files) as never, {} as never);
 
       const page = await service.listObjectsPublic('user-1', 'bucket-a');
 
@@ -372,7 +372,7 @@ describe('S3Service', () => {
 
     it('resumes across pages via the exclusive startAfter cursor', async () => {
       const files = Array.from({ length: 2500 }, (_, i) => fileOf(i));
-      service = new S3Service(publicBucket(files) as never);
+      service = new S3Service(publicBucket(files) as never, {} as never);
 
       const page1 = await service.listObjectsPublic(
         'user-1',
@@ -472,7 +472,7 @@ describe('S3Service', () => {
         },
         fileRecord: { findMany: jest.fn().mockResolvedValue(files) },
       } as never;
-      service = new S3Service(prisma);
+      service = new S3Service(prisma, {} as never);
 
       const page = await service.listObjectsPublic(
         'user-1',
@@ -511,7 +511,7 @@ describe('S3Service', () => {
           findFirst: jest.fn().mockResolvedValue(null),
         },
       } as any;
-      service = new S3Service(prisma);
+      service = new S3Service(prisma, {} as never);
 
       await service.cleanupEmptyFolders('user-1', 'leaf');
 
@@ -539,7 +539,7 @@ describe('S3Service', () => {
           findFirst: jest.fn().mockResolvedValueOnce({ id: 'file-1' }),
         },
       } as any;
-      service = new S3Service(prisma);
+      service = new S3Service(prisma, {} as never);
 
       await service.cleanupEmptyFolders('user-1', 'leaf');
 
@@ -603,7 +603,7 @@ describe('S3Service', () => {
           ]),
         },
       } as any;
-      service = new S3Service(prisma);
+      service = new S3Service(prisma, {} as never);
 
       // Scenario 1: Delimiter is '/' (listing folder contents like a traditional filesystem)
       const resDelimiter = await service.listObjects(

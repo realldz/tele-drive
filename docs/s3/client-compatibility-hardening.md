@@ -1,0 +1,63 @@
+# S3 client compatibility hardening
+
+This note records the routing and protocol invariants needed by rclone, AWS CLI,
+and other path-style S3 clients on the dedicated S3 domain.
+
+## Dedicated-domain routing
+
+Requests arrive as `/<bucket>` or `/<bucket>/<key>`. NestJS adds its internal
+`/s3` controller prefix while preserving `originalUrl`, because SigV4 must be
+checked against the URI sent by the client.
+
+Bucket names are allowed to match internal route prefixes. In particular:
+
+- bucket `s3` must become the internal path `/s3/s3`, not ListBuckets `/s3`;
+- signed requests for buckets `public`, `transfer`, or names beginning with
+  those strings must take precedence over the legacy public/transfer routes;
+- unsigned `/public/...` and `/transfer/...` URLs keep their existing behavior.
+
+The nginx split detects both Authorization-header signatures and presigned
+`X-Amz-Algorithm` query strings. It forwards the original request URI unchanged.
+
+## Listing behavior
+
+ListObjects V2 uses opaque continuation tokens. ListObjects V1 uses the raw
+`marker` key and returns `NextMarker` when truncated. Both versions share the
+same UTF-8 byte ordering and exclusive cursor logic.
+
+Bucket subresources such as `?versions`, `?uploads`, `?location`, and
+`?versioning` are not implemented. They return `501 NotImplemented`; they must
+never be mistaken for ordinary object listings.
+
+## Upload safety
+
+The Go data plane rejects PutObject requests whose decoded content length is
+unknown or invalid before provisioning the destination. Treating unknown length
+as zero can replace an existing object with an empty record before reading the
+body.
+
+CompleteMultipartUpload parses and validates every submitted part number and
+ETag against stored chunks. The current storage model requires the manifest to
+contain every uploaded part consecutively from part 1. Subset or sparse
+completion returns `501 NotImplemented`; missing parts, reordered parts, and
+ETag mismatches return S3 errors without completing the file. Optional multipart
+checksum elements are also reported as unsupported.
+
+## Authentication and error responses
+
+SigV4 timestamps must match the complete `YYYYMMDDTHHMMSSZ` shape, represent a
+real calendar time, and pass skew/expiration checks. Invalid timestamps are
+rejected before credential lookup.
+
+Go S3 XML errors are built with XML encoding so object paths, messages, and
+request IDs containing `&`, `<`, or other reserved characters remain valid XML.
+
+## Regression coverage
+
+- `s3-routing.middleware.spec.ts`: bucket-name collisions and signed URI
+  preservation.
+- `s3-list-v1.spec.ts`: V1 marker paging and unsupported bucket subresources.
+- `s3-auth-time.spec.ts`: malformed, impossible, stale, and future timestamps.
+- `s3-multipart-manifest.util.spec.ts`: part order, ETag validation, numeric XML
+  quote entities, and undeclared stored parts.
+- `s3_error_xml_test.go`: escaped XML errors and PutObject length handling.

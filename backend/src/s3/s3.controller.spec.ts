@@ -34,7 +34,7 @@ describe('S3Controller', () => {
 
   /** Minimal authenticated request stub for the listing handler. */
   const listRequest = (query: Record<string, string>) =>
-    ({ s3UserId: 'user-1', query }) as never;
+    ({ s3UserId: 'user-1', query: { 'list-type': '2', ...query } }) as never;
 
   /** Invoke the private error renderer without leaking `any` into the suite. */
   const sendS3Error = (

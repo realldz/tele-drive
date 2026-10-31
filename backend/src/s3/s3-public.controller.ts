@@ -64,6 +64,8 @@ export class S3PublicController {
     const prefix = this.qstr(req.query['prefix']);
     const delimiter = this.qstr(req.query['delimiter']);
     const encodingType = this.qstr(req.query['encoding-type']);
+    const listVersion = this.qstr(req.query['list-type']) === '2' ? 2 : 1;
+    const marker = this.qstr(req.query['marker']);
     const continuationToken = this.qstr(req.query['continuation-token']);
     const startAfterParam = this.qstr(req.query['start-after']);
     const maxKeysParam = this.qstr(req.query['max-keys']);
@@ -88,7 +90,10 @@ export class S3PublicController {
     // an over-long start-after — answer 400 before the listing ever runs.
     let startAfter: string | undefined;
     try {
-      startAfter = resolveListStartAfter(continuationToken, startAfterParam);
+      startAfter = resolveListStartAfter(
+        listVersion === 2 ? continuationToken : '',
+        listVersion === 2 ? startAfterParam : marker,
+      );
     } catch {
       this.logger.warn(
         `S3 Public ListObjectsV2 rejected malformed continuation-token for bucket "${bucket}" (userId: ${userId})`,
@@ -119,6 +124,7 @@ export class S3PublicController {
         isTruncated,
         encodingType,
         {
+          ...(listVersion === 1 ? { listVersion, marker } : {}),
           nextContinuationToken,
           continuationToken: continuationToken || undefined,
           startAfter: startAfterParam || undefined,

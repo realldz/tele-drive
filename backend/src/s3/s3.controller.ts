@@ -240,9 +240,29 @@ export class S3Controller {
   ) {
     const userId = req.s3UserId as string;
     this.logger.debug(`S3 ListObjects: ${userId}, ${bucket}`);
+    const unsupported = [
+      'versions',
+      'uploads',
+      'location',
+      'versioning',
+      'acl',
+      'policy',
+      'cors',
+      'lifecycle',
+      'tagging',
+      'encryption',
+      'object-lock',
+    ];
+    if (unsupported.some((name) => name in req.query)) {
+      this.logger.warn(`S3 unsupported bucket operation: bucket=${bucket}`);
+      this.setRequestId(res);
+      return this.sendS3Error(res, { status: 501, message: 'NotImplemented' });
+    }
     const prefix = this.qstr(req.query['prefix']);
     const delimiter = this.qstr(req.query['delimiter']);
     const encodingType = this.qstr(req.query['encoding-type']);
+    const listVersion = this.qstr(req.query['list-type']) === '2' ? 2 : 1;
+    const marker = this.qstr(req.query['marker']);
     const continuationToken = this.qstr(req.query['continuation-token']);
     const startAfterParam = this.qstr(req.query['start-after']);
     const maxKeysParam = this.qstr(req.query['max-keys']);
@@ -267,7 +287,10 @@ export class S3Controller {
     // over-long start-after — answer 400 before the listing ever runs.
     let startAfter: string | undefined;
     try {
-      startAfter = resolveListStartAfter(continuationToken, startAfterParam);
+      startAfter = resolveListStartAfter(
+        listVersion === 2 ? continuationToken : '',
+        listVersion === 2 ? startAfterParam : marker,
+      );
     } catch {
       this.logger.warn(
         `S3 ListObjectsV2 rejected malformed continuation-token for bucket "${bucket}" (userId: ${userId})`,
@@ -298,6 +321,7 @@ export class S3Controller {
         isTruncated,
         encodingType,
         {
+          ...(listVersion === 1 ? { listVersion, marker } : {}),
           nextContinuationToken,
           continuationToken: continuationToken || undefined,
           startAfter: startAfterParam || undefined,

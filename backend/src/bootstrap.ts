@@ -1,3 +1,4 @@
+import { createS3RoutingMiddleware } from './common/middleware/s3-routing.middleware';
 import { ValidationPipe, VersioningType, type Type } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
@@ -40,39 +41,7 @@ export async function bootstrapNestApp(
   expressApp.set('trust proxy', 1);
 
   if (options.enableS3RawBodyRouting) {
-    // Bare S3 domain support: when the request arrives on the configured
-    // S3_DOMAIN (e.g. `s3.example.com`), the S3 client addresses objects at the
-    // root (`/<bucket>/<key>`) rather than under `/s3`. Rewrite `req.url` so the
-    // versioned-neutral S3 controller (mounted at `/s3`) matches. Express keeps
-    // `req.originalUrl` as the bare path the client actually signed, so AWS
-    // SigV4 verification (which reads `originalUrl`) is unaffected.
-    const s3Domain = (process.env.S3_DOMAIN || '').toLowerCase();
-    expressApp.use((req: any, _res: any, next: any) => {
-      if (!s3Domain) return next();
-      const host = String(req.headers['host'] || '')
-        .toLowerCase()
-        .split(':')[0];
-      if (host !== s3Domain) return next();
-
-      const url: string = req.url || '/';
-      // Skip if already addressed under /s3 (client used .../s3 endpoint).
-      if (url === '/s3' || url.startsWith('/s3/') || url.startsWith('/s3?')) {
-        return next();
-      }
-      const qIdx = url.indexOf('?');
-      const path = qIdx === -1 ? url : url.slice(0, qIdx);
-      const query = qIdx === -1 ? '' : url.slice(qIdx);
-      const normalizedPath = path === '/' ? '' : path;
-      req.url = `/s3${normalizedPath}${query}`;
-      next();
-    });
-
-    expressApp.use((req: any, _res: any, next: any) => {
-      if (req.url.startsWith('/api/s3/') || req.url === '/api/s3') {
-        req.url = req.url.replace(/^\/api\/s3/, '/s3');
-      }
-      next();
-    });
+    expressApp.use(createS3RoutingMiddleware(process.env.S3_DOMAIN || ''));
 
     // CVE-2026-111497: block Brotli-encoded request bodies before body-parser
     // hands them to zlib.createBrotliDecompress(). Registered after the S3

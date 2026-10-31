@@ -2,8 +2,8 @@ package handler
 
 import (
 	"context"
+	"encoding/xml"
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -17,13 +17,18 @@ import (
 // status. Mirrors the AWS error shape so aws-cli / SDKs parse it correctly
 // instead of treating the response as a generic failure.
 func s3ErrorXML(c echo.Context, status int, code, message string) error {
-	xml := fmt.Sprintf(
-		`<?xml version="1.0" encoding="UTF-8"?>`+
-			`<Error><Code>%s</Code><Message>%s</Message><Resource>%s</Resource><RequestId>%s</RequestId></Error>`,
-		code, message, c.Request().URL.Path, c.Response().Header().Get("X-Request-ID"),
-	)
-	c.Response().Header().Set("Content-Type", "application/xml")
-	return c.String(status, xml)
+	body, err := xml.Marshal(struct {
+		XMLName   xml.Name `xml:"Error"`
+		Code      string   `xml:"Code"`
+		Message   string   `xml:"Message"`
+		Resource  string   `xml:"Resource"`
+		RequestID string   `xml:"RequestId"`
+	}{Code: code, Message: message, Resource: c.Request().URL.Path,
+		RequestID: c.Response().Header().Get("X-Request-ID")})
+	if err != nil {
+		return err
+	}
+	return c.Blob(status, "application/xml", append([]byte(xml.Header), body...))
 }
 
 // s3AuthErrorStatus maps a SigV4 verification sentinel to its HTTP status code.
