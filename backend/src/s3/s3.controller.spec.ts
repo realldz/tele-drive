@@ -1,5 +1,6 @@
 import { S3Controller } from './s3.controller';
 import { encodeContinuationToken } from './s3-list-pagination.util';
+import { Readable } from 'stream';
 
 describe('S3Controller', () => {
   const createController = (overrides: Record<string, unknown> = {}) => {
@@ -9,10 +10,16 @@ describe('S3Controller', () => {
       }),
       ...overrides,
     };
+    const s3Multipart = {
+      uploadPart: jest.fn().mockResolvedValue({
+        etag: '"d41d8cd98f00b204e9800998ecf8427e"',
+        size: 4,
+      }),
+    };
 
     const controller = new S3Controller(
       s3Service as never,
-      {} as never,
+      s3Multipart as never,
       {} as never,
       {} as never,
       {} as never,
@@ -27,9 +34,10 @@ describe('S3Controller', () => {
       setHeader: jest.fn().mockReturnThis(),
       send: jest.fn().mockReturnThis(),
       end: jest.fn().mockReturnThis(),
+      redirect: jest.fn().mockReturnThis(),
     };
 
-    return { controller, s3Service, res };
+    return { controller, s3Service, s3Multipart, res };
   };
 
   /** Minimal authenticated request stub for the listing handler. */
@@ -47,6 +55,44 @@ describe('S3Controller', () => {
         sendS3Error: (res: unknown, err: unknown) => void;
       }
     ).sendS3Error(res, err);
+
+  it('streams UploadPart on the signed URL even when legacy redirects are enabled', async () => {
+    const previous = process.env.ENABLE_S3_PUT_REDIRECT;
+    process.env.ENABLE_S3_PUT_REDIRECT = 'true';
+    const { controller, s3Multipart, res } = createController();
+    const req = Object.assign(Readable.from(Buffer.from('part')), {
+      s3UserId: 'user-1',
+      query: { uploadId: 'upload-1', partNumber: '2' },
+      headers: { 'content-length': '4' },
+      originalUrl: '/s3/bucket-a/key.bin?uploadId=upload-1&partNumber=2',
+    });
+
+    try {
+      await controller.handlePut(
+        'bucket-a',
+        { key: 'key.bin' },
+        req as never,
+        res as never,
+      );
+    } finally {
+      if (previous === undefined) delete process.env.ENABLE_S3_PUT_REDIRECT;
+      else process.env.ENABLE_S3_PUT_REDIRECT = previous;
+    }
+
+    expect(res.redirect).not.toHaveBeenCalled();
+    expect(s3Multipart.uploadPart).toHaveBeenCalledWith(
+      'upload-1',
+      2,
+      'user-1',
+      expect.anything(),
+      4,
+    );
+    expect(res.setHeader).toHaveBeenCalledWith(
+      'ETag',
+      '"d41d8cd98f00b204e9800998ecf8427e"',
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
 
   it('maps retryable upstream errors to ServiceUnavailable', () => {
     const { controller, s3Service, res } = createController();

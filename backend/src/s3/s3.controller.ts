@@ -452,19 +452,12 @@ export class S3Controller {
     const partNumberStr = this.qstr(req.query['partNumber']);
     if (uploadId && partNumberStr) {
       const partNumber = parseInt(partNumberStr, 10);
-      const chunkIndex = partNumber - 1;
 
-      if (process.env.ENABLE_S3_PUT_REDIRECT === 'true') {
-        const token = await this.s3Service.generateUploadToken(
-          uploadId,
-          userId,
-          chunkIndex,
-        );
-        const s3Domain = process.env.S3_DOMAIN || 's3.example.com';
-        const redirectUrl = `https://${s3Domain}/transfer/upload/${uploadId}/chunk/${chunkIndex}?token=${token}`;
-        return res.redirect(HttpStatus.TEMPORARY_REDIRECT, redirectUrl);
-      }
-
+      // UploadPart must be handled on the original signed URL. AWS CLI, rclone,
+      // and several S3 SDKs deliberately do not replay a signed request body to
+      // a 307 target. The redirect flag is retained for the legacy single-shot
+      // PutObject path only; multipart parts stream through the existing
+      // multipart service on the control plane.
       const { stream, contentLength } = wrapRequestStream(req);
       try {
         const { etag } = await this.s3Multipart.uploadPart(

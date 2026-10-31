@@ -40,8 +40,14 @@ CompleteMultipartUpload parses and validates every submitted part number and
 ETag against stored chunks. The current storage model requires the manifest to
 contain every uploaded part consecutively from part 1. Subset or sparse
 completion returns `501 NotImplemented`; missing parts, reordered parts, and
-ETag mismatches return S3 errors without completing the file. Optional multipart
-checksum elements are also reported as unsupported.
+ETag mismatches return S3 errors without completing the file. Standard per-part
+checksum elements (`CRC32`, `CRC32C`, `CRC64NVME`, `SHA1`, and `SHA256`) emitted
+by current AWS SDKs are accepted; integrity is still enforced against the stored
+plaintext MD5 ETag.
+
+UploadPart is always streamed on the original SigV4 URL. It must not use the
+legacy `ENABLE_S3_PUT_REDIRECT` path: AWS CLI, rclone, and several SDKs do not
+replay a signed request body to an HTTP 307 target.
 
 ## Authentication and error responses
 
@@ -58,6 +64,8 @@ request IDs containing `&`, `<`, or other reserved characters remain valid XML.
   preservation.
 - `s3-list-v1.spec.ts`: V1 marker paging and unsupported bucket subresources.
 - `s3-auth-time.spec.ts`: malformed, impossible, stale, and future timestamps.
-- `s3-multipart-manifest.util.spec.ts`: part order, ETag validation, numeric XML
-  quote entities, and undeclared stored parts.
+- `s3-multipart-manifest.util.spec.ts`: part order, ETag validation, standard
+  SDK checksum elements, numeric XML quote entities, and undeclared stored parts.
+- `s3.controller.spec.ts`: UploadPart stays on the signed URL even when the
+  legacy PutObject redirect flag is enabled.
 - `s3_error_xml_test.go`: escaped XML errors and PutObject length handling.
