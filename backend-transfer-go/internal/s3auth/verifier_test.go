@@ -207,6 +207,46 @@ func TestVerifier_RejectsExpiredPresignedUrl(t *testing.T) {
 	}
 }
 
+// TestVerifier_RestoresSignedAcceptEncodingAfterCloudflareRewrite mirrors the
+// NestJS regression test: rclone (AWS SDK for Go) signs accept-encoding:
+// identity, Cloudflare rewrites it to "br, gzip" at the origin, and the
+// verifier must retry with the client-signed value.
+func TestVerifier_RestoresSignedAcceptEncodingAfterCloudflareRewrite(t *testing.T) {
+	const (
+		secret      = "test-secret-access-key"
+		accessKeyID = "AKIATESTCLOUDFLARE01"
+	)
+	dateTime := time.Now().UTC().Format("20060102T150405Z")
+	date := dateTime[:8]
+	credentialScope := date + "/us-east-1/s3/aws4_request"
+	signedHeaders := []string{"accept-encoding", "host", "x-amz-content-sha256", "x-amz-date"}
+
+	req := makeReq("GET", "/?x-id=ListBuckets", map[string]string{
+		"accept-encoding":      "identity",
+		"x-amz-content-sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		"x-amz-date":           dateTime,
+	})
+	req.Host = "s3.example.com"
+
+	canonical := buildCanonicalRequest(req, signedHeaders)
+	signature := computeSignature(canonical, dateTime, credentialScope, date, "us-east-1", "s3", secret)
+
+	// Cloudflare rewrites the header after the client signed it.
+	req.Header.Set("Accept-Encoding", "br, gzip")
+	req.Header.Set("Authorization", "AWS4-HMAC-SHA256 Credential="+accessKeyID+"/"+
+		credentialScope+", SignedHeaders="+strings.Join(signedHeaders, ";")+
+		", Signature="+signature)
+
+	v := New(&fakeLookup{secret: secret, userID: "user-1", active: true}, silentLogger())
+	result, err := v.Verify(context.Background(), req, "test-req")
+	if err != nil {
+		t.Fatalf("expected signature accepted after accept-encoding restore, got %v", err)
+	}
+	if result.UserID != "user-1" {
+		t.Errorf("userId: got %q, want %q", result.UserID, "user-1")
+	}
+}
+
 func TestVerifier_RejectsUnknownAccessKey(t *testing.T) {
 	now := time.Now().UTC().Format("20060102T150405Z")
 	header := "AWS4-HMAC-SHA256 Credential=AKIAUNKNOWN/" + now[:8] +

@@ -19,11 +19,19 @@ import (
 // SigV4 authentication. The payload hash comes from x-amz-content-sha256, with
 // fallback to UNSIGNED-PAYLOAD (matches NestJS behavior).
 func buildCanonicalRequest(req *http.Request, signedHeaders []string) string {
+	return buildCanonicalRequestWithOverrides(req, signedHeaders, nil)
+}
+
+// buildCanonicalRequestWithOverrides is buildCanonicalRequest with explicit
+// signed-header value overrides. Used to reconstruct the signature a client
+// produced before an intermediary rewrote a signed header (Cloudflare
+// Accept-Encoding), mirroring the NestJS reference implementation.
+func buildCanonicalRequestWithOverrides(req *http.Request, signedHeaders []string, headerOverrides map[string]string) string {
 	method := strings.ToUpper(req.Method)
 	rawPath, rawQuery := getRequestTarget(req)
 	canonicalURI := buildCanonicalURI(rawPath)
 	canonicalQuery := buildCanonicalQueryString(rawQuery, "")
-	canonicalHeaders := buildCanonicalHeaders(req, signedHeaders)
+	canonicalHeaders := buildCanonicalHeaders(req, signedHeaders, headerOverrides)
 	signedHeadersStr := strings.Join(signedHeaders, ";")
 
 	payloadHash := req.Header.Get("X-Amz-Content-Sha256")
@@ -49,7 +57,7 @@ func buildCanonicalRequestPresigned(req *http.Request, signedHeaders []string) s
 	rawPath, rawQuery := getRequestTarget(req)
 	canonicalURI := buildCanonicalURI(rawPath)
 	canonicalQuery := buildCanonicalQueryString(rawQuery, "X-Amz-Signature")
-	canonicalHeaders := buildCanonicalHeaders(req, signedHeaders)
+	canonicalHeaders := buildCanonicalHeaders(req, signedHeaders, nil)
 	signedHeadersStr := strings.Join(signedHeaders, ";")
 
 	return strings.Join([]string{
@@ -171,13 +179,15 @@ func buildCanonicalQueryString(rawQuery, excludedKey string) string {
 //
 // Reads from req.Header map directly (case-insensitive get is fine — Go
 // canonicalizes header keys on insertion via textproto.CanonicalMIMEHeaderKey).
-func buildCanonicalHeaders(req *http.Request, signedHeaders []string) string {
+func buildCanonicalHeaders(req *http.Request, signedHeaders []string, headerOverrides map[string]string) string {
 	lines := make([]string, 0, len(signedHeaders))
 	for _, name := range signedHeaders {
 		lower := strings.ToLower(name)
 		var raw string
-		// "host" is special: not in req.Header, only in req.Host.
-		if lower == "host" {
+		if override, ok := headerOverrides[lower]; ok {
+			raw = override
+		} else if lower == "host" {
+			// "host" is special: not in req.Header, only in req.Host.
 			raw = req.Host
 		} else {
 			raw = req.Header.Get(name)
