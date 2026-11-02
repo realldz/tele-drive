@@ -840,16 +840,21 @@ export class GrpcCoreController {
   @GrpcMethod('CoreService', 'ReportDeleteSuccess')
   async reportDeleteSuccess(data: { fileId: string }) {
     try {
-      await this.prisma.fileRecord.update({
+      const result = await this.prisma.fileRecord.updateMany({
         where: { id: data.fileId },
         data: {
           telegram_deleted: true,
           telegram_delete_failed: false,
         },
       });
-      this.logger.debug(
-        `Marked file ${data.fileId} as successfully deleted from Telegram`,
-      );
+      if (result.count === 0) {
+        // The delete event can finish after permanent deletion removed metadata.
+        this.logger.debug(
+          `Delete success arrived after file ${data.fileId} was removed`,
+        );
+      } else {
+        this.logger.log(`Marked file ${data.fileId} as deleted from Telegram`);
+      }
     } catch (err) {
       this.logger.error(
         `Failed to update telegram_deleted for file ${data.fileId}`,
@@ -862,15 +867,21 @@ export class GrpcCoreController {
   @GrpcMethod('CoreService', 'ReportDeleteFailed')
   async reportDeleteFailed(data: { fileId: string; reason: string }) {
     try {
-      await this.prisma.fileRecord.update({
+      const result = await this.prisma.fileRecord.updateMany({
         where: { id: data.fileId },
         data: {
           telegram_delete_failed: true,
         },
       });
-      this.logger.warn(
-        `Failed to delete file ${data.fileId} from Telegram: ${data.reason}`,
-      );
+      if (result.count === 0) {
+        this.logger.warn(
+          `Telegram deletion failed after file ${data.fileId} was removed: ${data.reason}`,
+        );
+      } else {
+        this.logger.warn(
+          `Failed to delete file ${data.fileId} from Telegram: ${data.reason}`,
+        );
+      }
     } catch (err) {
       this.logger.error(
         `Failed to update telegram_delete_failed for file ${data.fileId}`,

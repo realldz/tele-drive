@@ -1,4 +1,5 @@
 import { GrpcCoreController } from './grpc-core.controller';
+import { Logger } from '@nestjs/common';
 
 /**
  * Zero-byte + metadata regressions from Phase 02.
@@ -75,6 +76,53 @@ describe('GrpcCoreController', () => {
   /** The bound parameters of the first $executeRaw call. */
   const executeRawArgs = (prisma: PrismaStub): unknown[] =>
     prisma.$executeRaw.mock.calls[0];
+
+  describe('Telegram deletion reports', () => {
+    it('accepts a late success report when the file record is already gone', async () => {
+      const prisma = createPrisma();
+      prisma.fileRecord.updateMany.mockResolvedValue({ count: 0 });
+      const controller = createController(prisma, {});
+
+      await expect(
+        controller.reportDeleteSuccess({ fileId: 'gone' }),
+      ).resolves.toEqual({});
+      expect(prisma.fileRecord.updateMany).toHaveBeenCalledWith({
+        where: { id: 'gone' },
+        data: { telegram_deleted: true, telegram_delete_failed: false },
+      });
+    });
+
+    it('records a failed Telegram deletion while metadata still exists', async () => {
+      const prisma = createPrisma();
+      prisma.fileRecord.updateMany.mockResolvedValue({ count: 1 });
+      const controller = createController(prisma, {});
+
+      await expect(
+        controller.reportDeleteFailed({ fileId: 'present', reason: 'denied' }),
+      ).resolves.toEqual({});
+      expect(prisma.fileRecord.updateMany).toHaveBeenCalledWith({
+        where: { id: 'present' },
+        data: { telegram_delete_failed: true },
+      });
+    });
+
+    it('accepts a late failure report without a missing-record exception', async () => {
+      const prisma = createPrisma();
+      prisma.fileRecord.updateMany.mockResolvedValue({ count: 0 });
+      const controller = createController(prisma, {});
+      const warn = jest.spyOn(Logger.prototype, 'warn').mockImplementation();
+
+      try {
+        await expect(
+          controller.reportDeleteFailed({ fileId: 'gone', reason: 'denied' }),
+        ).resolves.toEqual({});
+        expect(prisma.fileRecord.updateMany).toHaveBeenCalledTimes(1);
+        expect(warn).toHaveBeenCalledWith(expect.stringContaining('denied'));
+      } finally {
+        warn.mockRestore();
+      }
+    });
+  });
 
   describe('prepareS3Put — zero-byte keys', () => {
     it('treats a key WITH a trailing slash as a folder marker (no FileRecord)', async () => {

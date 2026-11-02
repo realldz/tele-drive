@@ -25,6 +25,7 @@ The recursive collection query includes active and trashed descendants and filte
 
 - Legacy HTTP purge sends one batch instead of one request per file. Existing Telegram deletion remains best-effort.
 - Event-driven mode retains the existing Redis Stream event protocol and publication failure behavior; event sends are still sequential within each batch.
+- The Go worker may report Telegram deletion after a file record has already been removed. `ReportDeleteSuccess` and `ReportDeleteFailed` use `updateMany` so a missing record is handled without Prisma `P2025`; a late failure remains visible in the logs because it may require Telegram cleanup outside the DB.
 - Each metadata deletion and quota decrement is a transaction. `DELETE ... RETURNING size, status` computes freed storage from rows actually removed, avoiding duplicate quota decrement for overlapping bulk calls.
 - Earlier successful batches stay committed if a later batch fails. The folder is removed only after all batches finish; retry collects remaining files.
 - Disabled CDN purge does not query ancestor paths. Enabled purge resolves public prefixes once per folder within each batch.
