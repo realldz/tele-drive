@@ -10,6 +10,7 @@ export interface DashboardViewProps {
   selection: { isSelected: (id: string) => boolean };
   downloadingFiles: Set<string>;
   actionLoading: Set<string>;
+  deletingIds: Set<string>;
   dragOverFolderId: string | null;
   onItemClick: (e: React.MouseEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => void;
   onDragStart: (e: React.DragEvent, item: FileRecord | FolderRecord, type: 'file' | 'folder') => void;

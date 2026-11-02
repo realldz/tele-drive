@@ -6,12 +6,16 @@ import {
   Inject,
 } from '@nestjs/common';
 import Redis from 'ioredis';
+import { Prisma } from '@prisma/client';
+
 import { PrismaService } from '../prisma/prisma.service';
 import { TelegramService } from '../telegram/telegram.service';
 import { REDIS_CLIENT } from '../redis';
 import { TEMP_STORAGE } from '../common/temp-storage';
 import type { TempStorage } from '../common/temp-storage';
 import { CdnPurgeService } from '../common/cdn-purge.service';
+
+const DELETE_BATCH_SIZE = 200;
 
 @Injectable()
 export class FileLifecycleService {
@@ -291,54 +295,93 @@ export class FileLifecycleService {
 
     const releaseLock = await this.acquireDeletionLock(userId);
     try {
-      const files = await this.prisma.fileRecord.findMany({
-        where: { id: { in: fileIds }, userId },
-        include: { chunks: true },
-      });
-
-      if (files.length === 0) return 0n;
-
       let freedSize = 0n;
-      for (const file of files) {
-        if (file.status === 'complete') {
-          freedSize += file.size;
-        }
+      for (
+        let offset = 0;
+        offset < fileIds.length;
+        offset += DELETE_BATCH_SIZE
+      ) {
+        freedSize += await this.permanentDeleteBatch(
+          fileIds.slice(offset, offset + DELETE_BATCH_SIZE),
+          userId,
+        );
       }
-
-      for (const file of files) {
-        await this.publishDeleteEvent(file);
-      }
-      await this.purgeTempFiles(files);
-
-      await this.prisma.$transaction(async (tx) => {
-        await tx.fileRecord.deleteMany({
-          where: { id: { in: fileIds } },
-        });
-
-        if (freedSize > 0n) {
-          await tx.user.update({
-            where: { id: userId },
-            data: { usedSpace: { decrement: freedSize } },
-          });
-        }
-      });
-
-      // Best-effort CDN eviction for shared + public-S3 routes (no-op when disabled).
-      const purgeTargets = await Promise.all(
-        files.map(async (f) => ({
-          ...f,
-          publicS3Path: await this.buildPublicS3Path(f),
-        })),
-      );
-      await this.cdnPurge.purgeDeletedFiles(purgeTargets);
-
       this.logger.log(
-        `Bulk permanently deleted ${files.length} files, freed: ${freedSize} bytes`,
+        `Bulk deletion completed: userId=${userId}, requested=${fileIds.length}, freed=${freedSize}`,
       );
       return freedSize;
     } finally {
       releaseLock();
     }
+  }
+
+  private async permanentDeleteBatch(
+    fileIds: string[],
+    userId: string,
+  ): Promise<bigint> {
+    const files = await this.prisma.fileRecord.findMany({
+      where: { id: { in: fileIds }, userId },
+      include: { chunks: true },
+    });
+    if (!files.length) return 0n;
+
+    // Legacy transport accepts an entire batch. Event transport remains bounded.
+    if (process.env.ENABLE_EVENT_DRIVEN_DELETE === 'true') {
+      for (const file of files) await this.publishDeleteEvent(file);
+    } else {
+      await this.purgeFilesFromTelegram(files);
+    }
+    await this.purgeTempFiles(files);
+
+    const freedSize = await this.prisma.$transaction(async (tx) => {
+      // Count only rows actually removed, including when another worker races us.
+      const deleted = await tx.$queryRaw<
+        Array<{ size: bigint; status: string }>
+      >(Prisma.sql`
+        DELETE FROM "FileRecord"
+        WHERE "id" IN (${Prisma.join(files.map((file) => file.id))}) AND "userId" = ${userId}
+        RETURNING "size", "status"
+      `);
+      const freed = deleted.reduce(
+        (total, file) => total + (file.status === 'complete' ? file.size : 0n),
+        0n,
+      );
+      if (freed > 0n) {
+        await tx.user.update({
+          where: { id: userId },
+          data: { usedSpace: { decrement: freed } },
+        });
+      }
+      return freed;
+    });
+
+    if (this.cdnPurge.purgeProviders() !== 'none') {
+      // Files in the same folder share the public prefix; resolve it once per batch.
+      const prefixes = new Map<string, Promise<string | null>>();
+      const targets = await Promise.all(
+        files.map(async (file) => {
+          const key = file.folderId ?? '';
+          if (!prefixes.has(key)) {
+            prefixes.set(
+              key,
+              this.buildPublicS3Path({ ...file, filename: '' }),
+            );
+          }
+          const prefix = await prefixes.get(key);
+          return {
+            ...file,
+            publicS3Path: prefix
+              ? prefix + encodeURIComponent(file.filename)
+              : null,
+          };
+        }),
+      );
+      await this.cdnPurge.purgeDeletedFiles(targets);
+    }
+    this.logger.log(
+      `Deletion batch committed: userId=${userId}, files=${files.length}, freed=${freedSize}`,
+    );
+    return freedSize;
   }
 
   async emptyTrash(userId: string) {

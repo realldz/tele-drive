@@ -562,5 +562,15 @@
   "admin.nestjsUptime": "Uptime",
   "admin.nestjsMemoryRss": "Memory (RSS)",
   "admin.nestjsHeapUsed": "Heap Used",
-  "admin.nestjsHeapTotal": "Heap Total"
+  "admin.nestjsHeapTotal": "Heap Total",
+  "actions.progress": "Processing {done}/{total} items…",
+  "actions.complete": "Completed {success} items",
+  "actions.partialFailure": "Completed {success}; failed {failed}. Failed items remain selected.",
+  "actions.requestFailed": "Request failed. Please try again.",
+  "actions.deleting": "Moving to trash…",
+  "trash.confirmDeleteSelected": "Permanently delete {count} selected items? This cannot be undone.",
+  "trash.cleanupRemaining": "Cleanup finished, but some items remain. Please try again.",
+  "actions.refreshFailed": "Changes were saved, but the list could not be refreshed.",
+  "trash.statusUnavailable": "Could not check cleanup status. Actions are paused while retrying.",
+  "actions.retry": "Retry"
 }

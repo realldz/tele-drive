@@ -561,5 +561,15 @@
   "admin.nestjsUptime": "稼働時間",
   "admin.nestjsMemoryRss": "メモリ (RSS)",
   "admin.nestjsHeapUsed": "使用ヒープ",
-  "admin.nestjsHeapTotal": "ヒープ合計"
+  "admin.nestjsHeapTotal": "ヒープ合計",
+  "actions.progress": "{done}/{total} 件を処理中…",
+  "actions.complete": "{success} 件の処理が完了しました",
+  "actions.partialFailure": "成功 {success} 件、失敗 {failed} 件。失敗した項目は選択されたままです。",
+  "actions.requestFailed": "リクエストに失敗しました。再試行してください。",
+  "actions.deleting": "ゴミ箱に移動中…",
+  "trash.confirmDeleteSelected": "選択した {count} 件を完全に削除しますか？元に戻せません。",
+  "trash.cleanupRemaining": "処理は終了しましたが、残っている項目があります。再試行してください。",
+  "actions.refreshFailed": "変更は保存されましたが、一覧を更新できませんでした。",
+  "trash.statusUnavailable": "クリーンアップ状況を確認できません。操作を一時停止して再試行中です。",
+  "actions.retry": "再試行"
 }

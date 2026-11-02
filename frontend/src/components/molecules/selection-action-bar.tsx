@@ -72,7 +72,7 @@ export default function SelectionActionBar({
         )}
 
         <div className="w-px h-5 bg-gray-600" />
-        <button onClick={onClear} className="flex items-center gap-1 px-2 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-colors cursor-pointer" title={t('selection.deselectAll')}>
+        <button disabled={disabled} onClick={onClear} className="flex items-center gap-1 px-2 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-colors cursor-pointer" title={t('selection.deselectAll')}>
           <X size={15} />
         </button>
       </div>

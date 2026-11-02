@@ -141,7 +141,7 @@ export async function createFolderBatch(paths: string[], parentId?: string): Pro
 }
 
 export async function deleteFolder(id: string) {
-  return api.delete(`/folders/${id}`);
+  return api.delete<{ id: string; deletedFolderIds?: string[] }>(`/folders/${id}`);
 }
 
 export async function restoreFolder(id: string) {

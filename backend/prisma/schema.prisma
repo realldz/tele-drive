@@ -66,6 +66,8 @@ model Folder {
 
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
+
+  @@index([parentId, deletedAt])
 }
 
 model FileRecord {
@@ -119,6 +121,7 @@ model FileRecord {
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
+  @@index([folderId, deletedAt])
   @@index([status, createdAt])
   @@index([deletedAt, telegram_deleted])
   @@index([telegram_delete_failed, delete_retry_count, last_retry_at])

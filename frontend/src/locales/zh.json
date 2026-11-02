@@ -561,5 +561,15 @@
   "admin.nestjsUptime": "运行时间",
   "admin.nestjsMemoryRss": "内存 (RSS)",
   "admin.nestjsHeapUsed": "已用堆",
-  "admin.nestjsHeapTotal": "堆总量"
+  "admin.nestjsHeapTotal": "堆总量",
+  "actions.progress": "正在处理 {done}/{total} 项…",
+  "actions.complete": "已完成 {success} 项",
+  "actions.partialFailure": "成功 {success} 项，失败 {failed} 项。失败项仍保持选中。",
+  "actions.requestFailed": "请求失败，请重试。",
+  "actions.deleting": "正在移至回收站…",
+  "trash.confirmDeleteSelected": "永久删除选中的 {count} 项？此操作无法撤销。",
+  "trash.cleanupRemaining": "清理已结束，但仍有部分项目，请重试。",
+  "actions.refreshFailed": "更改已保存，但无法刷新列表。",
+  "trash.statusUnavailable": "无法检查清理状态。操作已暂停，正在重试。",
+  "actions.retry": "重试"
 }

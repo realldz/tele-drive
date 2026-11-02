@@ -10,6 +10,7 @@ import { useDownload } from '@/providers/download-context';
 import { useFolderContent } from '@/hooks/use-folder-content';
 import { useGlobalSearch } from '@/hooks/use-global-search';
 import { useConflictResolution } from '@/hooks/use-conflict-resolution';
+import { useDashboardDelete } from '@/hooks/use-dashboard-delete';
 import { useDashboardActions } from '@/hooks/use-dashboard-actions';
 import { useDndMove } from '@/hooks/use-dnd-move';
 import Sidebar from '@/components/sidebar';
@@ -56,10 +57,22 @@ export default function Dashboard() {
   const conflict = useConflictResolution({ folders, files, fetchContent, resolveConflict, queue, t });
   const { pendingConflict, setPendingConflict, applyToAllRef, buildMoveConflict, handleConflictResolution } = conflict;
 
-  const actions = useDashboardActions({
+  const otherActions = useDashboardActions({
     t, locale, currentFolderId, fetchContent, selection,
-    files, folders, setFiles, startDownload, buildMoveConflict, applyToAllRef,
+    files: visibleFiles, folders: visibleFolders, setFiles, startDownload, buildMoveConflict, applyToAllRef,
   });
+
+  const deletion = useDashboardDelete({
+    t, selection, folders: visibleFolders, files: visibleFiles,
+    refresh: async () => { await fetchContent(); if (searchActive) await search.refresh(); },
+    removeItems: ids => {
+      const removed = new Set(ids);
+      content.setFolders(previous => previous.filter(item => !removed.has(item.id)));
+      setFiles(previous => previous.filter(item => !removed.has(item.id)));
+      search.removeItems(ids);
+    },
+  });
+  const actions = useMemo(() => ({ ...otherActions, ...deletion }), [otherActions, deletion]);
 
   const dnd = useDndMove({
     currentFolderId, fetchContent, buildMoveConflict,
@@ -129,6 +142,7 @@ export default function Dashboard() {
   }, [actions]);
 
   const handleItemClick = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: ItemType) => {
+    if (deletion.deletingIds.has(item.id)) return;
     if (e.ctrlKey || e.metaKey || e.shiftKey) {
       selection.handleSelect(item.id, e, activeOrderedIds);
     } else if (type === 'folder') {
@@ -139,16 +153,17 @@ export default function Dashboard() {
       const file = item as FileRecord;
       if (file.status === 'complete' || file.status === 'buffered') setPreviewFileId(file.id);
     }
-  }, [selection, activeOrderedIds, setCurrentFolderId, searchActive, search]);
+  }, [selection, activeOrderedIds, setCurrentFolderId, searchActive, search, deletion.deletingIds]);
 
   const openContextMenu = useCallback((e: React.MouseEvent, item: FileRecord | FolderRecord, type: ItemType) => {
     e.preventDefault(); e.stopPropagation();
+    if (deletion.isDeleting) return;
     if (!selection.isSelected(item.id)) {
       selection.clearSelection();
       selection.handleSelect(item.id, { ...e, ctrlKey: false, metaKey: false, shiftKey: false, stopPropagation: () => { } } as React.MouseEvent, orderedIds);
     }
     setTimeout(() => setContextMenu({ isOpen: true, x: e.clientX, y: e.clientY, item, type }), 0);
-  }, [selection, orderedIds]);
+  }, [selection, orderedIds, deletion.isDeleting]);
 
   const handleOpenDialog = useCallback((targetDialog: 'rename' | 'move' | 'share' | 'details') => {
     setActiveDialog(targetDialog);
@@ -223,7 +238,7 @@ export default function Dashboard() {
           <DragSelectOverlay rect={dragRect} />
           {!searchActive && (
             <Breadcrumbs items={breadcrumbs} onNavigate={setCurrentFolderId}
-              onDragOver={dnd.handleDragOver} onDragLeave={dnd.handleDragLeave} onDrop={dnd.handleDrop}
+              onDragOver={dnd.handleDragOver} onDragLeave={dnd.handleDragLeave} onDrop={(e, id) => { if (deletion.isDeleting) { e.preventDefault(); return; } dnd.handleDrop(e, id); }}
               dragOverFolderId={dnd.dragOverFolderId} />
           )}
 
@@ -236,12 +251,12 @@ export default function Dashboard() {
               filteredFoldersCount={visibleFolders.length} filteredFilesCount={visibleFiles.length}
               viewMode={viewMode} searchQuery={searchActive ? search.query || t('search.filters') : ''}
               sortField={sortField} sortDirection={sortDirection} onSort={handleSort}
-              selection={selection} downloadingFiles={actions.downloadingFiles} actionLoading={actions.actionLoading}
+              selection={selection} downloadingFiles={actions.downloadingFiles} actionLoading={actions.actionLoading} deletingIds={deletion.deletingIds}
               dragOverFolderId={dnd.dragOverFolderId}
               hasMore={activeHasMore} loadMoreRef={activeLoadMoreRef}
               onItemClick={handleItemClick}
-              onDragStart={dnd.handleDragStart} onDragOver={dnd.handleDragOver}
-              onDragLeave={dnd.handleDragLeave} onDrop={dnd.handleDrop}
+              onDragStart={(e, item, type) => { if (deletion.isDeleting) { e.preventDefault(); return; } dnd.handleDragStart(e, item, type); }} onDragOver={dnd.handleDragOver}
+              onDragLeave={dnd.handleDragLeave} onDrop={(e, id) => { if (deletion.isDeleting) { e.preventDefault(); return; } dnd.handleDrop(e, id); }}
               onContextMenu={openContextMenu}
               onDownload={actions.handleDownload} onDeleteStuckFile={actions.handleDeleteStuckFile}
               onRetryBuffer={actions.handleRetryBuffer}
@@ -253,6 +268,7 @@ export default function Dashboard() {
       {contextMenu.isOpen && contextMenu.item && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} itemType={contextMenu.type}
           selectionCount={selection.selectedCount}
+          disabled={deletion.isDeleting}
           onRename={() => handleOpenDialog('rename')}
           onMove={handleContextMenuMove}
           onShare={() => handleOpenDialog('share')}
@@ -266,6 +282,7 @@ export default function Dashboard() {
         selectedCount={selection.selectedCount}
         onClear={selection.clearSelection}
         variant="dashboard"
+        disabled={deletion.isDeleting}
         onDelete={actions.handleBatchDelete}
         onMove={handleContextMenuMove}
         onDownload={actions.handleBatchDownload}
