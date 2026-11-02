@@ -21,13 +21,14 @@ export default function TrashPage() {
   const {
     trashedFiles, trashedFolders,
     foldersHasMore, filesHasMore, loadingMore, loadMoreTrash,
-    isEmptying, actionIds, cleanupStatus, fetchTrash,
+    isEmptying, isActing, actionIds, cleanupStatus, fetchTrash, statusError, retryStatus,
     handleRestoreFile, handlePermanentDeleteFile,
     handleRestoreFolder, handlePermanentDeleteFolder,
     handleBatchRestore, handleBatchPermanentDelete, handleEmptyTrash,
   } = trash;
 
   const selection = useSelection();
+  const clearSelection = selection.clearSelection;
   const contentRef = useRef<HTMLDivElement>(null);
 
   const handleDragSelect = useCallback((ids: string[]) => { selection.selectAll(ids); }, [selection]);
@@ -51,8 +52,8 @@ export default function TrashPage() {
 
   useEffect(() => {
     fetchTrash();
-    selection.clearSelection();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps -- stable on mount
+    clearSelection();
+  }, [fetchTrash, clearSelection]);
 
   const openContextMenu = useCallback((e: React.MouseEvent, item: TrashedFile | TrashedFolder, type: 'file' | 'folder') => {
     e.preventDefault(); e.stopPropagation();
@@ -67,8 +68,9 @@ export default function TrashPage() {
     e.stopPropagation();
     setContextMenu(prev => ({ ...prev, isOpen: false }));
     if (selection.selectedCount > 1) {
-      handleBatchRestore(Array.from(selection.selectedIds));
-      selection.clearSelection();
+      void handleBatchRestore(Array.from(selection.selectedIds)).then(result => {
+        if (result) selection.selectAll(result.failedIds);
+      });
     } else if (contextMenu.item) {
       if (contextMenu.type === 'folder') handleRestoreFolder(contextMenu.item.id);
       else handleRestoreFile(contextMenu.item.id);
@@ -79,8 +81,9 @@ export default function TrashPage() {
     e.stopPropagation();
     setContextMenu(prev => ({ ...prev, isOpen: false }));
     if (selection.selectedCount > 1) {
-      handleBatchPermanentDelete(Array.from(selection.selectedIds));
-      selection.clearSelection();
+      void handleBatchPermanentDelete(Array.from(selection.selectedIds)).then(result => {
+        if (result) selection.selectAll(result.failedIds);
+      });
     } else if (contextMenu.item) {
       if (contextMenu.type === 'folder') {
         if (confirm(t('trash.confirmDeleteFolder'))) handlePermanentDeleteFolder(contextMenu.item.id);
@@ -95,13 +98,15 @@ export default function TrashPage() {
   }, [selection, orderedIds]);
 
   const handleBatchRestoreClick = useCallback(() => {
-    handleBatchRestore(Array.from(selection.selectedIds));
-    selection.clearSelection();
+    void handleBatchRestore(Array.from(selection.selectedIds)).then(result => {
+      if (result) selection.selectAll(result.failedIds);
+    });
   }, [handleBatchRestore, selection]);
 
   const handleBatchDeleteClick = useCallback(() => {
-    handleBatchPermanentDelete(Array.from(selection.selectedIds));
-    selection.clearSelection();
+    void handleBatchPermanentDelete(Array.from(selection.selectedIds)).then(result => {
+      if (result) selection.selectAll(result.failedIds);
+    });
   }, [handleBatchPermanentDelete, selection]);
 
   if (!isReady) {
@@ -128,7 +133,7 @@ export default function TrashPage() {
             {totalItems > 0 && (
               <button
                 onClick={handleEmptyTrash}
-                disabled={isEmptying || cleanupStatus.isCleaning}
+                disabled={isEmptying || isActing || cleanupStatus.isCleaning}
                 className="flex items-center gap-2 px-3 py-1.5 text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors disabled:opacity-50"
               >
                 {(isEmptying || cleanupStatus.isCleaning) ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
@@ -141,6 +146,10 @@ export default function TrashPage() {
           </div>
         </header>
 
+        {statusError && <div role="alert" className="m-4 p-3 bg-amber-50 text-amber-900 rounded-lg">
+          {t('trash.statusUnavailable')}
+          <button onClick={retryStatus} className="ml-3 underline font-semibold">{t('actions.retry')}</button>
+        </div>}
         <div className="flex-1 overflow-y-auto relative" ref={contentRef} style={{ userSelect: isDragging ? 'none' : undefined }}>
           <DragSelectOverlay rect={dragRect} />
           <div className="bg-amber-50 px-6 py-3 border-b border-amber-200 text-sm text-amber-800 flex items-center gap-2">
@@ -165,7 +174,7 @@ export default function TrashPage() {
                   <TrashTable
                     folders={trashedFolders} files={trashedFiles}
                     selection={selection} actionIds={actionIds}
-                    isEmptying={isEmptying} isCleaning={cleanupStatus.isCleaning}
+                    isEmptying={isEmptying || isActing} isCleaning={cleanupStatus.isCleaning}
                     onItemClick={handleItemClick} onContextMenu={openContextMenu}
                     onRestoreFolder={handleRestoreFolder} onPermanentDeleteFolder={handlePermanentDeleteFolder}
                     onRestoreFile={handleRestoreFile} onPermanentDeleteFile={handlePermanentDeleteFile}
@@ -192,6 +201,7 @@ export default function TrashPage() {
       {contextMenu.isOpen && contextMenu.item && (
         <ContextMenu x={contextMenu.x} y={contextMenu.y} itemType={contextMenu.type}
           selectionCount={selection.selectedCount}
+          disabled={isEmptying || isActing || cleanupStatus.isCleaning}
           onRestore={handleContextMenuRestore}
           onPermanentDelete={handleContextMenuPermanentDelete}
         />
@@ -203,7 +213,7 @@ export default function TrashPage() {
         variant="trash"
         onRestore={handleBatchRestoreClick}
         onPermanentDelete={handleBatchDeleteClick}
-        disabled={isEmptying || cleanupStatus.isCleaning}
+        disabled={isEmptying || isActing || cleanupStatus.isCleaning}
       />
     </div>
   );

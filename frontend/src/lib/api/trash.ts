@@ -50,6 +50,7 @@ export async function getCleanupStatus(): Promise<TrashCleanupStatus> {
   return res.data;
 }
 
-export async function startCleanup(): Promise<void> {
-  await api.post('/files/trash/cleanup');
+export async function startCleanup(): Promise<{ accepted: boolean }> {
+  const response = await api.post('/files/trash/cleanup');
+  return response.data;
 }

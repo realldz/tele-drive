@@ -11,7 +11,7 @@ interface DashboardListViewProps extends DashboardViewProps {
 }
 
 export default function DashboardListView({
-  visibleFolders, visibleFiles, selection, downloadingFiles, actionLoading, dragOverFolderId,
+  visibleFolders, visibleFiles, selection, downloadingFiles, actionLoading, deletingIds, dragOverFolderId,
   sortField, sortDirection, onSort,
   onItemClick, onDragStart, onDragOver, onDragLeave, onDrop, onContextMenu,
   onDownload, onDeleteStuckFile, onRetryBuffer,
@@ -37,9 +37,9 @@ export default function DashboardListView({
         </thead>
         <tbody className="divide-y divide-gray-100">
           {visibleFolders.map(folder => (
-            <tr key={folder.id} data-selectable-id={folder.id}
+            <tr key={folder.id} aria-busy={deletingIds.has(folder.id)} data-selectable-id={folder.id}
               onClick={(e) => onItemClick(e, folder, 'folder')}
-              draggable
+              draggable={!deletingIds.has(folder.id)}
               onDragStart={(e) => onDragStart(e, folder, 'folder')} onDragOver={(e) => onDragOver(e, folder.id)}
               onDragLeave={onDragLeave} onDrop={(e) => onDrop(e, folder.id)}
               onContextMenu={(e) => onContextMenu(e, folder, 'folder')}
@@ -56,12 +56,13 @@ export default function DashboardListView({
                     {folder.visibility !== 'PRIVATE' && <Globe className="absolute -bottom-1 -right-1 w-3 h-3 text-green-600 bg-white rounded-full p-px" />}
                   </div>
                   <span className="font-medium text-gray-800">{folder.name}</span>
+              {deletingIds.has(folder.id) && <span role="status" className="text-xs text-blue-600 flex items-center gap-1"><Loader2 size={12} className="animate-spin" />{t('actions.deleting')}</span>}
                 </div>
               </td>
               <td className="p-3 md:p-4 text-sm text-gray-600 hidden sm:table-cell">-</td>
               <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">{formatDate(folder.createdAt)}</td>
               <td className="p-3 md:p-4 text-right">
-                <button onClick={(e) => { e.stopPropagation(); onContextMenu(e, folder, 'folder'); }}
+                <button disabled={deletingIds.has(folder.id)} onClick={(e) => { e.stopPropagation(); onContextMenu(e, folder, 'folder'); }}
                   className="md:opacity-0 md:group-hover:opacity-100 p-1.5 text-gray-500 hover:bg-gray-200 rounded-md transition-opacity inline-flex items-center">
                   <MoreVertical size={16} />
                 </button>
@@ -69,7 +70,7 @@ export default function DashboardListView({
             </tr>
           ))}
           {visibleFiles.map(file => (
-            <tr key={file.id} data-selectable-id={file.id} draggable onDragStart={(e) => onDragStart(e, file, 'file')}
+            <tr key={file.id} aria-busy={deletingIds.has(file.id)} data-selectable-id={file.id} draggable={!deletingIds.has(file.id)} onDragStart={(e) => onDragStart(e, file, 'file')}
               onClick={(e) => onItemClick(e, file, 'file')}
               onContextMenu={(e) => file.status !== 'uploading' && onContextMenu(e, file, 'file')}
               className={`cursor-pointer transition-colors group ${
@@ -85,13 +86,14 @@ export default function DashboardListView({
                   <div>
                     <div className="flex items-center gap-1.5 min-w-0">
                       <span className="font-medium text-gray-800 block truncate max-w-[150px] sm:max-w-xs md:max-w-sm">{file.filename}</span>
+              {deletingIds.has(file.id) && <span role="status" className="text-xs text-blue-600 flex items-center gap-1"><Loader2 size={12} className="animate-spin" />{t('actions.deleting')}</span>}
                       {file.status === 'buffered' && (
                         <span title={t('file.syncingToCloud')} className="flex-shrink-0 inline-flex items-center">
                           <CloudUpload className="w-4 h-4 text-blue-400 animate-pulse" />
                         </span>
                       )}
                       {file.status === 'buffer_failed' && (
-                        <button
+                        <button disabled={deletingIds.has(file.id)}
                           onClick={(e) => { e.stopPropagation(); onRetryBuffer(file.id); }}
                           title={t('file.syncFailed')}
                           className="flex-shrink-0 inline-flex items-center cursor-pointer hover:scale-110 transition-transform"
@@ -109,14 +111,14 @@ export default function DashboardListView({
               <td className="p-3 md:p-4 text-sm text-gray-500 hidden sm:table-cell">{formatDate(file.createdAt)}</td>
               <td className="p-3 md:p-4 text-right whitespace-nowrap">
                 {file.status === 'uploading' ? (
-                  <button onClick={(e) => onDeleteStuckFile(e, file.id)} disabled={actionLoading.has(file.id)} className="p-1.5 text-red-500 bg-red-50 hover:bg-red-100 rounded-md transition-colors disabled:opacity-50">
+                  <button onClick={(e) => onDeleteStuckFile(e, file.id)} disabled={actionLoading.has(file.id) || deletingIds.has(file.id)} className="p-1.5 text-red-500 bg-red-50 hover:bg-red-100 rounded-md transition-colors disabled:opacity-50">
                     {actionLoading.has(file.id) ? <Loader2 size={16} className="animate-spin" /> : '×'}
                   </button>
                 ) : (
                   <div className="flex justify-end gap-1 opacity-100 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity">
                     <button onClick={(e) => { e.stopPropagation(); if (!downloadingFiles.has(file.id)) onDownload(file.id, file.filename); }}
-                      disabled={downloadingFiles.has(file.id)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50"><Download size={16} /></button>
-                    <button onClick={(e) => { e.stopPropagation(); onContextMenu(e, file, 'file'); }} className="p-1.5 text-gray-500 hover:bg-gray-200 rounded-md transition-opacity"><MoreVertical size={16} /></button>
+                      disabled={downloadingFiles.has(file.id) || deletingIds.has(file.id)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-md transition-colors disabled:opacity-50"><Download size={16} /></button>
+                    <button disabled={deletingIds.has(file.id)} onClick={(e) => { e.stopPropagation(); onContextMenu(e, file, 'file'); }} className="p-1.5 text-gray-500 hover:bg-gray-200 rounded-md transition-opacity"><MoreVertical size={16} /></button>
                   </div>
                 )}
               </td>

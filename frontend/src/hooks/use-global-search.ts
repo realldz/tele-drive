@@ -204,5 +204,11 @@ export function useGlobalSearch(
     isSearching, hasMore, loadMoreRef,
     totalFolders, totalFiles,
     clearSearch,
+    refresh: () => runSearch(false),
+    removeItems: (ids: string[]) => {
+      const removed = new Set(ids);
+      setFolders(previous => previous.filter(item => !removed.has(item.id)));
+      setFiles(previous => previous.filter(item => !removed.has(item.id)));
+    },
   };
 }

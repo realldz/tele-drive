@@ -562,5 +562,15 @@
   "admin.nestjsUptime": "Thời gian hoạt động",
   "admin.nestjsMemoryRss": "Bộ nhớ (RSS)",
   "admin.nestjsHeapUsed": "Heap đã dùng",
-  "admin.nestjsHeapTotal": "Tổng Heap"
+  "admin.nestjsHeapTotal": "Tổng Heap",
+  "actions.progress": "Đang xử lý {done}/{total} mục…",
+  "actions.complete": "Đã xử lý thành công {success} mục",
+  "actions.partialFailure": "Thành công {success}; thất bại {failed}. Các mục lỗi vẫn được chọn.",
+  "actions.requestFailed": "Yêu cầu thất bại. Vui lòng thử lại.",
+  "actions.deleting": "Đang chuyển vào thùng rác…",
+  "trash.confirmDeleteSelected": "Xoá vĩnh viễn {count} mục đã chọn? Không thể hoàn tác thao tác này.",
+  "trash.cleanupRemaining": "Đã dọn xong nhưng vẫn còn một số mục. Vui lòng thử lại.",
+  "actions.refreshFailed": "Đã lưu thay đổi nhưng chưa tải lại được danh sách.",
+  "trash.statusUnavailable": "Chưa kiểm tra được trạng thái dọn rác. Tạm khoá thao tác và đang thử lại.",
+  "actions.retry": "Thử lại"
 }

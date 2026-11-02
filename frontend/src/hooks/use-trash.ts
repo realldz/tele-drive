@@ -1,16 +1,15 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import {
   fetchTrashFolders as fetchTrashFoldersApi,
   fetchTrashFiles as fetchTrashFilesApi,
   restoreFile, permanentDeleteFile, restoreFolder, permanentDeleteFolder,
-  getApiErrorMessage, getCleanupStatus, startCleanup,
-  type TrashCleanupStatus,
 } from '@/lib/api';
-import { TRASH_EXPIRY_MS, TRASH_CLEANUP_POLL_MS, TOAST_LONG_MS } from '@/lib/constants';
+import { TRASH_EXPIRY_MS } from '@/lib/constants';
 import type { TrashedFile, TrashedFolder } from '@/lib/types';
-import toast from 'react-hot-toast';
+import { useItemActions, type ActionItem } from '@/hooks/use-item-actions';
+import { useTrashCleanup } from '@/hooks/use-trash-cleanup';
 
 interface UseTrashArgs {
   token: string | null;
@@ -36,10 +35,6 @@ export function useTrash({ token, t }: UseTrashArgs) {
   const [foldersHasMore, setFoldersHasMore] = useState(true);
   const [filesHasMore, setFilesHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
-  const [isEmptying, setIsEmptying] = useState(false);
-  const [actionIds, setActionIds] = useState<Set<string>>(new Set());
-  const [cleanupStatus, setCleanupStatus] = useState<TrashCleanupStatus>({ isCleaning: false });
-
   const fetchTrash = useCallback(async () => {
     if (!token) return;
     try {
@@ -83,91 +78,39 @@ export function useTrash({ token, t }: UseTrashArgs) {
     } finally { setLoadingMore(false); }
   }, [loadingMore, foldersHasMore, filesHasMore, foldersCursor, filesCursor]);
 
-  // Poll cleanup status while emptying
-  useEffect(() => {
-    if (!cleanupStatus.isCleaning) return;
-    const interval = setInterval(async () => {
-      try {
-        const status = await getCleanupStatus();
-        setCleanupStatus(status);
-        if (!status.isCleaning) {
-          fetchTrash();
-          const deletedCount = status.deletedCount ?? 0;
-          if (deletedCount > 0) {
-            toast.success(t('trash.cleanupComplete', { count: String(deletedCount) }));
-          }
-        }
-      } catch {
-        // Ignore polling errors
-      }
-    }, TRASH_CLEANUP_POLL_MS);
-    return () => clearInterval(interval);
-  }, [cleanupStatus.isCleaning, fetchTrash, t]);
-
-  const runAction = useCallback(async (id: string, fn: (id: string) => Promise<unknown>, errMsg: string) => {
-    if (actionIds.has(id)) return;
-    setActionIds(prev => new Set(prev).add(id));
-    try {
-      await fn(id);
-      fetchTrash();
-    } catch (error: unknown) {
-      alert(getApiErrorMessage(error, errMsg));
-    } finally {
-      setActionIds(prev => { const next = new Set(prev); next.delete(id); return next; });
-    }
-  }, [actionIds, fetchTrash]);
-
-  const handleRestoreFile = useCallback((id: string) => runAction(id, restoreFile, 'Error restoring file'), [runAction]);
-  const handlePermanentDeleteFile = useCallback((id: string) => runAction(id, permanentDeleteFile, 'Error deleting file'), [runAction]);
-  const handleRestoreFolder = useCallback((id: string) => runAction(id, restoreFolder, 'Error restoring folder'), [runAction]);
-  const handlePermanentDeleteFolder = useCallback((id: string) => runAction(id, permanentDeleteFolder, 'Error deleting folder'), [runAction]);
-
-  const batchRun = useCallback(async (
-    ids: string[],
-    folderFn: (id: string) => Promise<unknown>,
-    fileFn: (id: string) => Promise<unknown>,
-    errMsg: string,
-  ) => {
-    for (const id of ids) {
-      const isFolder = trashedFolders.some(f => f.id === id);
-      try {
-        await (isFolder ? folderFn(id) : fileFn(id));
-      } catch (error: unknown) {
-        alert(getApiErrorMessage(error, errMsg));
-      }
-    }
-    fetchTrash();
-  }, [trashedFolders, fetchTrash]);
-
-  const handleBatchRestore = useCallback((ids: string[]) =>
-    batchRun(ids, restoreFolder, restoreFile, 'Error restoring item'), [batchRun]);
-
-  const handleBatchPermanentDelete = useCallback((ids: string[]) => {
-    if (!confirm(t('trash.emptyTrashConfirm'))) return;
-    return batchRun(ids, permanentDeleteFolder, permanentDeleteFile, 'Error deleting item');
-  }, [batchRun, t]);
-
-  const handleEmptyTrash = useCallback(async () => {
-    if (!confirm(t('trash.emptyTrashConfirm'))) return;
-    if (cleanupStatus.isCleaning) {
-      toast(t('trash.cleanupInProgress'), { icon: '⏳' });
-      return;
-    }
-    setIsEmptying(true);
-    try {
-      await startCleanup();
-      toast.success(t('trash.cleanupStarted'), { duration: TOAST_LONG_MS, icon: '🗑️' });
-      setCleanupStatus({ isCleaning: true });
-    } catch (error: unknown) {
-      alert(getApiErrorMessage(error, 'Error emptying trash'));
-      setIsEmptying(false);
-    }
-  }, [cleanupStatus.isCleaning, t]);
+  const cleanup = useTrashCleanup(token, t, fetchTrash);
+  const operations = useItemActions(t, fetchTrash, ids => {
+    const removed = new Set(ids);
+    setTrashedFolders(previous => previous.filter(item => !removed.has(item.id)));
+    setTrashedFiles(previous => previous.filter(item => !removed.has(item.id)));
+  });
+  const blocked = cleanup.isEmptying || cleanup.cleanupStatus.isCleaning;
+  const run = async (items: ActionItem[], restore: boolean) => {
+    if (blocked) return null;
+    return operations.run(items, item => {
+      if (restore) return item.type === 'folder' ? restoreFolder(item.id) : restoreFile(item.id);
+      return item.type === 'folder' ? permanentDeleteFolder(item.id) : permanentDeleteFile(item.id);
+    });
+  };
+  const itemsFor = (ids: string[]): ActionItem[] => ids.map(id => ({
+    id, type: trashedFolders.some(folder => folder.id === id) ? 'folder' : 'file',
+  }));
+  const handleRestoreFile = (id: string) => run([{ id, type: 'file' }], true);
+  const handleRestoreFolder = (id: string) => run([{ id, type: 'folder' }], true);
+  const handlePermanentDeleteFile = (id: string) => run([{ id, type: 'file' }], false);
+  const handlePermanentDeleteFolder = (id: string) => run([{ id, type: 'folder' }], false);
+  const handleBatchRestore = (ids: string[]) => run(itemsFor(ids), true);
+  const handleBatchPermanentDelete = (ids: string[]) => {
+    if (blocked || operations.isBusy || !confirm(t('trash.confirmDeleteSelected', { count: String(ids.length) }))) return Promise.resolve(null);
+    return run(itemsFor(ids), false);
+  };
+  const handleEmptyTrash = () => { if (!operations.isBusy) return cleanup.start(); };
 
   return {
     trashedFiles, trashedFolders,
     foldersHasMore, filesHasMore, loadingMore, loadMoreTrash,
-    isEmptying, actionIds, cleanupStatus,
+    isEmptying: cleanup.isEmptying, actionIds: operations.pendingIds, cleanupStatus: cleanup.cleanupStatus,
+    isActing: operations.isBusy, statusError: cleanup.statusError, retryStatus: cleanup.retryStatus,
     fetchTrash,
     handleRestoreFile, handlePermanentDeleteFile,
     handleRestoreFolder, handlePermanentDeleteFolder,

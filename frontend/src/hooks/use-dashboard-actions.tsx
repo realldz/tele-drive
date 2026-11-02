@@ -4,12 +4,12 @@ import { useState, useCallback } from 'react';
 import axios from 'axios';
 import toast from 'react-hot-toast';
 import {
-  createFolder, deleteFolder, restoreFolder, deleteFile, restoreFile,
+  createFolder,
   abortUpload, requestDownloadToken, moveItem, formatBandwidthResetTime,
   resolveTransferLink, isConflictError, parseConflictResponse, retryBuffer,
 } from '@/lib/api';
 import { LOCALE_DATE_MAP, type Locale } from '@/providers/i18n-context';
-import { TOAST_SHORT_MS, TOAST_LONG_MS, DOWNLOAD_CLEANUP_DELAY_MS } from '@/lib/constants';
+import { TOAST_SHORT_MS, DOWNLOAD_CLEANUP_DELAY_MS } from '@/lib/constants';
 import type { FileRecord, FolderRecord } from '@/lib/types';
 import type { SelectionState } from '@/hooks/use-selection';
 import type { ConflictResolution } from '@/providers/upload/upload-types';
@@ -61,46 +61,6 @@ export function useDashboardActions({
       return false;
     }
   }, [currentFolderId, fetchContent, t]);
-
-  const deleteWithUndo = useCallback((
-    id: string,
-    deletedLabel: string,
-    restoreFn: (id: string) => Promise<unknown>,
-  ) => {
-    toast.success((ti) => (
-      <span className="flex items-center gap-2">
-        {deletedLabel}
-        <button
-          onClick={async () => {
-            toast.dismiss(ti.id);
-            try { await restoreFn(id); fetchContent(); }
-            catch { toast.error(t('dashboard.undoError')); }
-          }}
-          className="text-blue-500 font-semibold text-sm hover:underline ml-2 cursor-pointer"
-        >
-          {t('dashboard.undo')}
-        </button>
-      </span>
-    ), { duration: TOAST_LONG_MS });
-  }, [fetchContent, t]);
-
-  const handleDeleteFolder = useCallback(async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    try {
-      await deleteFolder(id);
-      fetchContent();
-      deleteWithUndo(id, t('dashboard.deletedFolder'), restoreFolder);
-    } catch { toast.error(t('dashboard.deleteStuckError')); }
-  }, [fetchContent, t, deleteWithUndo]);
-
-  const handleDeleteFile = useCallback(async (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    try {
-      await deleteFile(id);
-      fetchContent();
-      deleteWithUndo(id, t('dashboard.deletedFile'), restoreFile);
-    } catch { toast.error(t('dashboard.deleteStuckError')); }
-  }, [fetchContent, t, deleteWithUndo]);
 
   const handleDeleteStuckFile = useCallback(async (e: React.MouseEvent, id: string) => {
     e.stopPropagation();
@@ -184,20 +144,6 @@ export function useDashboardActions({
     }
   }, [selection, files, folders, startDownload, handleDownload, t, locale]);
 
-  const handleBatchDelete = useCallback(async () => {
-    const ids = Array.from(selection.selectedIds);
-    for (const id of ids) {
-      const isFolder = folders.some(f => f.id === id);
-      try {
-        if (isFolder) await deleteFolder(id);
-        else await deleteFile(id);
-      } catch { toast.error(t('dashboard.deleteStuckError')); }
-    }
-    selection.clearSelection();
-    fetchContent();
-    toast.success(t('dashboard.deletedFile'));
-  }, [selection, folders, fetchContent, t]);
-
   const handleBatchMoveConfirm = useCallback(async (destFolderId: string | null) => {
     const ids = Array.from(selection.selectedIds);
     for (const id of ids) {
@@ -235,9 +181,9 @@ export function useDashboardActions({
     downloadingFiles, actionLoading,
     createFolderError, setCreateFolderError,
     handleCreateFolder,
-    handleDeleteFolder, handleDeleteFile, handleDeleteStuckFile,
+    handleDeleteStuckFile,
     handleRetryBuffer,
     handleDownload, handleBatchDownload,
-    handleBatchDelete, handleBatchMoveConfirm,
+    handleBatchMoveConfirm,
   };
 }

@@ -35,7 +35,7 @@ export default function TrashTable({
   const restoreBtn = (id: string, onClick: () => void) => (
     <button
       onClick={(e) => { e.stopPropagation(); onClick(); }}
-      disabled={actionIds.has(id) || isEmptying}
+      disabled={actionIds.has(id) || isEmptying || isCleaning}
       className="p-2 text-green-600 bg-green-50 hover:bg-green-100 disabled:opacity-50 disabled:hover:bg-green-50 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium"
     >
       {actionIds.has(id) ? <Loader2 size={16} className="animate-spin" /> : <RotateCcw size={16} />}

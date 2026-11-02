@@ -16,6 +16,7 @@ interface ContextMenuProps {
   onRestore?: (e: React.MouseEvent) => void;
   onPermanentDelete?: (e: React.MouseEvent) => void;
   selectionCount?: number;
+  disabled?: boolean;
 }
 
 export default function ContextMenu({
@@ -23,7 +24,7 @@ export default function ContextMenu({
   x, y, itemType: _itemType,
   onRename, onMove, onShare, onDelete, onDownload, onDetails,
   onRestore, onPermanentDelete,
-  selectionCount = 1,
+  selectionCount = 1, disabled = false,
 }: ContextMenuProps) {
   const { t } = useI18n();
   const isBatch = selectionCount > 1;
@@ -44,47 +45,47 @@ export default function ContextMenu({
       )}
 
       {!isBatch && onDetails && (
-        <button onClick={onDetails} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors">
+        <button disabled={disabled} onClick={onDetails} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors">
           <Info size={16} /> {t('contextMenu.details')}
         </button>
       )}
       {!isBatch && onRename && (
-        <button onClick={onRename} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors">
+        <button disabled={disabled} onClick={onRename} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors">
           <Edit2 size={16} /> {t('contextMenu.rename')}
         </button>
       )}
       {onDownload && (
-        <button onClick={onDownload} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors">
+        <button disabled={disabled} onClick={onDownload} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors">
           <Download size={16} /> {isBatch ? t('selection.downloadSelected') : t('contextMenu.download')}
         </button>
       )}
       {onMove && (
-        <button onClick={onMove} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors">
+        <button disabled={disabled} onClick={onMove} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-gray-700 cursor-pointer transition-colors">
           <Move size={16} /> {isBatch ? t('selection.moveSelected') : t('contextMenu.move')}
         </button>
       )}
       {!isBatch && onShare && (
-        <button onClick={onShare} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-blue-600 font-medium cursor-pointer transition-colors">
+        <button disabled={disabled} onClick={onShare} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-blue-600 font-medium cursor-pointer transition-colors">
           <Share2 size={16} /> {t('contextMenu.share')}
         </button>
       )}
       {onDelete && (
         <>
           <div className="border-t border-gray-100 my-1" />
-          <button onClick={onDelete} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-red-600 font-medium cursor-pointer transition-colors">
+          <button disabled={disabled} onClick={onDelete} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-red-600 font-medium cursor-pointer transition-colors">
             <Trash2 size={16} /> {isBatch ? t('selection.deleteSelected') : t('contextMenu.delete')}
           </button>
         </>
       )}
       {onRestore && (
-        <button onClick={onRestore} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-green-600 font-medium cursor-pointer transition-colors">
+        <button disabled={disabled} onClick={onRestore} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-green-600 font-medium cursor-pointer transition-colors">
           <RotateCcw size={16} /> {isBatch ? t('selection.restoreSelected') : t('trash.restore')}
         </button>
       )}
       {onPermanentDelete && (
         <>
           <div className="border-t border-gray-100 my-1" />
-          <button onClick={onPermanentDelete} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-red-600 font-medium cursor-pointer transition-colors">
+          <button disabled={disabled} onClick={onPermanentDelete} className="w-full text-left px-4 py-2 hover:bg-gray-100 flex items-center gap-2 text-red-600 font-medium cursor-pointer transition-colors">
             <Trash2 size={16} /> {isBatch ? t('selection.permanentDeleteSelected') : t('trash.permanentDelete')}
           </button>
         </>

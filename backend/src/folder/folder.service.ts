@@ -22,6 +22,10 @@ import {
 import type { ConflictAction } from '../common/name-conflict.service';
 import { buildTransferUrl } from '../common/transfer-url.util';
 import * as crypto from 'crypto';
+import {
+  collectFolderFileIds,
+  softDeleteFolderTree,
+} from './folder-deletion-queries';
 
 @Injectable()
 export class FolderService {
@@ -1119,9 +1123,9 @@ export class FolderService {
     });
     if (!folder) throw new NotFoundException(notFoundMsg);
 
-    const allFileIds = await this.collectAllFileIds(id);
+    const allFileIds = await collectFolderFileIds(this.prisma, id, userId);
 
-    // Atomically delete all files inside the folder tree before deleting the folder
+    // Commit bounded file batches before deleting the folder tree.
     await this.fileLifecycleService.bulkPermanentDeleteFiles(
       allFileIds,
       userId,
@@ -1146,43 +1150,17 @@ export class FolderService {
     if (!folder) throw new NotFoundException('Thư mục không tồn tại');
 
     const now = new Date();
-    await this.softDeleteRecursive(id, now);
+    const startedAt = Date.now();
+    const counts = await softDeleteFolderTree(this.prisma, id, userId, now);
+    if (!counts.folders) throw new NotFoundException('Folder not found');
+    this.logger.log(
+      `Folder tree moved to trash: id=${id}, userId=${userId}, folders=${counts.folders}, files=${counts.files}, durationMs=${Date.now() - startedAt}`,
+    );
 
     this.logger.log(
       `Folder soft-deleted: "${folder.name}" (id: ${id}, userId: ${userId})`,
     );
-    return folder;
-  }
-
-  /**
-   * Đệ quy soft-delete folder và tất cả nội dung bên trong.
-   */
-  private async softDeleteRecursive(
-    folderId: string,
-    deletedAt: Date,
-  ): Promise<void> {
-    // Soft-delete tất cả files trong folder
-    await this.prisma.fileRecord.updateMany({
-      where: { folderId, deletedAt: null },
-      data: { deletedAt },
-    });
-
-    // Tìm tất cả subfolder chưa bị xoá
-    const children = await this.prisma.folder.findMany({
-      where: { parentId: folderId, deletedAt: null },
-      select: { id: true },
-    });
-
-    // Đệ quy soft-delete từng subfolder
-    for (const child of children) {
-      await this.softDeleteRecursive(child.id, deletedAt);
-    }
-
-    // Soft-delete folder hiện tại
-    await this.prisma.folder.update({
-      where: { id: folderId },
-      data: { deletedAt },
-    });
+    return { ...folder, deletedFolderIds: counts.deletedFolderIds };
   }
 
   /**
@@ -1329,30 +1307,6 @@ export class FolderService {
     const total = await this.prisma.folder.count({ where });
 
     return { data: items, nextCursor, total };
-  }
-
-  /**
-   * Đệ quy thu thập tất cả file IDs trong thư mục và các thư mục con
-   */
-  private async collectAllFileIds(folderId: string): Promise<string[]> {
-    const fileIds: string[] = [];
-
-    const files = await this.prisma.fileRecord.findMany({
-      where: { folderId },
-      select: { id: true },
-    });
-    fileIds.push(...files.map((f) => f.id));
-
-    const children = await this.prisma.folder.findMany({
-      where: { parentId: folderId },
-      select: { id: true },
-    });
-    for (const child of children) {
-      const childFileIds = await this.collectAllFileIds(child.id);
-      fileIds.push(...childFileIds);
-    }
-
-    return fileIds;
   }
 
   /**
