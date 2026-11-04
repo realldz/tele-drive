@@ -11,6 +11,14 @@ export interface PaginatedFolderContent {
   totalFiles: number;
 }
 
+export type PaginatedSharedItems = Omit<
+  PaginatedFolderContent,
+  'totalFolders' | 'totalFiles'
+> & {
+  totalFolders?: number;
+  totalFiles?: number;
+};
+
 export async function fetchFolderContent(
   folderId?: string,
   cursor?: string,
@@ -116,10 +124,13 @@ export async function searchFiles(
  * files carry `shareToken`.
  */
 export async function listSharedItems(
-  params?: { cursor?: string | null; limit?: number },
-): Promise<PaginatedFolderContent> {
+  params?: { cursor?: string | null; limit?: number; includeTotals?: boolean },
+): Promise<PaginatedSharedItems> {
   const p = new URLSearchParams();
   if (params?.cursor) p.set('cursor', params.cursor);
+  if (params?.includeTotals !== undefined) {
+    p.set('includeTotals', String(params.includeTotals));
+  }
   p.set('limit', String(params?.limit ?? PAGINATION_FOLDER_LIMIT));
   const res = await api.get(`/folders/shared?${p}`);
   return res.data;

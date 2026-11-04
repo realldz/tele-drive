@@ -11,6 +11,27 @@ interface User {
   role: string;
 }
 
+function isStoredUser(value: unknown): value is User {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Partial<User>;
+  return typeof candidate.id === 'string'
+    && typeof candidate.username === 'string'
+    && typeof candidate.role === 'string'
+    && (candidate.email === undefined
+      || candidate.email === null
+      || typeof candidate.email === 'string');
+}
+
+function clearStoredAuth() {
+  try {
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+  } catch {
+    // Storage can be unavailable under browser privacy policies.
+  }
+  clearAuthHeader();
+}
+
 interface QuotaInfo {
   usedSpace: number;
   quota: number;
@@ -90,23 +111,38 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [refreshUser]);
 
   // Khởi tạo: đọc token từ localStorage VÀ set axios header ngay lập tức
-  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
-    const savedToken = localStorage.getItem('token');
-    const savedUser = localStorage.getItem('user');
-    if (savedToken && savedUser) {
+    let savedToken: string | null = null;
+    let savedUser: string | null = null;
+    try {
+      savedToken = localStorage.getItem('token');
+      savedUser = localStorage.getItem('user');
+      if (!savedToken && !savedUser) return;
+      if (!savedToken || !savedUser) {
+        clearStoredAuth();
+        return;
+      }
+
+      const parsedUser: unknown = JSON.parse(savedUser);
+      if (!isStoredUser(parsedUser)) {
+        clearStoredAuth();
+        return;
+      }
+
       setAuthHeader(savedToken);
       setToken(savedToken);
-      setUser(JSON.parse(savedUser));
+      setUser(parsedUser);
+    } catch {
+      clearStoredAuth();
+    } finally {
+      setIsLoading(false);
     }
-    setIsLoading(false);
   }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Fetch quota 1 lần khi đã có token
   useEffect(() => {
     if (token) {
-      refreshQuota(); // eslint-disable-line react-hooks/set-state-in-effect
+      refreshQuota();
     }
   }, [token, refreshQuota]);
 

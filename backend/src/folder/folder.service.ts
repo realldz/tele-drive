@@ -27,6 +27,38 @@ import {
   softDeleteFolderTree,
 } from './folder-deletion-queries';
 
+interface SharedListCursor {
+  f?: string;
+  fc?: string;
+  fd?: boolean;
+}
+
+type PaginatedSharedContent = Omit<
+  PaginatedFolderContent,
+  'totalFolders' | 'totalFiles'
+> &
+  Partial<Pick<PaginatedFolderContent, 'totalFolders' | 'totalFiles'>>;
+
+function encodeSharedListCursor(cursor: SharedListCursor): string {
+  return Buffer.from(JSON.stringify(cursor)).toString('base64');
+}
+
+function decodeSharedListCursor(cursor?: string): SharedListCursor {
+  if (!cursor) return {};
+  try {
+    const parsed = JSON.parse(
+      Buffer.from(cursor, 'base64').toString('utf-8'),
+    ) as Record<string, unknown>;
+    return {
+      f: typeof parsed.f === 'string' ? parsed.f : undefined,
+      fc: typeof parsed.fc === 'string' ? parsed.fc : undefined,
+      fd: parsed.fd === true ? true : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
 @Injectable()
 export class FolderService {
   private readonly logger = new Logger(FolderService.name);
@@ -511,27 +543,13 @@ export class FolderService {
   async listShared(
     userId: string,
     pagination: PaginationQueryDto,
-  ): Promise<PaginatedFolderContent> {
+  ): Promise<PaginatedSharedContent> {
     const limit = pagination.limit ?? 50;
 
     const folderWhere = buildSharedFolderWhere(userId);
     const fileWhere = buildSharedFileWhere(userId);
 
-    let parsedCursor: { f?: string; fc?: string } = {};
-    if (pagination.cursor) {
-      try {
-        const decoded = Buffer.from(pagination.cursor, 'base64').toString(
-          'utf-8',
-        );
-        const parsed = JSON.parse(decoded) as Record<string, unknown>;
-        parsedCursor = {
-          f: typeof parsed.f === 'string' ? parsed.f : undefined,
-          fc: typeof parsed.fc === 'string' ? parsed.fc : undefined,
-        };
-      } catch {
-        // ignore malformed cursor
-      }
-    }
+    const parsedCursor = decodeSharedListCursor(pagination.cursor);
 
     const isQueryNextFile = !!(parsedCursor.fc && !parsedCursor.f);
     const isQueryNextFolder = !!parsedCursor.f;
@@ -559,16 +577,8 @@ export class FolderService {
 
     const folderHasNext = folders.length > limit;
     const folderItems = folderHasNext ? folders.slice(0, -1) : folders;
-    const nextFolderCursor = folderHasNext
-      ? Buffer.from(
-          JSON.stringify({
-            f: (folderItems[folderItems.length - 1] as { id: string }).id,
-            fc: parsedCursor.fc,
-          }),
-        ).toString('base64')
-      : null;
-
-    const shouldFetchFiles = !isQueryNextFolder || !folderHasNext;
+    const shouldFetchFiles =
+      parsedCursor.fd !== true && (!isQueryNextFolder || !folderHasNext);
     const files = shouldFetchFiles
       ? await this.prisma.fileRecord.findMany({
           where: fileWhere,
@@ -595,21 +605,44 @@ export class FolderService {
 
     const fileHasNext = files.length > limit;
     const fileItems = fileHasNext ? files.slice(0, -1) : files;
-    const nextFileCursor = fileHasNext
-      ? Buffer.from(
-          JSON.stringify({
-            fc: (fileItems[fileItems.length - 1] as { id: string }).id,
-          }),
-        ).toString('base64')
+    const totals =
+      pagination.includeTotals === false
+        ? null
+        : await Promise.all([
+            this.prisma.folder.count({ where: folderWhere }),
+            this.prisma.fileRecord.count({ where: fileWhere }),
+          ]);
+
+    const carriedFileCursor = shouldFetchFiles
+      ? fileHasNext
+        ? (fileItems[fileItems.length - 1] as { id: string }).id
+        : undefined
+      : parsedCursor.fc;
+    const filesDone = shouldFetchFiles
+      ? !fileHasNext
+      : parsedCursor.fd === true;
+
+    const nextFolderCursor = folderHasNext
+      ? encodeSharedListCursor({
+          f: (folderItems[folderItems.length - 1] as { id: string }).id,
+          fc: carriedFileCursor,
+          fd: filesDone || undefined,
+        })
       : null;
 
-    const [totalFolders, totalFiles] = await Promise.all([
-      this.prisma.folder.count({ where: folderWhere }),
-      this.prisma.fileRecord.count({ where: fileWhere }),
-    ]);
+    const nextFileCursor = fileHasNext
+      ? encodeSharedListCursor({
+          fc: carriedFileCursor,
+        })
+      : !shouldFetchFiles && parsedCursor.fc
+        ? encodeSharedListCursor({
+            fc: parsedCursor.fc,
+          })
+        : null;
 
     this.logger.log(
-      `listShared user=${userId} → folders=${totalFolders} files=${totalFiles}`,
+      `listShared user=${userId} → pageFolders=${folderItems.length} pageFiles=${fileItems.length}` +
+        (totals ? ` totalFolders=${totals[0]} totalFiles=${totals[1]}` : ''),
     );
 
     return {
@@ -617,8 +650,7 @@ export class FolderService {
       files: fileItems,
       nextFolderCursor,
       nextFileCursor,
-      totalFolders,
-      totalFiles,
+      ...(totals ? { totalFolders: totals[0], totalFiles: totals[1] } : {}),
     };
   }
 

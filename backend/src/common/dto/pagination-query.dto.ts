@@ -1,5 +1,12 @@
-import { IsInt, IsOptional, IsString, Min, Max } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  IsBoolean,
+  IsInt,
+  IsOptional,
+  IsString,
+  Min,
+  Max,
+} from 'class-validator';
+import { Transform, Type } from 'class-transformer';
 
 export class PaginationQueryDto {
   @IsOptional()
@@ -28,4 +35,13 @@ export class PaginationQueryDto {
   @IsOptional()
   @IsString()
   sortDirection?: 'asc' | 'desc';
+
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  includeTotals?: boolean;
 }
