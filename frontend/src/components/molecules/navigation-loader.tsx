@@ -94,9 +94,12 @@ export default function NavigationLoader({ children }: { children: ReactNode }) 
     if (isFirstMount.current) { isFirstMount.current = false; lastPathnameRef.current = pathname; return; }
     if (pathname !== lastPathnameRef.current) {
       lastPathnameRef.current = pathname;
-      if (!visible) setTimeout(() => startNavigation(), 0);
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       rafRef.current = requestAnimationFrame(() => {
+        // Redirects initiated by router.push (for example / -> /login when
+        // unauthenticated) do not pass through the anchor click handler.
+        // Start in the first frame so completion cannot race ahead of it.
+        if (!visible) startNavigation();
         rafRef.current = requestAnimationFrame(() => { rafRef.current = null; finishNavigation(); });
       });
     }
