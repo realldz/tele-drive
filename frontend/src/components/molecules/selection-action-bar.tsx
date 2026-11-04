@@ -23,56 +23,69 @@ export default function SelectionActionBar({
   if (selectedCount === 0) return null;
 
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 animate-in slide-in-from-bottom-4 fade-in duration-200">
-      <div className="flex items-center gap-3 bg-gray-900 text-white px-5 py-3 rounded-2xl shadow-2xl border border-gray-700">
+    <div className="fixed inset-x-3 bottom-3 z-50 animate-in slide-in-from-bottom-4 fade-in duration-200 md:bottom-6">
+      <div
+        className="mx-auto grid w-full max-w-full grid-cols-[minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-gray-700 bg-gray-900 px-3 py-3 text-white shadow-2xl md:flex md:w-fit md:px-5"
+      >
         <span className="text-sm font-medium whitespace-nowrap">
           {t('selection.count', { count: String(selectedCount) })}
         </span>
-        <div className="w-px h-5 bg-gray-600" />
+        <div className="hidden h-5 w-px bg-gray-600 md:block" />
 
-        {variant === 'dashboard' && (
-          <>
-            {onMove && (
-              <button onClick={onMove} disabled={disabled} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-gray-700 hover:bg-gray-600 disabled:opacity-50 rounded-lg transition-colors cursor-pointer">
-                <Move size={15} /> {t('selection.moveSelected')}
-              </button>
-            )}
-            {onDownload && (
-              <button onClick={onDownload} disabled={disabled} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors cursor-pointer">
-                <Download size={15} /> {t('selection.downloadSelected')}
-              </button>
-            )}
-            {onDelete && (
-              <button onClick={onDelete} disabled={disabled} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg transition-colors cursor-pointer">
-                <Trash2 size={15} /> {t('selection.deleteSelected')}
-              </button>
-            )}
-          </>
-        )}
+        <div
+          className={`col-span-2 row-start-2 grid w-full min-w-0 gap-2 ${variant === 'shared' ? 'grid-cols-1' : 'grid-cols-2'} md:flex md:w-auto md:flex-1 md:flex-wrap`}
+        >
+          {variant === 'dashboard' && (
+            <>
+              {onMove && (
+                <button type="button" onClick={onMove} disabled={disabled} className="flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-gray-700 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-gray-600 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto">
+                  <Move size={15} /> {t('selection.moveSelected')}
+                </button>
+              )}
+              {onDownload && (
+                <button type="button" onClick={onDownload} disabled={disabled} className="flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto">
+                  <Download size={15} /> {t('selection.downloadSelected')}
+                </button>
+              )}
+              {onDelete && (
+                <button type="button" onClick={onDelete} disabled={disabled} className="flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto">
+                  <Trash2 size={15} /> {t('selection.deleteSelected')}
+                </button>
+              )}
+            </>
+          )}
 
-        {variant === 'shared' && onDownload && (
-          <button onClick={onDownload} disabled={disabled} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-lg transition-colors cursor-pointer">
-            <Download size={15} /> {t('selection.downloadSelected')}
-          </button>
-        )}
+          {variant === 'shared' && onDownload && (
+            <button type="button" onClick={onDownload} disabled={disabled} className="flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-blue-500 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto">
+              <Download size={15} /> {t('selection.downloadSelected')}
+            </button>
+          )}
 
-        {variant === 'trash' && (
-          <>
-            {onRestore && (
-              <button onClick={onRestore} disabled={disabled} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-lg transition-colors cursor-pointer">
-                <RotateCcw size={15} /> {t('selection.restoreSelected')}
-              </button>
-            )}
-            {onPermanentDelete && (
-              <button onClick={onPermanentDelete} disabled={disabled} className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium bg-red-600 hover:bg-red-500 disabled:opacity-50 rounded-lg transition-colors cursor-pointer">
-                <Trash2 size={15} /> {t('selection.permanentDeleteSelected')}
-              </button>
-            )}
-          </>
-        )}
+          {variant === 'trash' && (
+            <>
+              {onRestore && (
+                <button type="button" onClick={onRestore} disabled={disabled} className="flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-green-600 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-green-500 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto">
+                  <RotateCcw size={15} /> {t('selection.restoreSelected')}
+                </button>
+              )}
+              {onPermanentDelete && (
+                <button type="button" onClick={onPermanentDelete} disabled={disabled} className="flex min-w-0 cursor-pointer items-center justify-center gap-1.5 rounded-lg bg-red-600 px-3 py-1.5 text-sm font-medium transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-50 md:w-auto">
+                  <Trash2 size={15} /> {t('selection.permanentDeleteSelected')}
+                </button>
+              )}
+            </>
+          )}
+        </div>
 
-        <div className="w-px h-5 bg-gray-600" />
-        <button disabled={disabled} onClick={onClear} className="flex items-center gap-1 px-2 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded-lg transition-colors cursor-pointer" title={t('selection.deselectAll')}>
+        <div className="hidden h-5 w-px bg-gray-600 md:block" />
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onClear}
+          className="col-start-2 row-start-1 flex cursor-pointer items-center gap-1 rounded-lg px-2 py-1.5 text-sm text-gray-300 transition-colors hover:bg-gray-700 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+          title={t('selection.deselectAll')}
+          aria-label={t('selection.deselectAll')}
+        >
           <X size={15} />
         </button>
       </div>
