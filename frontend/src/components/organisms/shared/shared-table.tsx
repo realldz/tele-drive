@@ -46,32 +46,39 @@ export default function SharedTable({
 
   const copyBtn = (type: 'folder' | 'file', token: string) => (
     <button
+      type="button"
+      aria-label={t('shared.copyLink')}
       onClick={(e) => { e.stopPropagation(); copyLink(type, token); }}
       className="p-2 text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium"
     >
       <Copy size={16} />
-      <span className="hidden sm:inline">{t('shared.copyLink')}</span>
+      <span className="sr-only sm:not-sr-only">{t('shared.copyLink')}</span>
     </button>
   );
 
   const openBtn = (onClick: () => void) => (
     <button
+      type="button"
+      aria-label={t('shared.open')}
       onClick={(e) => { e.stopPropagation(); onClick(); }}
       className="p-2 text-gray-600 bg-gray-50 hover:bg-gray-100 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium"
     >
       <ExternalLink size={16} />
-      <span className="hidden sm:inline">{t('shared.open')}</span>
+      <span className="sr-only sm:not-sr-only">{t('shared.open')}</span>
     </button>
   );
 
   const revokeBtn = (id: string, onClick: () => void) => (
     <button
+      type="button"
+      aria-label={t('shared.revoke')}
+      aria-busy={actionIds.has(id)}
       onClick={(e) => { e.stopPropagation(); if (confirm(t('shared.confirmRevoke'))) onClick(); }}
       disabled={actionIds.has(id)}
       className="p-2 text-red-600 bg-red-50 hover:bg-red-100 disabled:opacity-50 disabled:hover:bg-red-50 rounded-lg transition-colors flex items-center gap-1 text-sm font-medium"
     >
       {actionIds.has(id) ? <Loader2 size={16} className="animate-spin" /> : <XCircle size={16} />}
-      <span className="hidden sm:inline">{t('shared.revoke')}</span>
+      <span className="sr-only sm:not-sr-only">{t('shared.revoke')}</span>
     </button>
   );
 
@@ -88,52 +95,46 @@ export default function SharedTable({
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
-      <table className="w-full text-left border-collapse">
-        <tbody className="divide-y divide-gray-100">
-          {folders.map(folder => (
-            <tr key={folder.id} className="hover:bg-gray-50 transition-colors">
-              <td className="p-4 flex items-center gap-3">
-                <Folder className="w-6 h-6 text-gray-400 flex-shrink-0" fill="currentColor" opacity={0.5} />
-                <div>
-                  <span className="font-medium text-gray-800 block">{folder.name}</span>
-                  <div className="text-xs mt-0.5 flex flex-wrap items-center gap-2">
-                    {folder.shareToken ? linkBadge : null}
-                    {folder.s3PublicAccess ? s3Badge : null}
-                  </div>
+      <ul className="divide-y divide-gray-100">
+        {folders.map(folder => (
+          <li key={folder.id} className="p-4 flex flex-col gap-3 transition-colors hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <Folder className="h-6 w-6 flex-shrink-0 text-gray-400" fill="currentColor" opacity={0.5} />
+              <div className="min-w-0">
+                <span className="block break-words font-medium text-gray-800">{folder.name}</span>
+                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs">
+                  {folder.shareToken ? linkBadge : null}
+                  {folder.s3PublicAccess ? s3Badge : null}
                 </div>
-              </td>
-              <td className="p-4 text-right whitespace-nowrap">
-                <div className="flex justify-end gap-2">
-                  {folder.shareToken ? copyBtn('folder', folder.shareToken) : null}
-                  {folder.shareToken ? openBtn(() => openLink('folder', folder.shareToken!)) : null}
-                  {revokeBtn(folder.id, () => onRevoke(folder, 'folder'))}
+              </div>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 sm:flex-shrink-0">
+              {folder.shareToken ? copyBtn('folder', folder.shareToken) : null}
+              {folder.shareToken ? openBtn(() => openLink('folder', folder.shareToken!)) : null}
+              {revokeBtn(folder.id, () => onRevoke(folder, 'folder'))}
+            </div>
+          </li>
+        ))}
+        {files.map(file => (
+          <li key={file.id} className="p-4 flex flex-col gap-3 transition-colors hover:bg-gray-50 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <FileText className="h-6 w-6 flex-shrink-0 text-gray-400" />
+              <div className="min-w-0">
+                <span className="block break-all font-medium text-gray-800 sm:max-w-xs sm:truncate">{file.filename}</span>
+                <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs">
+                  <Badge variant="default" className="font-medium">{formatSize(Number(file.size))}</Badge>
+                  {file.shareToken ? linkBadge : null}
                 </div>
-              </td>
-            </tr>
-          ))}
-          {files.map(file => (
-            <tr key={file.id} className="hover:bg-gray-50 transition-colors">
-              <td className="p-4 flex items-center gap-3">
-                <FileText className="w-6 h-6 text-gray-400 flex-shrink-0" />
-                <div>
-                  <span className="font-medium text-gray-800 block truncate max-w-[200px] sm:max-w-xs">{file.filename}</span>
-                  <div className="text-xs mt-0.5 flex flex-wrap items-center gap-2">
-                    <Badge variant="default" className="font-medium">{formatSize(Number(file.size))}</Badge>
-                    {file.shareToken ? linkBadge : null}
-                  </div>
-                </div>
-              </td>
-              <td className="p-4 text-right whitespace-nowrap">
-                <div className="flex justify-end gap-2">
-                  {file.shareToken ? copyBtn('file', file.shareToken) : null}
-                  {file.shareToken ? openBtn(() => openLink('file', file.shareToken!)) : null}
-                  {revokeBtn(file.id, () => onRevoke(file, 'file'))}
-                </div>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </div>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2 sm:flex-shrink-0">
+              {file.shareToken ? copyBtn('file', file.shareToken) : null}
+              {file.shareToken ? openBtn(() => openLink('file', file.shareToken!)) : null}
+              {revokeBtn(file.id, () => onRevoke(file, 'file'))}
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

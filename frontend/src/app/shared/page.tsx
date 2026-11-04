@@ -13,7 +13,8 @@ export default function SharedPage() {
   const { t } = useI18n();
 
   const {
-    folders, files, foldersHasMore, filesHasMore, loading, loadingMore, error,
+    folders, files, foldersHasMore, filesHasMore, totalFolders, totalFiles,
+    loading, loadingMore, error,
     actionIds, fetchShared, loadMoreShared, revoke,
   } = useShared({ token, t });
 
@@ -29,7 +30,8 @@ export default function SharedPage() {
     );
   }
 
-  const totalItems = folders.length + files.length;
+  const loadedItems = folders.length + files.length;
+  const totalItems = totalFolders + totalFiles;
 
   return (
     <div className="h-screen bg-white flex overflow-hidden">
@@ -48,7 +50,7 @@ export default function SharedPage() {
 
         <div className="flex-1 overflow-y-auto relative">
           <div className="p-6">
-            {loading && totalItems === 0 ? (
+            {loading && loadedItems === 0 ? (
               <div className="py-20 text-center">
                 <Loader2 className="animate-spin text-blue-500 mx-auto" size={24} />
               </div>
