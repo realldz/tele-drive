@@ -38,7 +38,7 @@ export default function TransferUploadItem({ item, t, onCancel, onRetry }: Trans
               <X size={14} />
             </button>
           )}
-          {item.status === 'error' && (
+          {item.status === 'error' && !item.folderSetupFailed && (
             <button
               onClick={() => onRetry(item.id)}
               className="p-0.5 text-gray-400 hover:text-blue-500 transition-colors cursor-pointer"

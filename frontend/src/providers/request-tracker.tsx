@@ -18,6 +18,14 @@ export function RequestTrackerProvider({ children }: { children: ReactNode }) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    registerPendingCountControls(
+      () => setPendingCount(prev => prev + 1),
+      () => setPendingCount(prev => Math.max(0, prev - 1)),
+    );
+    return () => registerPendingCountControls(null, null);
+  }, []);
+
+  useEffect(() => {
     if (pendingCount > 0) {
       // Delay before showing overlay to avoid flash for fast requests
       timerRef.current = setTimeout(() => setShowOverlay(true), OVERLAY_DELAY_MS);
@@ -62,7 +70,7 @@ export function useRequestTracker() {
 let incrementFn: (() => void) | null = null;
 let decrementFn: (() => void) | null = null;
 
-export function registerPendingCountControls(increment: () => void, decrement: () => void) {
+export function registerPendingCountControls(increment: (() => void) | null, decrement: (() => void) | null) {
   incrementFn = increment;
   decrementFn = decrement;
 }

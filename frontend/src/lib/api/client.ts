@@ -3,6 +3,12 @@ import toast from 'react-hot-toast';
 import { incPendingCount, decPendingCount } from '@/providers/request-tracker';
 import { API_TIMEOUT_MS } from '@/lib/constants';
 
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    skipRequestOverlay?: boolean;
+  }
+}
+
 export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
 
 // ─── Runtime client config ─────────────────────────────────────────────────
@@ -85,14 +91,14 @@ export function getS3Endpoint(): string | null {
 // plane) để hành vi tracking/error đồng nhất.
 function attachSharedInterceptors(instance: AxiosInstance): void {
   instance.interceptors.request.use(
-    (config) => { incPendingCount(); return config; },
-    (error) => { decPendingCount(); return Promise.reject(error); },
+    (config) => { if (!config.skipRequestOverlay) incPendingCount(); return config; },
+    (error) => Promise.reject(error),
   );
 
   instance.interceptors.response.use(
-    (response) => { decPendingCount(); return response; },
+    (response) => { if (!response.config.skipRequestOverlay) decPendingCount(); return response; },
     (error) => {
-      decPendingCount();
+      if (!error.config?.skipRequestOverlay) decPendingCount();
       if (axios.isAxiosError(error)) {
         if (error.code === 'ECONNABORTED' || error.message?.includes('timeout')) {
           toast.error('Yêu cầu hết thời gian. Vui lòng thử lại.');

@@ -20,6 +20,7 @@ export type SortDirection = 'asc' | 'desc';
 export function useSharedFolder(token: string) {
   const { t } = useI18n();
   const selection = useSelection();
+  const { clearSelection } = selection;
   const { startSharedDownload } = useDownload();
 
   const [rootFolder, setRootFolder] = useState<SharedFolderRoot | null>(null);
@@ -28,6 +29,7 @@ export function useSharedFolder(token: string) {
   const [files, setFiles] = useState<FileRecord[]>([]);
   const foldersCursor = useRef<string | null>(null);
   const filesCursor = useRef<string | null>(null);
+  const requestSeq = useRef(0);
   const [hasMoreFolders, setHasMoreFolders] = useState(true);
   const [hasMoreFiles, setHasMoreFiles] = useState(true);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
@@ -63,10 +65,11 @@ export function useSharedFolder(token: string) {
     return () => document.removeEventListener('click', handler);
   }, []);
 
-  useEffect(() => { selection.clearSelection(); }, [currentFolderId, selection]);
+  useEffect(() => { clearSelection(); }, [currentFolderId, clearSelection]);
 
   const fetchContent = useCallback(async (isInitial = true) => {
     if (!token) return;
+    const seq = ++requestSeq.current;
     if (isInitial) setIsLoading(true); else setIsLoadingMore(true);
     setError(null);
     try {
@@ -81,6 +84,7 @@ export function useSharedFolder(token: string) {
 
       const query = params.toString();
       const res = await api.get(query ? `/folders/share/${token}?${query}` : `/folders/share/${token}`);
+      if (seq !== requestSeq.current) return;
 
       setRootFolder(res.data.rootFolder);
       if (isInitial) {
@@ -102,10 +106,12 @@ export function useSharedFolder(token: string) {
       setHasMoreFiles(res.data.nextFileCursor != null);
       setBreadcrumbs(res.data.breadcrumbs || []);
     } catch (err: unknown) {
-      setError(getApiErrorMessage(err, t('shareFolder.folderNotFound')));
+      if (seq === requestSeq.current) setError(getApiErrorMessage(err, t('shareFolder.folderNotFound')));
     } finally {
-      setIsLoading(false);
-      setIsLoadingMore(false);
+      if (seq === requestSeq.current) {
+        setIsLoading(false);
+        setIsLoadingMore(false);
+      }
     }
   }, [token, currentFolderId, t, sortField, sortDirection]);
 
@@ -113,6 +119,7 @@ export function useSharedFolder(token: string) {
   fetchContentRef.current = fetchContent;
 
   useEffect(() => {
+    requestSeq.current++;
     foldersCursor.current = null;
     filesCursor.current = null;
     setHasMoreFolders(true);

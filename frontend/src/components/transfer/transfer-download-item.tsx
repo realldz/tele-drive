@@ -17,6 +17,7 @@ function statusLabel(job: DownloadJob, t: Translate): string {
     case 'pending': return t('downloadZip.preparing');
     case 'collecting': return t('downloadZip.collecting');
     case 'zipping': return t('downloadZip.zipping');
+    case 'splitting': return t('downloadZip.splitting');
     case 'ready': return t('downloadZip.ready');
     case 'expired': return t('downloadZip.expired');
     default: return job.error || t('downloadZip.failed');
@@ -24,7 +25,7 @@ function statusLabel(job: DownloadJob, t: Translate): string {
 }
 
 export default function TransferDownloadItem({ job, t, onCancel }: TransferDownloadItemProps) {
-  const hasActive = ['pending', 'collecting', 'zipping'].includes(job.status);
+  const hasActive = ['pending', 'collecting', 'zipping', 'splitting'].includes(job.status);
   const progress = job.totalFiles > 0 ? Math.round((job.processedFiles / job.totalFiles) * 100) : 0;
 
   return (

@@ -163,6 +163,8 @@ export function useGlobalSearch(
       requestSeq.current++; // invalidate any in-flight response
       return;
     }
+    // Invalidate in-flight results as soon as inputs change, before debounce.
+    requestSeq.current++;
     const id = setTimeout(() => runSearch(false), SEARCH_DEBOUNCE_MS);
     return () => clearTimeout(id);
   }, [searchActive, runSearch]);

@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useState, useCallback, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useRef, useEffect, ReactNode } from 'react';
 import { createDownloadZip, createSharedDownloadZip, getDownloadZipStatus, resolveTransferLink } from '@/lib/api';
 import type { DownloadZipPart } from '@/lib/api';
 
@@ -30,6 +30,15 @@ const DownloadContext = createContext<DownloadContextValue | undefined>(undefine
 export function DownloadProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<DownloadJob[]>([]);
   const pollTimers = useRef<Map<string, ReturnType<typeof setInterval>>>(new Map());
+  const pollingJobs = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    const timers = pollTimers.current;
+    return () => {
+      for (const timer of timers.values()) clearInterval(timer);
+      timers.clear();
+    };
+  }, []);
 
   const updateJob = useCallback((jobId: string, updates: Partial<DownloadJob>) => {
     setJobs(prev => prev.map(j => j.jobId === jobId ? { ...j, ...updates } : j));
@@ -37,8 +46,11 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
 
   const startPolling = useCallback((jobId: string) => {
     const timer = setInterval(async () => {
+      if (pollTimers.current.get(jobId) !== timer || pollingJobs.current.has(jobId)) return;
+      pollingJobs.current.add(jobId);
       try {
         const status = await getDownloadZipStatus(jobId);
+        if (pollTimers.current.get(jobId) !== timer) return;
         updateJob(jobId, status);
 
         if (['ready', 'failed', 'expired'].includes(status.status)) {
@@ -57,6 +69,8 @@ export function DownloadProvider({ children }: { children: ReactNode }) {
         }
       } catch {
         // Network error — keep polling
+      } finally {
+        pollingJobs.current.delete(jobId);
       }
     }, 2000);
     pollTimers.current.set(jobId, timer);

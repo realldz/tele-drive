@@ -155,6 +155,14 @@ export class FolderService {
       const parentPath = parts.slice(0, -1).join('/');
       const currentParentId = parentPath ? folderMap.get(parentPath) : parentId;
 
+      if (parentPath && !currentParentId) {
+        this.logger.warn(
+          `Skipped batch folder "${dir}": parent "${parentPath}" was not created`,
+        );
+        result[dir] = '';
+        continue;
+      }
+
       try {
         const folder = await this.create(
           name,
@@ -168,9 +176,7 @@ export class FolderService {
         this.logger.warn(
           `Failed to create batch folder "${dir}": ${error instanceof Error ? error.message : String(error)}`,
         );
-        const fallbackId = currentParentId || '';
-        folderMap.set(dir, fallbackId);
-        result[dir] = fallbackId;
+        result[dir] = '';
       }
     }
 

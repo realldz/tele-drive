@@ -12,6 +12,7 @@ export interface QueueItem {
   completedChunks: number;
   totalChunks: number;
   errorMessage?: string;
+  folderSetupFailed?: boolean;
   serverFileId?: string;
   conflictInfo?: { type: 'file' | 'folder'; name: string; existingItemId: string };
   conflictAction?: 'overwrite' | 'rename';

@@ -34,6 +34,7 @@ export function useFolderContent(token: string | null) {
   const [hasMoreFiles, setHasMoreFiles] = useState(true);
   const nextFileCursor = useRef<string | null>(null);
   const nextFolderCursor = useRef<string | null>(null);
+  const requestSeq = useRef(0);
 
   const [sortField, setSortField] = useState<SortField>('name');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');
@@ -55,6 +56,7 @@ export function useFolderContent(token: string | null) {
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   useEffect(() => {
+    requestSeq.current++;
     nextFileCursor.current = null;
     nextFolderCursor.current = null;
     setHasMoreFolders(true);
@@ -66,8 +68,9 @@ export function useFolderContent(token: string | null) {
     setFiles([]);
   }, [currentFolderId]);
 
-  const fetchContent = useCallback(async (isLoadMoreCall = false) => {
+  const fetchContent = useCallback(async (isLoadMoreCall = false, background = false) => {
     if (!token) return;
+    const seq = ++requestSeq.current;
     if (!isLoadMoreCall) setIsLoadingContent(true);
     if (isLoadMoreCall) setIsLoadMore(true);
     try {
@@ -80,7 +83,9 @@ export function useFolderContent(token: string | null) {
             sortField,
             sortDirection,
           )
-        : await fetchFolderContentInitial(currentFolderId, undefined, sortField, sortDirection);
+        : await fetchFolderContentInitial(currentFolderId, undefined, sortField, sortDirection, background);
+
+      if (seq !== requestSeq.current) return;
 
       if (isLoadMoreCall) {
         setFolders(prev => {
@@ -100,7 +105,8 @@ export function useFolderContent(token: string | null) {
       nextFileCursor.current = data.nextFileCursor;
       nextFolderCursor.current = data.nextFolderCursor;
       if (!isLoadMoreCall && currentFolderId) {
-        const bc = await fetchBreadcrumbs(currentFolderId);
+        const bc = await fetchBreadcrumbs(currentFolderId, background);
+        if (seq !== requestSeq.current) return;
         setBreadcrumbs(bc);
       }
       if (!isLoadMoreCall && !currentFolderId) {
@@ -109,8 +115,10 @@ export function useFolderContent(token: string | null) {
     } catch {
       // 401 handled by axios interceptor
     } finally {
-      setIsLoadingContent(false);
-      setIsLoadMore(false);
+      if (seq === requestSeq.current) {
+        setIsLoadingContent(false);
+        setIsLoadMore(false);
+      }
     }
   }, [currentFolderId, token, sortField, sortDirection]);
 
@@ -143,7 +151,7 @@ export function useFolderContent(token: string | null) {
   useEffect(() => {
     const hasUploading = files.some(f => f.status === 'uploading');
     if (hasUploading) {
-      const id = setInterval(fetchContent, UPLOAD_POLL_INTERVAL_MS);
+      const id = setInterval(() => { void fetchContent(false, true); }, UPLOAD_POLL_INTERVAL_MS);
       return () => clearInterval(id);
     }
   }, [files, fetchContent]);

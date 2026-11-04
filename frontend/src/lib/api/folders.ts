@@ -53,6 +53,7 @@ export async function fetchFolderContentInitial(
   search?: string,
   sortField?: string,
   sortDirection?: 'asc' | 'desc',
+  skipRequestOverlay = false,
 ): Promise<PaginatedFolderContent> {
   const params = new URLSearchParams();
   if (folderId) params.set('folderId', folderId);
@@ -60,7 +61,7 @@ export async function fetchFolderContentInitial(
   if (sortField) params.set('sortField', sortField);
   if (sortDirection) params.set('sortDirection', sortDirection);
   params.set('limit', String(PAGINATION_FOLDER_LIMIT));
-  const res = await api.get(`/folders/content?${params}`);
+  const res = await api.get(`/folders/content?${params}`, { skipRequestOverlay });
   return res.data;
 }
 
@@ -136,8 +137,8 @@ export async function listSharedItems(
   return res.data;
 }
 
-export async function fetchBreadcrumbs(folderId: string): Promise<BreadcrumbItem[]> {
-  const res = await api.get(`/folders/${folderId}/breadcrumbs`);
+export async function fetchBreadcrumbs(folderId: string, skipRequestOverlay = false): Promise<BreadcrumbItem[]> {
+  const res = await api.get(`/folders/${folderId}/breadcrumbs`, { skipRequestOverlay });
   return res.data;
 }
 
