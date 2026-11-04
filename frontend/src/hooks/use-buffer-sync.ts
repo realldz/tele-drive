@@ -6,6 +6,7 @@ export function useBufferSync(
   onStatusChange: (id: string, newStatus: string) => void,
 ) {
   const onStatusChangeRef = useRef(onStatusChange);
+  const nextChunkRef = useRef(0);
 
   useEffect(() => {
     onStatusChangeRef.current = onStatusChange;
@@ -19,13 +20,21 @@ export function useBufferSync(
 
   useEffect(() => {
     if (bufferedIds.length === 0) return;
+    nextChunkRef.current = 0;
+    let inFlight = false;
 
     const poll = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
-        // Chunk IDs to max 50 items per request (server limit)
-        const chunk = bufferedIds.slice(0, 50);
+        // Rotate through all buffered IDs without exceeding the server limit.
+        const chunkCount = Math.ceil(bufferedIds.length / 50);
+        const chunkIndex = nextChunkRef.current % chunkCount;
+        nextChunkRef.current = (chunkIndex + 1) % chunkCount;
+        const chunk = bufferedIds.slice(chunkIndex * 50, (chunkIndex + 1) * 50);
         const res = await transferApi.get('/transfer/buffer-status', {
           params: { ids: chunk.join(',') },
+          skipRequestOverlay: true,
         });
 
         // The response format: array of { id: string, status: string }
@@ -38,6 +47,8 @@ export function useBufferSync(
         }
       } catch (err) {
         console.error('Failed to sync buffer status:', err);
+      } finally {
+        inFlight = false;
       }
     };
 

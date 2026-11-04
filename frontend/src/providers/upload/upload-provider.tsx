@@ -9,6 +9,7 @@ import { loadUploadConfig } from '@/lib/upload-config-slice';
 import { UPLOAD_SMALL_FILE_BATCH } from '@/lib/constants';
 import { useChunkedUpload } from './use-chunked-upload';
 import { resumeInitAfterConflict } from './upload-conflict-gate';
+import { validateFolderBatch } from './validate-folder-batch';
 import type { ConflictResolution, QueueItem, UploadContextValue } from './upload-types';
 
 const UploadContext = createContext<UploadContextValue | undefined>(undefined);
@@ -157,14 +158,17 @@ export function UploadProvider({ children }: { children: ReactNode }) {
 
     const dirs = Array.from(dirSet);
     const folderMap = new Map<string, string>();
+    let folderSetupError = 'Could not create the upload folder. Select the folder again to retry.';
 
     if (dirs.length > 0) {
       try {
         const batchResult = await createFolderBatch(dirs, folderId);
-        Object.entries(batchResult).forEach(([path, id]) => folderMap.set(path, id));
+        validateFolderBatch(dirs, batchResult, folderId)
+          .forEach((id, path) => folderMap.set(path, id));
       } catch (error: unknown) {
         const msg = axios.isAxiosError(error) ? error.response?.data?.message || error.message : error instanceof Error ? error.message : String(error);
         console.warn('Failed to create folders in batch:', msg);
+        folderSetupError = msg;
       }
     }
 
@@ -172,10 +176,14 @@ export function UploadProvider({ children }: { children: ReactNode }) {
       const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
       const parts = relativePath ? relativePath.split('/') : [file.name];
       const dirPath = parts.slice(0, -1).join('/');
+      const missingFolder = !!dirPath && !folderMap.has(dirPath);
       const targetId = dirPath ? folderMap.get(dirPath) : folderId;
       return {
-        id: uid(), file, targetFolderId: targetId || folderId, relativePath,
-        status: 'pending' as const, progress: 0, uploadedBytes: 0,
+        id: uid(), file, targetFolderId: targetId, relativePath,
+        status: missingFolder ? 'error' as const : 'pending' as const,
+        folderSetupFailed: missingFolder,
+        errorMessage: missingFolder ? folderSetupError : undefined,
+        progress: 0, uploadedBytes: 0,
         totalBytes: file.size, completedChunks: 0, totalChunks: 1,
       };
     });
@@ -208,6 +216,8 @@ export function UploadProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const retryItem = useCallback((id: string) => {
+    // A missing destination cannot be resolved by retrying the file upload.
+    if (queueRef.current.find(item => item.id === id)?.folderSetupFailed) return;
     updateItem(id, {
       status: 'pending', progress: 0, uploadedBytes: 0, completedChunks: 0,
       errorMessage: undefined, serverFileId: undefined, conflictInfo: undefined,

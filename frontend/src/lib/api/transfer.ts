@@ -92,6 +92,6 @@ export async function createSharedDownloadZip(shareToken: string, fileIds?: stri
 }
 
 export async function getDownloadZipStatus(jobId: string): Promise<DownloadZipStatus> {
-  const res = await api.get(`/transfer/download-zip/${jobId}/status`);
+  const res = await api.get(`/transfer/download-zip/${jobId}/status`, { skipRequestOverlay: true });
   return res.data;
 }

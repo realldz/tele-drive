@@ -86,8 +86,10 @@ export default function NavigationLoader({ children }: { children: ReactNode }) 
       if (url.pathname === lastPathnameRef.current) return;
       startNavigation();
     };
-    document.addEventListener('click', handleClick, true);
-    return () => document.removeEventListener('click', handleClick, true);
+    // React's onClick handlers run before document bubbling, allowing their
+    // preventDefault() decision to be observed here.
+    document.addEventListener('click', handleClick);
+    return () => document.removeEventListener('click', handleClick);
   }, [startNavigation]);
 
   useEffect(() => {

@@ -46,7 +46,7 @@ export async function emptyTrash() {
 }
 
 export async function getCleanupStatus(): Promise<TrashCleanupStatus> {
-  const res = await api.get('/files/trash/cleanup-status');
+  const res = await api.get('/files/trash/cleanup-status', { skipRequestOverlay: true });
   return res.data;
 }
 
