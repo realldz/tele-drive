@@ -12,8 +12,8 @@ export async function permanentDeleteFile(id: string) {
   return api.delete(`/files/${id}/permanent`);
 }
 
-export async function abortUpload(fileId: string) {
-  return api.post(`/transfer/upload/${fileId}/abort`);
+export async function abortUpload(fileId: string, skipRequestOverlay = false) {
+  return api.post(`/transfer/upload/${fileId}/abort`, undefined, { skipRequestOverlay });
 }
 
 // buffer-retry là NestJS core handler (@Controller(['files','transfer'])), Go

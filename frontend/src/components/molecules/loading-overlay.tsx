@@ -28,7 +28,7 @@ export default function LoadingOverlay() {
 
   return (
     <div
-      className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30 backdrop-blur-[1px] pointer-events-none"
+      className="fixed inset-0 z-[9998] flex items-center justify-center bg-black/30 pointer-events-none"
       style={{ opacity, transition: 'opacity 350ms ease-in-out' }}
       role="status"
       aria-live="polite"

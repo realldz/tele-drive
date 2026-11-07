@@ -45,8 +45,8 @@ interface AuthContextType {
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
   logout: () => void;
-  refreshUser: () => Promise<void>;
-  refreshQuota: () => Promise<void>;
+  refreshUser: (skipRequestOverlay?: boolean) => Promise<void>;
+  refreshQuota: (skipRequestOverlay?: boolean) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -82,11 +82,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const requestInterceptorIds = useRef<number[]>([]);
   const responseInterceptorIds = useRef<number[]>([]);
 
-  const refreshUser = useCallback(async () => {
+  const refreshUser = useCallback(async (skipRequestOverlay = false) => {
     const currentToken = localStorage.getItem('token');
     if (!currentToken) return;
 
-    const data = await fetchCurrentUser();
+    const data = await fetchCurrentUser(skipRequestOverlay);
     const nextUser = {
       id: data.id,
       username: data.username,
@@ -102,9 +102,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   // Fetch quota từ server — gọi 1 lần khi có token, sau đó gọi lại qua refreshQuota
-  const refreshQuota = useCallback(async () => {
+  const refreshQuota = useCallback(async (skipRequestOverlay = false) => {
     try {
-      await refreshUser();
+      await refreshUser(skipRequestOverlay);
     } catch {
       // non-critical
     }

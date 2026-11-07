@@ -72,7 +72,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
         if (currentItem && currentItem.status !== 'cancelled') {
           updateItem(item.id, { status: 'complete', progress: 100 });
           onUploadSuccessRef.current?.();
-          refreshQuota();
+          refreshQuota(true);
         }
       } catch (error: unknown) {
         if (axios.isCancel(error) || (error instanceof Error && error.message === 'Upload cancelled')) {
@@ -196,7 +196,7 @@ export function UploadProvider({ children }: { children: ReactNode }) {
     if (!item) return;
     if (item.status === 'uploading') {
       abortControllersRef.current.get(id)?.forEach(ctrl => ctrl.abort());
-      if (item.serverFileId) abortUpload(item.serverFileId).catch(() => { });
+      if (item.serverFileId) abortUpload(item.serverFileId, true).catch(() => { });
     }
     // Unblock any init parked on the conflict gate so it can drain instead of
     // hanging the batch forever. Serialization re-pauses on the next 409, so

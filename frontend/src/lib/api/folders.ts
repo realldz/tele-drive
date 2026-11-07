@@ -148,7 +148,7 @@ export async function createFolder(name: string, parentId?: string) {
 }
 
 export async function createFolderBatch(paths: string[], parentId?: string): Promise<Record<string, string>> {
-  const res = await api.post('/folders/batch', { paths, parentId });
+  const res = await api.post('/folders/batch', { paths, parentId }, { skipRequestOverlay: true });
   return res.data;
 }
 

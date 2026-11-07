@@ -3,8 +3,8 @@ import type { AdminUser, AdminUserBasic, AdminUserFile } from '@/lib/types';
 import type { PaginatedResponse } from './helpers';
 import { PAGINATION_DEFAULT_LIMIT } from '@/lib/constants';
 
-export async function fetchCurrentUser() {
-  const res = await api.get('/users/me');
+export async function fetchCurrentUser(skipRequestOverlay = false) {
+  const res = await api.get('/users/me', { skipRequestOverlay });
   return res.data;
 }
 

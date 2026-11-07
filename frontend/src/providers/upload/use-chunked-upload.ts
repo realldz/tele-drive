@@ -48,7 +48,7 @@ export function useChunkedUpload({
           mimeType: item.file.type || 'application/octet-stream',
           totalChunks,
           folderId: item.targetFolderId || undefined,
-        });
+        }, { skipRequestOverlay: true });
       } catch (err) {
         if (axios.isAxiosError(err) && err.response?.status === 409) {
           pauseInitForConflict();
@@ -99,6 +99,7 @@ export function useChunkedUpload({
             chunkBlob,
             {
               timeout: 0,
+              skipRequestOverlay: true,
               headers: { 'Content-Type': 'application/octet-stream' },
               signal: abortController.signal,
               onUploadProgress: (progressEvent) => {
@@ -162,6 +163,8 @@ export function useChunkedUpload({
     }
 
     await acquireUploadSlot();
-    await api.post(`/transfer/upload/${serverFileId}/complete`);
+    await api.post(`/transfer/upload/${serverFileId}/complete`, undefined, {
+      skipRequestOverlay: true,
+    });
   }, [maxChunkSize, concurrency, updateItem, queueRef, abortControllersRef]);
 }
