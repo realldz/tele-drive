@@ -158,7 +158,8 @@ async function main() {
     console.log(`    DB_PORT=${dbPort}`);
     console.log(`    POSTGRES_USER=${dbUser}`);
     console.log(`    POSTGRES_DB=${dbName}`);
-    console.log(`    POSTGRES_PASSWORD=${values.POSTGRES_PASSWORD ?? ''}`);
+    console.log('    POSTGRES_PASSWORD=<the value in .env.db on this host>');
+    console.log('  Transfer that value to the control-plane host through a secure channel; it is never printed.');
     console.log('  Deploy core WITH -f docker-compose.core.extdb.yml so it never starts a local Postgres.');
     console.log(`  Firewall ${dbPort} on this host to the CORE host only.`);
   }

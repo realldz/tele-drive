@@ -4,14 +4,21 @@
 import { randomBytes } from 'node:crypto';
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const MAX_UNBIASED_BYTE = 256 - (256 % ALPHABET.length);
 
 export function generateRedisPassword(length = 40) {
   const out = [];
-  // Rejection-free: map each random byte into the alphabet via modulo.
-  // Alphabet length (62) is close enough to 256 that modulo bias is negligible for a secret.
-  const bytes = randomBytes(length);
-  for (let i = 0; i < length; i++) {
-    out.push(ALPHABET[bytes[i] % ALPHABET.length]);
+  let bytes = randomBytes(length);
+
+  // Rejection sampling keeps every alphabet character equally likely. Bytes
+  // from 248 through 255 are discarded because 256 is not divisible by 62.
+  while (out.length < length) {
+    for (const byte of bytes) {
+      if (byte >= MAX_UNBIASED_BYTE) continue;
+      out.push(ALPHABET[byte % ALPHABET.length]);
+      if (out.length === length) break;
+    }
+    if (out.length < length) bytes = randomBytes(length - out.length);
   }
   return out.join('');
 }

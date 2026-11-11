@@ -26,13 +26,14 @@
     "xgplayer-music": "^3.0.24"
   },
   "overrides": {
+    "follow-redirects": "1.16.2",
     "postcss": "$postcss",
     "eslint-plugin-react-hooks": "7.0.1"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
     "@testing-library/react": "^16.3.3",
-    "@types/node": "^20",
+    "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
@@ -41,6 +42,6 @@
     "postcss": "^8.5.30",
     "tailwindcss": "^4",
     "typescript": "^5",
-    "vitest": "^3.2.7"
+    "vitest": "^5.1.0"
   }
 }

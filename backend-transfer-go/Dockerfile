@@ -2,7 +2,7 @@
 # --platform=BUILDPLATFORM + TARGETOS/TARGETARCH cross-compile: multi-arch
 # builds (linux/amd64,linux/arm64) run the compiler on the native amd64
 # runner instead of emulating Go under QEMU (much faster, CGO off anyway).
-FROM --platform=$BUILDPLATFORM golang:1.25-alpine AS builder
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS builder
 
 ARG TARGETOS TARGETARCH
 WORKDIR /app
