@@ -77,7 +77,7 @@ export class AesCtrOffsetStream extends Transform {
 export interface SignedTokenPayload {
   fid: string;
   exp: number;
-  t: 'u' | 's' | 'sf';
+  t: 'u' | 's' | 'sf' | 'p' | 'sp';
   uid?: string;
 }
 
@@ -198,7 +198,7 @@ export class CryptoService {
    */
   createSignedToken(
     fileId: string,
-    type: 'u' | 's' | 'sf',
+    type: 'u' | 's' | 'sf' | 'p' | 'sp',
     ttlSeconds: number,
     userId?: string,
     expSeconds?: number,

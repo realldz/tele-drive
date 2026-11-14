@@ -6,9 +6,36 @@ import 'xgplayer/dist/index.min.css';
 import MusicPreset, { Analyze } from 'xgplayer-music';
 import 'xgplayer-music/dist/index.min.css';
 
+interface PlaybackState {
+  currentTime: number;
+  paused: boolean;
+  volume: number;
+}
+
+function capturePlaybackState(player: Player): PlaybackState {
+  return {
+    currentTime: Number.isFinite(player.currentTime) ? player.currentTime : 0,
+    paused: player.paused,
+    volume: player.volume,
+  };
+}
+
+function restorePlaybackState(player: Player, state: PlaybackState | null) {
+  if (!state) return;
+  player.once('canplay', () => {
+    player.volume = state.volume;
+    if (state.currentTime > 0) player.currentTime = state.currentTime;
+    if (!state.paused) {
+      const result = player.play();
+      void result?.catch(() => {});
+    }
+  });
+}
+
 export function PreviewVideo({ src }: { src: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const playerRef = useRef<{ destroy: () => void } | null>(null);
+  const playerRef = useRef<Player | null>(null);
+  const playbackStateRef = useRef<PlaybackState | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -19,13 +46,18 @@ export function PreviewVideo({ src }: { src: string }) {
       height: '100%',
       width: '100%',
       videoAttributes: {
-        crossOrigin: 'use-credentials',
+        crossOrigin: 'anonymous',
         playsInline: true,
       },
     });
+    restorePlaybackState(playerRef.current, playbackStateRef.current);
 
     return () => {
-      if (playerRef.current) playerRef.current.destroy();
+      if (playerRef.current) {
+        playbackStateRef.current = capturePlaybackState(playerRef.current);
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
     };
   }, [src]);
 
@@ -37,8 +69,9 @@ export function PreviewVideo({ src }: { src: string }) {
 export function PreviewAudio({ src }: { src: string }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const playerRef = useRef<{ destroy: () => void } | null>(null);
+  const playerRef = useRef<Player | null>(null);
   const analyzeRef = useRef<{ destroy: () => void } | null>(null);
+  const playbackStateRef = useRef<PlaybackState | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -50,7 +83,7 @@ export function PreviewAudio({ src }: { src: string }) {
       width: '100%',
       mediaType: 'audio',
       videoAttributes: {
-        crossOrigin: 'use-credentials',
+        crossOrigin: 'anonymous',
         playsInline: true,
       },
       ignores: ['playbackrate'],
@@ -59,6 +92,7 @@ export function PreviewAudio({ src }: { src: string }) {
       presets: ['default', MusicPreset],
       music: { list: [{ url: src, vid: src }] },
     });
+    restorePlaybackState(playerRef.current, playbackStateRef.current);
 
     if (canvasRef.current) {
       analyzeRef.current = new Analyze(playerRef.current, canvasRef.current, {
@@ -71,7 +105,12 @@ export function PreviewAudio({ src }: { src: string }) {
 
     return () => {
       if (analyzeRef.current) analyzeRef.current.destroy();
-      if (playerRef.current) playerRef.current.destroy();
+      analyzeRef.current = null;
+      if (playerRef.current) {
+        playbackStateRef.current = capturePlaybackState(playerRef.current);
+        playerRef.current.destroy();
+        playerRef.current = null;
+      }
     };
   }, [src]);
 

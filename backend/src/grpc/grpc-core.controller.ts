@@ -313,7 +313,13 @@ export class GrpcCoreController {
       );
 
     const record = await this.prisma.fileRecord.findFirst({
-      where: isUuid ? { id: data.fileId } : { shareToken: data.fileId },
+      where: isUuid
+        ? { id: data.fileId, deletedAt: null }
+        : {
+            shareToken: data.fileId,
+            visibility: 'PUBLIC_LINK',
+            deletedAt: null,
+          },
       include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
     });
 

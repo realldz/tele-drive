@@ -45,11 +45,41 @@ func (h *FileHandler) GetCachedMetadata(ctx context.Context, fileID string) (*pb
 	return meta, nil
 }
 
+// GetFreshMetadata bypasses Redis for authorization-sensitive reads. Preview
+// and public-share capabilities must observe soft-delete/unshare immediately;
+// an otherwise-valid one-hour metadata cache is too stale for that decision.
+func (h *FileHandler) GetFreshMetadata(ctx context.Context, fileID string) (*pb.FileMetadata, error) {
+	meta, err := h.grpcClient.GetFileMetadata(ctx, fileID)
+	if err != nil {
+		h.logger.Debug("gRPC fresh GetFileMetadata missed", "fileId", fileID, "error", err)
+		return nil, err
+	}
+	return meta, nil
+}
+
+func isDownloadTokenType(tokenType string) bool {
+	return tokenType == "u" || tokenType == "s" || tokenType == "sf"
+}
+
+func isPreviewTokenType(tokenType, userID string) bool {
+	return tokenType == "sp" || (tokenType == "p" && userID != "")
+}
+
+func previewMetadataAllowed(tokenType, userID string, meta *pb.FileMetadata) bool {
+	if meta == nil || (meta.Status != "complete" && meta.Status != "buffered") {
+		return false
+	}
+	if tokenType == "p" {
+		return userID != "" && meta.UserId == userID
+	}
+	return tokenType == "sp" && meta.Visibility == "PUBLIC_LINK"
+}
+
 func (h *FileHandler) GenerateDownloadToken(c echo.Context) error {
 	userID := c.Get("userId").(string)
 	id := c.Param("id")
 
-	meta, err := h.GetCachedMetadata(c.Request().Context(), id)
+	meta, err := h.GetFreshMetadata(c.Request().Context(), id)
 	if err != nil || meta.UserId != userID || (meta.Status != "complete" && meta.Status != "buffered") {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
 	}
@@ -68,11 +98,38 @@ func (h *FileHandler) GenerateDownloadToken(c echo.Context) error {
 	})
 }
 
+func (h *FileHandler) GeneratePreviewToken(c echo.Context) error {
+	userID, ok := c.Get("userId").(string)
+	if !ok || userID == "" {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"message": "Unauthorized"})
+	}
+	id := c.Param("id")
+
+	meta, err := h.GetCachedMetadata(c.Request().Context(), id)
+	if err != nil || meta.UserId != userID || (meta.Status != "complete" && meta.Status != "buffered") {
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
+	}
+
+	ttl := h.previewURLTTL(c.Request().Context())
+	exp := h.downloader.QuantizeTokenExp(c.Request().Context(), time.Now().Unix()+ttl)
+	token, err := h.cryptoEngine.CreateSignedTokenWithExp(id, "p", exp, userID)
+	if err != nil {
+		return err
+	}
+
+	h.logger.Info("preview_token.issued", "fileId", id, "userId", userID, "ttl", ttl)
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"url":       fmt.Sprintf("/files/p/%s", token),
+		"expiresAt": formatISO8601(time.Unix(exp, 0)),
+		"ttl":       ttl,
+	})
+}
+
 func (h *FileHandler) GenerateShareDownloadToken(c echo.Context) error {
 	token := c.Param("token")
 
-	meta, err := h.GetCachedMetadata(c.Request().Context(), token)
-	if err != nil || (meta.Status != "complete" && meta.Status != "buffered") {
+	meta, err := h.GetFreshMetadata(c.Request().Context(), token)
+	if err != nil || meta.Visibility != "PUBLIC_LINK" || (meta.Status != "complete" && meta.Status != "buffered") {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "Shared file not found"})
 	}
 
@@ -87,6 +144,29 @@ func (h *FileHandler) GenerateShareDownloadToken(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"url":       fmt.Sprintf("/files/d/%s", signedToken),
 		"expiresAt": expiresAt,
+	})
+}
+
+func (h *FileHandler) GenerateSharePreviewToken(c echo.Context) error {
+	shareToken := c.Param("token")
+	meta, err := h.GetFreshMetadata(c.Request().Context(), shareToken)
+	if err != nil || meta.Visibility != "PUBLIC_LINK" || (meta.Status != "complete" && meta.Status != "buffered") {
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "Shared file not found"})
+	}
+
+	viewerID, _ := c.Get("userId").(string)
+	ttl := h.previewURLTTL(c.Request().Context())
+	exp := h.downloader.QuantizeTokenExp(c.Request().Context(), time.Now().Unix()+ttl)
+	signedToken, err := h.cryptoEngine.CreateSignedTokenWithExp(meta.Id, "sp", exp, viewerID)
+	if err != nil {
+		return err
+	}
+
+	h.logger.Info("share_preview_token.issued", "fileId", meta.Id, "viewerId", viewerID, "ttl", ttl)
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"url":       fmt.Sprintf("/files/p/%s", signedToken),
+		"expiresAt": formatISO8601(time.Unix(exp, 0)),
+		"ttl":       ttl,
 	})
 }
 
@@ -127,6 +207,10 @@ func (h *FileHandler) DownloadBySigned(c echo.Context) error {
 		c.Response().Header().Set("Cache-Control", "no-store")
 		return c.JSON(http.StatusGone, map[string]string{"message": "Invalid or expired download link"})
 	}
+	if !isDownloadTokenType(payload.T) {
+		c.Response().Header().Set("Cache-Control", "no-store")
+		return c.JSON(http.StatusGone, map[string]string{"message": "Invalid or expired download link"})
+	}
 
 	meta, err := h.GetCachedMetadata(ctx, payload.FID)
 	if err != nil || (meta.Status != "complete" && meta.Status != "buffered") {
@@ -151,13 +235,53 @@ func (h *FileHandler) DownloadBySigned(c echo.Context) error {
 	return h.downloader.ServeDownload(c, info, rangeHeader, "attachment", telegram.CacheScopeSigned)
 }
 
+func (h *FileHandler) PreviewBySigned(c echo.Context) error {
+	token := c.Param("token")
+	payload, err := h.cryptoEngine.VerifySignedToken(token)
+	if err != nil || !isPreviewTokenType(payload.T, payload.UID) {
+		c.Response().Header().Set("Cache-Control", "no-store")
+		return c.JSON(http.StatusGone, map[string]string{"message": "Invalid or expired preview link"})
+	}
+
+	meta, err := h.GetFreshMetadata(c.Request().Context(), payload.FID)
+	if err != nil || !previewMetadataAllowed(payload.T, payload.UID, meta) {
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
+	}
+
+	if payload.UID != "" {
+		c.Set("userId", payload.UID)
+	}
+	info, err := h.downloader.GetDownloadInfo(meta)
+	if err != nil {
+		return err
+	}
+
+	rangeHeader := c.Request().Header.Get("Range")
+	return h.downloader.ServeDownload(c, info, rangeHeader, "inline", telegram.CacheScopePrivate)
+}
+
 func (h *FileHandler) CheckSignedToken(c echo.Context) error {
 	token := c.Param("token")
-	_, err := h.cryptoEngine.VerifySignedToken(token)
-	if err != nil {
+	payload, err := h.cryptoEngine.VerifySignedToken(token)
+	if err != nil || !isDownloadTokenType(payload.T) {
 		// Deny must never seed/refresh a CDN cache entry.
 		c.Response().Header().Set("Cache-Control", "no-store")
 		return c.JSON(http.StatusUnauthorized, map[string]string{"message": "Invalid or expired download link"})
+	}
+	return c.NoContent(http.StatusOK)
+}
+
+func (h *FileHandler) CheckPreviewToken(c echo.Context) error {
+	token := c.Param("token")
+	payload, err := h.cryptoEngine.VerifySignedToken(token)
+	if err != nil || !isPreviewTokenType(payload.T, payload.UID) {
+		c.Response().Header().Set("Cache-Control", "no-store")
+		return c.JSON(http.StatusUnauthorized, map[string]string{"message": "Invalid or expired preview link"})
+	}
+	meta, err := h.GetFreshMetadata(c.Request().Context(), payload.FID)
+	if err != nil || !previewMetadataAllowed(payload.T, payload.UID, meta) {
+		c.Response().Header().Set("Cache-Control", "no-store")
+		return c.JSON(http.StatusNotFound, map[string]string{"message": "File not found"})
 	}
 	return c.NoContent(http.StatusOK)
 }
@@ -319,11 +443,11 @@ func (h *FileHandler) StreamByCookie(c echo.Context) error {
 	return h.downloader.ServeDownload(c, info, rangeHeader, "inline", telegram.CacheScopePrivate)
 }
 
-func (h *FileHandler) StreamSharedByCookie(c echo.Context) error {
+func (h *FileHandler) StreamSharedFile(c echo.Context) error {
 	shareToken := c.Param("shareToken")
 
-	meta, err := h.GetCachedMetadata(c.Request().Context(), shareToken)
-	if err != nil || (meta.Status != "complete" && meta.Status != "buffered") {
+	meta, err := h.GetFreshMetadata(c.Request().Context(), shareToken)
+	if err != nil || meta.Visibility != "PUBLIC_LINK" || (meta.Status != "complete" && meta.Status != "buffered") {
 		return c.JSON(http.StatusNotFound, map[string]string{"message": "Shared file not found"})
 	}
 

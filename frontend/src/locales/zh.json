@@ -499,6 +499,8 @@
   "settings.MAX_CONCURRENT_CHUNKS.description": "单个客户端允许并行上传的最大分片数。",
   "settings.DOWNLOAD_URL_TTL_SECONDS.title": "下载链接有效期 (TTL)",
   "settings.DOWNLOAD_URL_TTL_SECONDS.description": "已签名、用户特定下载链接的过期时间（秒）。",
+  "settings.PREVIEW_URL_TTL_SECONDS.title": "预览 URL 有效期",
+  "settings.PREVIEW_URL_TTL_SECONDS.description": "已签名文件预览 URL 的有效期（秒）。",
   "settings.STREAM_COOKIE_TTL_SECONDS.title": "流媒体 Cookie 有效期",
   "settings.STREAM_COOKIE_TTL_SECONDS.description": "用于流媒体视频/音频请求身份验证的 Cookie 过期时间（秒）。",
   "settings.DEFAULT_GUEST_BANDWIDTH.title": "访客每日带宽限制",

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/labstack/echo/v4"
+	pb "github.com/realldz/tele-drive/backend-transfer-go/internal/grpc/proto"
 	"github.com/realldz/tele-drive/backend-transfer-go/internal/middleware"
 )
 
@@ -139,6 +140,48 @@ func TestOptionalJWTMiddleware(t *testing.T) {
 	_ = json.Unmarshal(recGuest.Body.Bytes(), &resGuest)
 	if resGuest["userId"] != "" {
 		t.Errorf("expected empty userId, got %q", resGuest["userId"])
+	}
+}
+
+func TestSignedTokenPurposeValidation(t *testing.T) {
+	for _, tokenType := range []string{"u", "s", "sf"} {
+		if !isDownloadTokenType(tokenType) {
+			t.Errorf("expected %q to be a download token type", tokenType)
+		}
+	}
+	for _, tokenType := range []string{"p", "sp", "unknown"} {
+		if isDownloadTokenType(tokenType) {
+			t.Errorf("did not expect %q to be a download token type", tokenType)
+		}
+	}
+
+	if !isPreviewTokenType("p", "owner-1") {
+		t.Error("owner preview token with uid should be valid")
+	}
+	if isPreviewTokenType("p", "") {
+		t.Error("owner preview token without uid should be invalid")
+	}
+	if !isPreviewTokenType("sp", "") || !isPreviewTokenType("sp", "viewer-1") {
+		t.Error("share preview token should support guest and authenticated viewers")
+	}
+	if isPreviewTokenType("u", "owner-1") {
+		t.Error("download token must not be accepted as preview token")
+	}
+
+	ownerMeta := &pb.FileMetadata{UserId: "owner-1", Status: "complete"}
+	if !previewMetadataAllowed("p", "owner-1", ownerMeta) {
+		t.Error("matching owner metadata should allow private preview")
+	}
+	if previewMetadataAllowed("p", "other-owner", ownerMeta) {
+		t.Error("owner mismatch must reject private preview")
+	}
+	shareMeta := &pb.FileMetadata{Visibility: "PUBLIC_LINK", Status: "complete"}
+	if !previewMetadataAllowed("sp", "", shareMeta) {
+		t.Error("live public share should allow guest preview")
+	}
+	shareMeta.Visibility = "PRIVATE"
+	if previewMetadataAllowed("sp", "viewer-1", shareMeta) {
+		t.Error("revoked public share must reject preview")
 	}
 }
 

@@ -11,6 +11,7 @@ const DEFAULT_SETTINGS: Record<string, string> = {
   ENABLE_MULTI_THREAD_DOWNLOAD: 'true', // Cho phép download managers (IDM) dùng multi-thread
   MAX_CONCURRENT_CHUNKS: '3', // Số chunk tối đa 1 client upload đồng thời
   DOWNLOAD_URL_TTL_SECONDS: '300', // 5 phút — thời hạn signed download URL
+  PREVIEW_URL_TTL_SECONDS: '3600', // 1 giờ — thời hạn signed preview URL
   STREAM_COOKIE_TTL_SECONDS: '3600', // 1 giờ — thời hạn stream cookie
   S3_PUBLIC_ACCESS_ENABLED: 'true', // Cho phép public S3 bucket access toàn cục
   MAX_BUFFER_FILE_SIZE: '52428800', // 50 MB - kích thước file đệm tối đa

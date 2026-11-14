@@ -5,7 +5,7 @@ import { X, Download, Loader2 } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
 import { useI18n } from '@/providers/i18n-context';
 import { resolveTransferLink, requestShareFolderDownloadToken, parseBandwidthError, getShareFolderStreamUrl } from '@/lib/api';
-import { useGuestStream } from '@/hooks/use-stream';
+import { usePreview } from '@/hooks/use-preview';
 import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
 import type { FileRecord } from '@/lib/types';
@@ -20,11 +20,11 @@ interface SharedFolderPreviewModalProps {
 
 export default function SharedFolderPreviewModal({ shareToken, file, onClose }: SharedFolderPreviewModalProps) {
   const { t } = useI18n();
-  const { streamUrl, isLoading: isSettingUp, setupStream, teardownStream } = useGuestStream();
+  const { previewUrl, isLoading: isSettingUp, loadPreview, clearPreview } = usePreview();
 
   useEffect(() => {
     if (!file) {
-      teardownStream();
+      clearPreview();
       return;
     }
 
@@ -32,12 +32,13 @@ export default function SharedFolderPreviewModal({ shareToken, file, onClose }: 
     // resolve; huy neu file doi truoc khi co URL.
     let cancelled = false;
     getShareFolderStreamUrl(shareToken, file.id).then((url) => {
-      if (!cancelled) setupStream(url);
+      if (!cancelled) void loadPreview(url);
     });
     return () => {
       cancelled = true;
+      clearPreview();
     };
-  }, [file, shareToken, setupStream, teardownStream]);
+  }, [file, shareToken, loadPreview, clearPreview]);
 
   // ESC key handler
   useEffect(() => {
@@ -119,9 +120,9 @@ export default function SharedFolderPreviewModal({ shareToken, file, onClose }: 
           </div>
         )}
 
-        {!isSettingUp && streamUrl && (
+        {!isSettingUp && previewUrl && (
           <PreviewRenderer
-            streamUrl={streamUrl}
+            streamUrl={previewUrl}
             onDownload={handleDownload}
             fileInfo={{
               filename: file.filename,

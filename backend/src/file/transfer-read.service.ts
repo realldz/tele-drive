@@ -91,6 +91,14 @@ export class TransferReadService {
     );
   }
 
+  async getPreviewTtl(): Promise<number> {
+    return this.settingsService.getCachedSetting(
+      'PREVIEW_URL_TTL_SECONDS',
+      3600,
+      (v) => parseInt(v, 10),
+    );
+  }
+
   /**
    * CDN-cache config (P0). Disabled by default → every byte-serving response
    * still gets an explicit `Cache-Control: private, no-store`.
@@ -210,14 +218,55 @@ export class TransferReadService {
     return { url: buildTransferUrl(`/files/d/${token}`), expiresAt };
   }
 
+  async generatePreviewToken(
+    fileId: string,
+    userId: string,
+  ): Promise<{ url: string; expiresAt: string; ttl: number }> {
+    const file = await this.prisma.fileRecord.findFirst({
+      where: {
+        id: fileId,
+        userId,
+        status: { in: ['complete', 'buffered'] },
+        deletedAt: null,
+      },
+      select: { id: true },
+    });
+    if (!file) throw new NotFoundException('File not found');
+
+    const ttl = await this.getPreviewTtl();
+    const exp = await this.getSignedTokenExpiry(ttl);
+    const token = this.cryptoService.createSignedToken(
+      fileId,
+      'p',
+      ttl,
+      userId,
+      exp,
+    );
+    const expiresAt = new Date(exp * 1000).toISOString();
+
+    this.logger.debug(
+      `Preview token generated: fileId=${fileId}, userId=${userId}, ttl=${ttl}s`,
+    );
+    return {
+      url: buildTransferUrl(`/files/p/${token}`),
+      expiresAt,
+      ttl,
+    };
+  }
+
   async generateShareDownloadToken(
     shareToken: string,
   ): Promise<{ url: string; expiresAt: string }> {
     const file = await this.prisma.fileRecord.findUnique({
       where: { shareToken },
-      select: { id: true, status: true, deletedAt: true },
+      select: {
+        id: true,
+        status: true,
+        deletedAt: true,
+        visibility: true,
+      },
     });
-    if (!file || file.deletedAt) {
+    if (!file || file.deletedAt || file.visibility !== 'PUBLIC_LINK') {
       throw new NotFoundException('Shared file not found');
     }
     if (file.status !== 'complete' && file.status !== 'buffered') {
@@ -241,15 +290,73 @@ export class TransferReadService {
     return { url: buildTransferUrl(`/files/d/${token}`), expiresAt };
   }
 
+  async generateSharePreviewToken(
+    shareToken: string,
+    viewerId?: string,
+  ): Promise<{ url: string; expiresAt: string; ttl: number }> {
+    const file = await this.prisma.fileRecord.findFirst({
+      where: {
+        shareToken,
+        visibility: 'PUBLIC_LINK',
+        deletedAt: null,
+        status: { in: ['complete', 'buffered'] },
+      },
+      select: { id: true },
+    });
+    if (!file) throw new NotFoundException('Shared file not found');
+
+    const ttl = await this.getPreviewTtl();
+    const exp = await this.getSignedTokenExpiry(ttl);
+    const token = this.cryptoService.createSignedToken(
+      file.id,
+      'sp',
+      ttl,
+      viewerId,
+      exp,
+    );
+
+    this.logger.debug(
+      `Share preview token generated: fileId=${file.id}, viewerId=${viewerId || 'guest'}, ttl=${ttl}s`,
+    );
+    return {
+      url: buildTransferUrl(`/files/p/${token}`),
+      expiresAt: new Date(exp * 1000).toISOString(),
+      ttl,
+    };
+  }
+
   async downloadBySignedToken(signedToken: string): Promise<DownloadInfo> {
     const payload = this.cryptoService.verifySignedToken(signedToken);
-    if (!payload) {
+    if (!payload || !['u', 's', 'sf'].includes(payload.t)) {
       throw new UnauthorizedException('Invalid or expired download link');
     }
 
     const fileRecord = await this.prisma.fileRecord.findFirst({
       where: {
         id: payload.fid,
+        status: { in: ['complete', 'buffered'] },
+        deletedAt: null,
+      },
+      include: { chunks: { orderBy: { chunkIndex: 'asc' } } },
+    });
+    if (!fileRecord) throw new NotFoundException('File not found');
+
+    return this.getDownloadMetadata(fileRecord);
+  }
+
+  async previewBySignedToken(signedToken: string): Promise<DownloadInfo> {
+    const payload = this.cryptoService.verifySignedToken(signedToken);
+    const ownerPreview = payload?.t === 'p' && !!payload.uid;
+    const sharePreview = payload?.t === 'sp';
+    if (!payload || (!ownerPreview && !sharePreview)) {
+      throw new UnauthorizedException('Invalid or expired preview link');
+    }
+
+    const fileRecord = await this.prisma.fileRecord.findFirst({
+      where: {
+        id: payload.fid,
+        ...(ownerPreview ? { userId: payload.uid } : {}),
+        ...(sharePreview ? { visibility: 'PUBLIC_LINK' as const } : {}),
         status: { in: ['complete', 'buffered'] },
         deletedAt: null,
       },

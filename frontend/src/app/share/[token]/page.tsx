@@ -9,8 +9,8 @@ import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import toast from 'react-hot-toast';
 import dynamic from 'next/dynamic';
 
-import { resolveTransferLink, api, formatSize, requestShareDownloadToken, parseBandwidthError, getShareStreamUrl, getApiErrorMessage } from '@/lib/api';
-import { useGuestStream } from '@/hooks/use-stream';
+import { resolveTransferLink, api, formatSize, requestShareDownloadToken, parseBandwidthError, getSharePreviewUrl, getApiErrorMessage } from '@/lib/api';
+import { usePreview } from '@/hooks/use-preview';
 import type { SharedFileInfo } from '@/lib/types';
 
 const PreviewRenderer = dynamic(() => import('@/components/preview-renderer'), { ssr: false });
@@ -36,7 +36,7 @@ export default function SharePage() {
   const [error, setError] = useState<string | null>(null);
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const { streamUrl, isLoading: isStreamLoading, setupStream, teardownStream } = useGuestStream();
+  const { previewUrl, isLoading: isPreviewLoading, loadPreview, clearPreview } = usePreview();
 
   useEffect(() => {
     if (!token) return;
@@ -46,18 +46,26 @@ export default function SharePage() {
         const info = res.data;
         setFileInfo(info);
         if (isPreviewable(info.mimeType)) {
-          await setupStream(await getShareStreamUrl(token));
+          await loadPreview(() => getSharePreviewUrl(token));
         }
       } catch (err: unknown) {
+        const bandwidth = parseBandwidthError(err);
+        if (bandwidth) {
+          toast.error(
+            bandwidth.resetTime
+              ? t('sharePage.bandwidthExceededAt', { time: bandwidth.resetTime })
+              : t('sharePage.bandwidthExceeded'),
+          );
+        }
         setError(getApiErrorMessage(err, t('sharePage.fileNotFound')));
       }
     };
     fetchFileInfo();
 
     return () => {
-      teardownStream();
+      clearPreview();
     };
-  }, [token, setupStream, teardownStream, t]);
+  }, [token, loadPreview, clearPreview, t]);
 
   const handleDownload = async () => {
     if (!fileInfo) return;
@@ -124,13 +132,13 @@ export default function SharePage() {
 
             {showPreview && (
               <div className="w-full md:w-2/3 h-[50vh] md:h-[60vh] bg-gray-100 border-b md:border-b-0 md:border-r border-gray-200 relative overflow-hidden">
-                {isStreamLoading ? (
+                {isPreviewLoading ? (
                   <div className="flex h-full items-center justify-center">
                     <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
                   </div>
-                ) : streamUrl ? (
+                ) : previewUrl ? (
                   <PreviewRenderer
-                    streamUrl={streamUrl}
+                    streamUrl={previewUrl}
                     onDownload={handleDownload}
                     fileInfo={fileInfo}
                     t={t}

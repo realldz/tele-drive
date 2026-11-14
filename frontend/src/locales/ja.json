@@ -499,6 +499,8 @@
   "settings.MAX_CONCURRENT_CHUNKS.description": "単一のクライアントが同時にアップロードできる最大並行チャンク数。",
   "settings.DOWNLOAD_URL_TTL_SECONDS.title": "ダウンロードリンクの有効期間 (TTL)",
   "settings.DOWNLOAD_URL_TTL_SECONDS.description": "署名付きユーザー専用ダウンロードURL of 有効期間（秒）。",
+  "settings.PREVIEW_URL_TTL_SECONDS.title": "プレビュー URL 有効期間",
+  "settings.PREVIEW_URL_TTL_SECONDS.description": "署名付きファイルプレビュー URL の有効期間（秒）。",
   "settings.STREAM_COOKIE_TTL_SECONDS.title": "ストリーム Cookie の有効期間",
   "settings.STREAM_COOKIE_TTL_SECONDS.description": "動画/音声ストリーミング要求 of 認証に使用される Cookie の有効期間（秒）。",
   "settings.DEFAULT_GUEST_BANDWIDTH.title": "ゲストの1日あたり帯域幅",

@@ -264,6 +264,16 @@ export class FileController {
 
   // ── Signed Download Token ──────────────────────────────────────────────
 
+  @Post(':id/preview-token')
+  @UseInterceptors(BandwidthInterceptor)
+  @SetMetadata('BANDWIDTH_CHECK_ONLY', true)
+  async generatePreviewToken(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.transferReadService.generatePreviewToken(id, req.user.userId);
+  }
+
   @Post(':id/download-token')
   @UseInterceptors(BandwidthInterceptor)
   @SetMetadata('BANDWIDTH_CHECK_ONLY', true)
@@ -281,6 +291,21 @@ export class FileController {
   @SetMetadata('BANDWIDTH_CHECK_ONLY', true)
   async generateShareDownloadToken(@Param('token') token: string) {
     return this.transferReadService.generateShareDownloadToken(token);
+  }
+
+  @Public()
+  @UseGuards(OptionalJwtGuard)
+  @Post('share/:token/preview-token')
+  @UseInterceptors(BandwidthInterceptor)
+  @SetMetadata('BANDWIDTH_CHECK_ONLY', true)
+  async generateSharePreviewToken(
+    @Param('token') token: string,
+    @Req() req: Request & { user?: { userId: string } },
+  ) {
+    return this.transferReadService.generateSharePreviewToken(
+      token,
+      req.user?.userId,
+    );
   }
 
   @Public()
@@ -303,11 +328,47 @@ export class FileController {
   }
 
   @Public()
+  @Get('p/:token')
+  @UseInterceptors(BandwidthInterceptor)
+  async previewBySigned(
+    @Param('token') token: string,
+    @Req() req: Request,
+    @Res() res: Response,
+  ) {
+    const previewInfo =
+      await this.transferReadService.previewBySignedToken(token);
+    return this.transferReadService.processStream(
+      previewInfo,
+      req.headers.range,
+      res,
+      { scope: 'private', ifNoneMatch: req.headers['if-none-match'] },
+    );
+  }
+
+  @Public()
+  @Head('p/:token')
+  @HttpCode(HttpStatus.OK)
+  async checkPreviewToken(@Param('token') token: string, @Res() res: Response) {
+    const payload = this.cryptoService.verifySignedToken(token);
+    if (
+      !payload ||
+      !(
+        payload.t === 'sp' ||
+        (payload.t === 'p' && typeof payload.uid === 'string')
+      )
+    ) {
+      throw new UnauthorizedException('Invalid or expired preview link');
+    }
+    await this.transferReadService.previewBySignedToken(token);
+    res.status(200).end();
+  }
+
+  @Public()
   @Head('d/:token')
   @HttpCode(HttpStatus.OK)
   checkSignedToken(@Param('token') token: string, @Res() res: Response) {
     const payload = this.cryptoService.verifySignedToken(token);
-    if (!payload)
+    if (!payload || !['u', 's', 'sf'].includes(payload.t))
       throw new UnauthorizedException('Invalid or expired download link');
     res.status(200).end();
   }
@@ -393,10 +454,9 @@ export class FileController {
 
   @Public()
   @UseGuards(OptionalJwtGuard)
-  @UseGuards(StreamCookieGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('share/stream/:shareToken')
-  async streamSharedByCookie(
+  async streamSharedFile(
     @Param('shareToken') shareToken: string,
     @Req() req: Request,
     @Res() res: Response,

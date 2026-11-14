@@ -20,7 +20,6 @@ import { TransferReadService } from '../file/transfer-read.service';
 import { Public } from '../auth/public.decorator';
 import { OptionalJwtGuard } from '../auth/optional-jwt.guard';
 import { BandwidthInterceptor } from '../common/bandwidth.interceptor';
-import { StreamCookieGuard } from '../common/guards/stream-cookie.guard';
 import { CreateFolderDto } from './dto/create-folder.dto';
 import { PaginationQueryDto } from '../common/dto/pagination-query.dto';
 import { SearchQueryDto } from './dto/search-query.dto';
@@ -260,7 +259,6 @@ export class FolderController {
 
   @Public()
   @UseGuards(OptionalJwtGuard)
-  @UseGuards(StreamCookieGuard)
   @UseInterceptors(BandwidthInterceptor)
   @Get('share/:token/stream/:fileId')
   async streamSharedFolderFile(

@@ -78,17 +78,17 @@ func NewFileHandler(
 	s3Verifier := s3auth.New(credResolver, logger)
 
 	return &FileHandler{
-		grpcClient:        grpcClient,
-		redisClient:       redisClient,
-		workerPool:        workerPool,
-		telegramClient:    telegramClient,
-		cryptoEngine:      cryptoEngine,
-		tempStorage:       tempStorage,
-		downloader:        downloader,
-		logger:            logger,
-		jwtSecret:         jwtSecret,
-		maxChunkSize:      maxChunkSize,
-		maxBufferFileSize: maxBufferFileSize,
+		grpcClient:           grpcClient,
+		redisClient:          redisClient,
+		workerPool:           workerPool,
+		telegramClient:       telegramClient,
+		cryptoEngine:         cryptoEngine,
+		tempStorage:          tempStorage,
+		downloader:           downloader,
+		logger:               logger,
+		jwtSecret:            jwtSecret,
+		maxChunkSize:         maxChunkSize,
+		maxBufferFileSize:    maxBufferFileSize,
 		settingsResolver:     settingsResolver,
 		s3Domain:             s3Domain,
 		s3Verifier:           s3Verifier,
@@ -119,6 +119,7 @@ func (h *FileHandler) RegisterRoutes(e *echo.Echo) {
 	files.POST("/upload/:fileId/abort", h.AbortUpload, authMiddleware)
 	files.GET("/upload/:fileId/status", h.GetUploadStatus, authMiddleware)
 	files.POST("/:id/download-token", h.GenerateDownloadToken, authMiddleware)
+	files.POST("/:id/preview-token", h.GeneratePreviewToken, authMiddleware)
 
 	// Token-based upload endpoints (bypass JWT, rely on one-time S3 redirect token)
 	files.PUT("/upload/:fileId", h.UploadWithToken)
@@ -136,10 +137,15 @@ func (h *FileHandler) RegisterRoutes(e *echo.Echo) {
 
 	// Stream/Download by token or cookie (Public)
 	files.POST("/share/:token/download-token", h.GenerateShareDownloadToken, optAuthMiddleware)
+	files.POST("/share/:token/preview-token", h.GenerateSharePreviewToken, optAuthMiddleware)
 	files.GET("/d/:token", h.DownloadBySigned)
 	files.HEAD("/d/:token", h.CheckSignedToken)
+	files.GET("/p/:token", h.PreviewBySigned)
+	files.HEAD("/p/:token", h.CheckPreviewToken)
 	files.GET("/stream/:id", h.StreamByCookie, streamMiddleware)
-	files.GET("/share/stream/:shareToken", h.StreamSharedByCookie, streamMiddleware)
+	// Public share token is the capability for this route; no shared guest
+	// stream cookie is needed (and requiring one breaks cross-site previews).
+	files.GET("/share/stream/:shareToken", h.StreamSharedFile)
 
 	// Shared Folder download/stream routes (moved from Core)
 	folders := v1.Group("/folders")
@@ -231,6 +237,15 @@ func (h *FileHandler) downloadURLTTL(ctx context.Context) int64 {
 		return 300
 	}
 	return h.settingsResolver.GetInt64(ctx, "DOWNLOAD_URL_TTL_SECONDS", 300)
+}
+
+// previewURLTTL resolves the admin-dashboard PREVIEW_URL_TTL_SECONDS setting
+// (default 3600), the lifetime of a signed preview URL.
+func (h *FileHandler) previewURLTTL(ctx context.Context) int64 {
+	if h.settingsResolver == nil {
+		return 3600
+	}
+	return h.settingsResolver.GetInt64(ctx, "PREVIEW_URL_TTL_SECONDS", 3600)
 }
 
 // streamCookieTTL resolves the admin-dashboard STREAM_COOKIE_TTL_SECONDS setting

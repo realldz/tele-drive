@@ -4,8 +4,8 @@ import { useEffect, useState } from 'react';
 import { X, Download, Loader2, FileIcon } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
 import { useI18n } from '@/providers/i18n-context';
-import { api, requestDownloadToken, getStreamUrl, getApiErrorMessage, parseBandwidthError, resolveTransferLink } from '@/lib/api';
-import { useStream } from '@/hooks/use-stream';
+import { api, requestDownloadToken, getPreviewUrl, getApiErrorMessage, parseBandwidthError, resolveTransferLink } from '@/lib/api';
+import { usePreview } from '@/hooks/use-preview';
 import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
 
@@ -28,14 +28,14 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const { streamUrl, isLoading: isStreamLoading, setupStream, teardownStream } = useStream();
+  const { previewUrl, isLoading: isPreviewLoading, loadPreview, clearPreview } = usePreview();
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (!fileId) {
       setFileInfo(null);
       setError(null);
-      teardownStream();
+      clearPreview();
       return;
     }
 
@@ -47,13 +47,21 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
       .get(`/files/${fileId}/info`)
       .then(async (res) => {
         setFileInfo(res.data);
-        await setupStream(await getStreamUrl(fileId));
+        await loadPreview(() => getPreviewUrl(fileId));
       })
       .catch((err: unknown) => {
+        const bandwidth = parseBandwidthError(err);
+        if (bandwidth) {
+          toast.error(
+            bandwidth.resetTime
+              ? t('dashboard.bandwidthExceededAt', { time: bandwidth.resetTime })
+              : t('dashboard.bandwidthExceeded'),
+          );
+        }
         setError(getApiErrorMessage(err, 'Failed to load file'));
       })
       .finally(() => setIsLoading(false));
-  }, [fileId, setupStream, teardownStream]);
+  }, [fileId, loadPreview, clearPreview, t]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // ESC key handler
@@ -137,13 +145,13 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
 
       {/* Content */}
       <main className="flex-1 relative overflow-hidden" onClick={(e) => e.stopPropagation()}>
-        {(isLoading || isStreamLoading) && (
+        {(isLoading || isPreviewLoading) && (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
           </div>
         )}
 
-        {error && !isStreamLoading && (
+        {error && !isPreviewLoading && (
           <div className="flex h-full flex-col items-center justify-center p-4">
             <div className="rounded-lg bg-white p-8 text-center shadow-md">
               <FileIcon className="mx-auto mb-4 h-16 w-16 text-red-400" />
@@ -153,9 +161,9 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
           </div>
         )}
 
-        {fileInfo && !isStreamLoading && !error && streamUrl && (
+        {fileInfo && !isPreviewLoading && !error && previewUrl && (
           <PreviewRenderer
-            streamUrl={streamUrl}
+            streamUrl={previewUrl}
             onDownload={handleDownload}
             fileInfo={fileInfo}
             t={t}

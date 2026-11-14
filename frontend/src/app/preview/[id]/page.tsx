@@ -6,8 +6,8 @@ import { useI18n } from '@/providers/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import { FileIcon, Download, ArrowLeft, Loader2 } from 'lucide-react';
 import { getFileIcon } from '@/lib/file-icon';
-import { resolveTransferLink, api, requestDownloadToken, parseBandwidthError, getStreamUrl, getApiErrorMessage } from '@/lib/api';
-import { useStream } from '@/hooks/use-stream';
+import { resolveTransferLink, api, requestDownloadToken, parseBandwidthError, getPreviewUrl, getApiErrorMessage } from '@/lib/api';
+import { usePreview } from '@/hooks/use-preview';
 import dynamic from 'next/dynamic';
 import toast from 'react-hot-toast';
 
@@ -30,7 +30,7 @@ export default function FilePreviewPage() {
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const { streamUrl, isLoading: isStreamLoading, setupStream, teardownStream } = useStream();
+  const { previewUrl, isLoading: isPreviewLoading, loadPreview, clearPreview } = usePreview();
 
   /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
@@ -42,17 +42,25 @@ export default function FilePreviewPage() {
     api.get(`/files/${fileId}/info`)
       .then(async (res) => {
         setFileInfo(res.data);
-        await setupStream(await getStreamUrl(fileId));
+        await loadPreview(() => getPreviewUrl(fileId));
       })
       .catch((err: unknown) => {
+        const bandwidth = parseBandwidthError(err);
+        if (bandwidth) {
+          toast.error(
+            bandwidth.resetTime
+              ? t('dashboard.bandwidthExceededAt', { time: bandwidth.resetTime })
+              : t('dashboard.bandwidthExceeded'),
+          );
+        }
         setError(getApiErrorMessage(err, 'Failed to load file information'));
       })
       .finally(() => setIsLoading(false));
 
     return () => {
-      teardownStream();
+      clearPreview();
     };
-  }, [fileId, isReady, setupStream, teardownStream]);
+  }, [fileId, isReady, loadPreview, clearPreview, t]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   async function handleDownload() {
@@ -141,13 +149,13 @@ export default function FilePreviewPage() {
       </header>
 
       <main className="flex-1 relative overflow-hidden bg-gray-100 dark:bg-gray-900">
-        {isStreamLoading ? (
+        {isPreviewLoading ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
           </div>
-        ) : streamUrl ? (
+        ) : previewUrl ? (
           <PreviewRenderer
-            streamUrl={streamUrl}
+            streamUrl={previewUrl}
             onDownload={handleDownload}
             fileInfo={fileInfo}
             t={t}

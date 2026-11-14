@@ -70,7 +70,7 @@ export default function PreviewCodeViewer({ url, filename }: { url: string; file
   useEffect(() => {
     setIsLoading(true); // eslint-disable-line react-hooks/set-state-in-effect
     highlightedRef.current = false;
-    axios.get(url, { responseType: 'text', withCredentials: true, transformResponse: [(data: unknown) => data] })
+    axios.get(url, { responseType: 'text', transformResponse: [(data: unknown) => data] })
       .then(res => setContent(res.data))
       .catch(() => setContent('Failed to load file content'))
       .finally(() => setIsLoading(false));

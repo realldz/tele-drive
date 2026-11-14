@@ -500,6 +500,8 @@
   "settings.MAX_CONCURRENT_CHUNKS.description": "Số lượng phân mảnh (chunk) tối đa mà 1 client được phép tải lên song song.",
   "settings.DOWNLOAD_URL_TTL_SECONDS.title": "Thời hạn liên kết tải về",
   "settings.DOWNLOAD_URL_TTL_SECONDS.description": "Thời hạn hiệu lực tính bằng giây của các liên kết tải xuống được ký xác thực.",
+  "settings.PREVIEW_URL_TTL_SECONDS.title": "Thời hạn URL xem trước",
+  "settings.PREVIEW_URL_TTL_SECONDS.description": "Thời hạn hiệu lực tính bằng giây của URL xem trước file được ký xác thực.",
   "settings.STREAM_COOKIE_TTL_SECONDS.title": "Thời hạn cookie Stream",
   "settings.STREAM_COOKIE_TTL_SECONDS.description": "Thời hạn hiệu lực tính bằng giây của cookie dùng để xác thực các yêu cầu truyền phát video/audio.",
   "settings.DEFAULT_GUEST_BANDWIDTH.title": "Băng thông khách hàng ngày",

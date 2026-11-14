@@ -230,8 +230,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem('token');
     localStorage.removeItem('user');
     clearAuthHeader();
-    // Huỷ stream cookie ở đây (không ở teardownStream) — đây là lúc đúng để
-    // vô hiệu token stream dùng chung toàn domain.
+    // Legacy stream-cookie routes remain during the rollback window. Revoke
+    // any cookie issued by an older frontend/tab even though new previews use
+    // file-scoped signed URLs.
     clearStreamCookie().catch(() => {});
   }, []);
 

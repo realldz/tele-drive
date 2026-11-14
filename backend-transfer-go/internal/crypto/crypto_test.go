@@ -126,6 +126,20 @@ func TestCryptoEngine_SignedTokens(t *testing.T) {
 	if payloadSF.FID != fileID || payloadSF.T != "sf" || payloadSF.UID != "" {
 		t.Errorf("Token payload SF mismatch: %+v", payloadSF)
 	}
+
+	// 3. Preview tokens carry the owner so the data plane can attribute
+	// bandwidth without requiring a browser cookie.
+	tokenPreview, err := engine.CreateSignedToken(fileID, "p", 3600, userID)
+	if err != nil {
+		t.Fatalf("Failed to create preview token: %v", err)
+	}
+	payloadPreview, err := engine.VerifySignedToken(tokenPreview)
+	if err != nil {
+		t.Fatalf("Failed to verify preview token: %v", err)
+	}
+	if payloadPreview.FID != fileID || payloadPreview.T != "p" || payloadPreview.UID != userID {
+		t.Errorf("Token payload preview mismatch: %+v", payloadPreview)
+	}
 }
 
 func TestCryptoEngine_StreamCookies(t *testing.T) {

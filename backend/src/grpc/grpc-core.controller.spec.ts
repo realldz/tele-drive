@@ -17,6 +17,7 @@ import { Logger } from '@nestjs/common';
 interface PrismaStub {
   fileRecord: {
     create: jest.Mock<Promise<{ id: string }>, [CreateArgs]>;
+    findFirst: jest.Mock;
     findMany: jest.Mock;
     updateMany: jest.Mock;
   };
@@ -42,6 +43,7 @@ describe('GrpcCoreController', () => {
         create: jest
           .fn<Promise<{ id: string }>, [CreateArgs]>()
           .mockResolvedValue({ id: 'new-file-id' }),
+        findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue(staleRows),
         updateMany: jest.fn().mockResolvedValue({ count: staleRows.length }),
       },
@@ -121,6 +123,47 @@ describe('GrpcCoreController', () => {
       } finally {
         warn.mockRestore();
       }
+    });
+  });
+
+  describe('GetFileMetadata authorization filters', () => {
+    it('excludes soft-deleted records from id lookup', async () => {
+      const prisma = createPrisma();
+      const controller = createController(prisma, {});
+
+      await expect(
+        controller.getFileMetadata({
+          fileId: '11111111-1111-4111-8111-111111111111',
+        }),
+      ).rejects.toThrow('File not found');
+
+      expect(prisma.fileRecord.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            id: '11111111-1111-4111-8111-111111111111',
+            deletedAt: null,
+          },
+        }),
+      );
+    });
+
+    it('requires a live public share for share-token lookup', async () => {
+      const prisma = createPrisma();
+      const controller = createController(prisma, {});
+
+      await expect(
+        controller.getFileMetadata({ fileId: 'old-share-token' }),
+      ).rejects.toThrow('File not found');
+
+      expect(prisma.fileRecord.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            shareToken: 'old-share-token',
+            visibility: 'PUBLIC_LINK',
+            deletedAt: null,
+          },
+        }),
+      );
     });
   });
 

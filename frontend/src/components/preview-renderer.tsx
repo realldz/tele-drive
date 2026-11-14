@@ -22,7 +22,7 @@ export default function PreviewRenderer({ streamUrl, onDownload, fileInfo, t }: 
         <img
           src={streamUrl}
           alt={filename}
-          crossOrigin="use-credentials"
+          crossOrigin="anonymous"
           className="max-h-full max-w-full rounded-lg object-contain shadow-lg"
         />
       </div>

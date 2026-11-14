@@ -500,6 +500,8 @@
   "settings.MAX_CONCURRENT_CHUNKS.description": "Maximum number of parallel chunks a single client can upload concurrently.",
   "settings.DOWNLOAD_URL_TTL_SECONDS.title": "Download Link TTL",
   "settings.DOWNLOAD_URL_TTL_SECONDS.description": "Expiration time in seconds for signed, user-specific download URLs.",
+  "settings.PREVIEW_URL_TTL_SECONDS.title": "Preview URL TTL",
+  "settings.PREVIEW_URL_TTL_SECONDS.description": "Expiration time in seconds for signed file preview URLs.",
   "settings.STREAM_COOKIE_TTL_SECONDS.title": "Stream Cookie TTL",
   "settings.STREAM_COOKIE_TTL_SECONDS.description": "Expiration time in seconds for cookies used to authenticate video/audio streaming requests.",
   "settings.DEFAULT_GUEST_BANDWIDTH.title": "Guest Daily Bandwidth",

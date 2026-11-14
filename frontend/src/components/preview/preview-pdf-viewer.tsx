@@ -28,7 +28,7 @@ export function PreviewPdf({ url }: { url: string }) {
     setFetchError(null);
 
     axios
-      .get(url, { responseType: 'blob', withCredentials: true })
+      .get(url, { responseType: 'blob' })
       .then((res) => {
         if (cancelled) return;
         objectUrl = URL.createObjectURL(res.data);
