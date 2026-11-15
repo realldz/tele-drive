@@ -122,6 +122,7 @@ export default function SharedFolderPreviewModal({ shareToken, file, onClose }: 
 
         {!isSettingUp && previewUrl && (
           <PreviewRenderer
+            key={file.id}
             streamUrl={previewUrl}
             onDownload={handleDownload}
             fileInfo={{

@@ -163,6 +163,7 @@ export default function FilePreviewModal({ fileId, onClose }: FilePreviewModalPr
 
         {fileInfo && !isPreviewLoading && !error && previewUrl && (
           <PreviewRenderer
+            key={fileId}
             streamUrl={previewUrl}
             onDownload={handleDownload}
             fileInfo={fileInfo}

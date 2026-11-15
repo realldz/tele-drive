@@ -155,6 +155,7 @@ export default function FilePreviewPage() {
           </div>
         ) : previewUrl ? (
           <PreviewRenderer
+            key={fileId}
             streamUrl={previewUrl}
             onDownload={handleDownload}
             fileInfo={fileInfo}

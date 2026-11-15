@@ -15,6 +15,9 @@ export const UPLOAD_POLL_INTERVAL_MS = 3000;
 // large-file chunks are unaffected since their upload duration >> this interval.
 export const UPLOAD_MIN_REQUEST_INTERVAL_MS = 500;
 
+// Subtitle files (local and Tele-Drive)
+export const SUBTITLE_MAX_BYTES = 10 * 1024 * 1024;
+
 // Download
 export const DOWNLOAD_CLEANUP_DELAY_MS = 2000;
 

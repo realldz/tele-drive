@@ -138,6 +138,7 @@ export default function SharePage() {
                   </div>
                 ) : previewUrl ? (
                   <PreviewRenderer
+                    key={fileInfo.id}
                     streamUrl={previewUrl}
                     onDownload={handleDownload}
                     fileInfo={fileInfo}

@@ -10,3 +10,4 @@ export * from './admin';
 export * from './settings';
 export * from './s3';
 export * from './upload-config';
+export * from '@/lib/api/subtitles';
