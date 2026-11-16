@@ -34,7 +34,7 @@ export default function SharedPage() {
   const totalItems = totalFolders + totalFiles;
 
   return (
-    <div className="h-screen bg-white flex overflow-hidden">
+    <div className="fixed inset-0 h-dvh bg-white flex overflow-hidden">
       <Sidebar />
 
       <main className="flex-1 flex flex-col min-w-0 bg-white relative">
@@ -48,7 +48,7 @@ export default function SharedPage() {
           </div>
         </header>
 
-        <div className="flex-1 overflow-y-auto relative">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain relative">
           <div className="p-6">
             {loading && loadedItems === 0 ? (
               <div className="py-20 text-center">

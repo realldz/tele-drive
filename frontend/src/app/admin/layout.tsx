@@ -18,7 +18,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   if (!isReady) return null;
 
   return (
-    <div className="h-screen bg-gray-50 flex overflow-hidden">
+    <div className="fixed inset-0 h-dvh bg-gray-50 flex overflow-hidden">
       <AdminSidebar
         user={user}
         onLogout={() => {
@@ -47,7 +47,7 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
           <h2 className="text-lg font-bold ml-2 text-gray-800">{t('admin.panel')}</h2>
         </header>
 
-        <div className="flex-1 overflow-auto p-4 md:p-6 lg:p-8">{children}</div>
+        <div className="min-h-0 flex-1 overflow-auto overscroll-y-contain p-4 md:p-6 lg:p-8">{children}</div>
       </main>
     </div>
   );

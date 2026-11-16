@@ -115,7 +115,7 @@ export default function FilePreviewPage() {
   }
 
   return (
-    <div className="flex h-screen flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden">
+    <div className="fixed inset-0 flex h-dvh flex-col bg-gray-50 dark:bg-gray-900 overflow-hidden">
       <header className="flex h-16 items-center justify-between border-b bg-white px-4 py-3 shadow-sm dark:border-gray-800 dark:bg-gray-950 flex-none z-10">
         <div className="flex items-center gap-4 min-w-0">
           <button
@@ -148,7 +148,7 @@ export default function FilePreviewPage() {
         </div>
       </header>
 
-      <main className="flex-1 relative overflow-hidden bg-gray-100 dark:bg-gray-900">
+      <main className="min-h-0 flex-1 relative overflow-hidden bg-gray-100 dark:bg-gray-900">
         {isPreviewLoading ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-8 w-8 animate-spin text-blue-500" />

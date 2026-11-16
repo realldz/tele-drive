@@ -210,7 +210,7 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="h-screen bg-white flex overflow-hidden">
+    <div className="fixed inset-0 h-dvh bg-white flex overflow-hidden">
       <Sidebar />
       <main className="flex-1 flex flex-col min-w-0 bg-white relative"
         onClick={(e) => {
@@ -234,7 +234,7 @@ export default function Dashboard() {
           <SearchFilterBar filters={search.filters} setFilters={search.setFilters} />
         )}
 
-        <div className="flex-1 overflow-y-auto relative" ref={contentRef} style={{ userSelect: isDragging ? 'none' : undefined }}>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain relative" ref={contentRef} style={{ userSelect: isDragging ? 'none' : undefined }}>
           <DragSelectOverlay rect={dragRect} />
           {!searchActive && (
             <Breadcrumbs items={breadcrumbs} onNavigate={setCurrentFolderId}
