@@ -27,6 +27,16 @@ import {
   softDeleteFolderTree,
 } from './folder-deletion-queries';
 
+// Public share responses must never serialize Prisma's full storage records.
+const publicFolderSelect = { id: true, name: true, createdAt: true } as const;
+const publicFileSelect = {
+  id: true,
+  filename: true,
+  size: true,
+  mimeType: true,
+  createdAt: true,
+} as const;
+
 interface SharedListCursor {
   f?: string;
   fc?: string;
@@ -836,7 +846,7 @@ export class FolderService {
     });
 
     this.logger.log(
-      `Folder shared: "${folder.name}" (folderId: ${id}, token: ${shareToken})`,
+      `Folder shared: "${folder.name}" (folderId: ${id})`,
     );
     return updated;
   }
@@ -907,13 +917,23 @@ export class FolderService {
     targetFolderId?: string,
     pagination?: PaginationQueryDto,
   ) {
-    const rootSharedFolder = await this.prisma.folder.findUnique({
-      where: { shareToken: token },
-      include: { user: { select: { username: true } } },
+    const rootSharedFolder = await this.prisma.folder.findFirst({
+      where: { shareToken: token, visibility: 'PUBLIC_LINK' },
+      select: {
+        ...publicFolderSelect,
+        deletedAt: true,
+        user: { select: { username: true } },
+      },
     });
     if (!rootSharedFolder || rootSharedFolder.deletedAt)
       throw new NotFoundException('Shared folder not found');
 
+    const publicRootFolder = {
+      id: rootSharedFolder.id,
+      name: rootSharedFolder.name,
+      createdAt: rootSharedFolder.createdAt,
+      user: rootSharedFolder.user,
+    };
     const currentFolderId = targetFolderId || rootSharedFolder.id;
 
     // Verify currentFolderId is a descendant of rootSharedFolder
@@ -981,6 +1001,7 @@ export class FolderService {
         ? []
         : await this.prisma.folder.findMany({
             where: folderWhere,
+            select: publicFolderSelect,
             orderBy: folderOrderBy,
             cursor: parsedCursor.f ? { id: parsedCursor.f } : undefined,
             skip: parsedCursor.f ? 1 : 0,
@@ -1010,6 +1031,7 @@ export class FolderService {
       const files = shouldFetchFiles
         ? await this.prisma.fileRecord.findMany({
             where: filesWhere,
+            select: publicFileSelect,
             orderBy: fileOrderBy,
             cursor: fileCursorId ? { id: fileCursorId } : undefined,
             skip: fileCursorId ? 1 : 0,
@@ -1030,7 +1052,7 @@ export class FolderService {
       );
 
       return {
-        rootFolder: rootSharedFolder,
+        rootFolder: publicRootFolder,
         currentFolderId,
         folders: folderItems,
         files: fileItems,
@@ -1043,10 +1065,12 @@ export class FolderService {
     // No pagination — fallback to old behavior
     const folders = await this.prisma.folder.findMany({
       where: { parentId: currentFolderId, deletedAt: null },
+      select: publicFolderSelect,
       orderBy: { createdAt: 'desc' },
     });
     const files = await this.prisma.fileRecord.findMany({
       where: { folderId: currentFolderId, status: 'complete', deletedAt: null },
+      select: publicFileSelect,
       orderBy: { createdAt: 'desc' },
     });
 
@@ -1056,7 +1080,7 @@ export class FolderService {
     );
 
     return {
-      rootFolder: rootSharedFolder,
+      rootFolder: publicRootFolder,
       currentFolderId,
       folders,
       files,
@@ -1393,7 +1417,7 @@ export class FolderService {
     const expiresAt = new Date(exp * 1000).toISOString();
 
     this.logger.debug(
-      `Share folder download token generated: shareToken=${shareToken}, fileId=${fileId}, ttl=${ttl}s`,
+      `Share folder download token generated: fileId=${fileId}, ttl=${ttl}s`,
     );
     return { url: buildTransferUrl(`/files/d/${token}`), expiresAt };
   }

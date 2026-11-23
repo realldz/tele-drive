@@ -38,8 +38,13 @@ export class FileMetadataService {
   }
 
   async getSharedFileInfo(token: string) {
-    const fileRecord = await this.prisma.fileRecord.findUnique({
-      where: { shareToken: token },
+    const fileRecord = await this.prisma.fileRecord.findFirst({
+      where: {
+        shareToken: token,
+        visibility: 'PUBLIC_LINK',
+        deletedAt: null,
+        status: 'complete',
+      },
       select: {
         id: true,
         filename: true,
@@ -188,7 +193,7 @@ export class FileMetadataService {
     });
 
     this.logger.log(
-      `File shared: "${fileRecord.filename}" (fileId: ${id}, token: ${shareToken})`,
+      `File shared: "${fileRecord.filename}" (fileId: ${id})`,
     );
     return updated;
   }
