@@ -1,4 +1,5 @@
-import { Folder, Loader2 } from 'lucide-react';
+import { Folder } from 'lucide-react';
+import Spinner from '@/components/atoms/spinner';
 import { useI18n } from '@/providers/i18n-context';
 import DashboardGridView from './dashboard-grid-view';
 import DashboardListView from './dashboard-list-view';
@@ -30,7 +31,7 @@ export default function DashboardContent(props: DashboardContentProps) {
   if (isLoadingContent && visibleFolders.length === 0 && visibleFiles.length === 0) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="animate-spin text-blue-500" size={32} />
+        <Spinner size={32} />
       </div>
     );
   }
@@ -55,7 +56,11 @@ export default function DashboardContent(props: DashboardContentProps) {
         ? <DashboardGridView {...props} />
         : <DashboardListView {...props} sortField={sortField} sortDirection={sortDirection} onSort={onSort} />}
 
-      {hasMore && (<div ref={loadMoreRef} className="py-4 text-center text-gray-400 text-sm">{t('dashboard.loading')}</div>)}
+      {hasMore && (
+        <div ref={loadMoreRef} className="flex items-center justify-center py-4" role="status" aria-label={t('dashboard.loading')}>
+          <Spinner />
+        </div>
+      )}
     </>
   );
 }

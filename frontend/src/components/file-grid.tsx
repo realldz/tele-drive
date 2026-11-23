@@ -1,5 +1,6 @@
 import React from 'react';
 import { Folder, Download, Loader2 } from 'lucide-react';
+import Spinner from '@/components/atoms/spinner';
 import { useI18n, LOCALE_DATE_MAP } from '@/providers/i18n-context';
 import { getFileIcon } from '@/lib/file-icon';
 import { formatBytes } from '@/lib/api';
@@ -58,7 +59,7 @@ export default function FileGrid({
   if (isLoadingContent && folders.length === 0 && files.length === 0) {
     return (
       <div className="flex items-center justify-center py-20">
-        <Loader2 className="animate-spin text-blue-500" size={32} />
+        <Spinner size={32} />
       </div>
     );
   }
@@ -242,8 +243,8 @@ export default function FileGrid({
       ) : null}
 
       {hasMore && (
-        <div ref={loadMoreRef} className="py-4 text-center text-gray-400 text-sm">
-          {t('dashboard.loading')}
+        <div ref={loadMoreRef} className="flex items-center justify-center py-4">
+          <Spinner />
         </div>
       )}
     </>

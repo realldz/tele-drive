@@ -124,6 +124,8 @@ export function useSharedFolder(token: string) {
     filesCursor.current = null;
     setHasMoreFolders(true);
     setHasMoreFiles(true);
+    setFolders([]);
+    setFiles([]);
   }, [currentFolderId, token, sortField, sortDirection]);
 
   useEffect(() => { fetchContent(true); }, [fetchContent]);
