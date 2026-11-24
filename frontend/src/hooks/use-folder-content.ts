@@ -7,6 +7,7 @@ import {
   fetchFolderContentNextPage,
 } from '@/lib/api';
 import { useBufferSync } from '@/hooks/use-buffer-sync';
+import { useFolderQueryNavigation } from '@/hooks/use-folder-query-navigation';
 import { LOAD_MORE_ROOT_MARGIN, UPLOAD_POLL_INTERVAL_MS } from '@/lib/constants';
 import type { FileRecord, FolderRecord, BreadcrumbItem } from '@/lib/types';
 
@@ -18,7 +19,7 @@ export type SortDirection = 'asc' | 'desc';
  * sorting, client-side search filtering, and the load-more observer.
  */
 export function useFolderContent(token: string | null) {
-  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
+  const { currentFolderId, navigateToFolder: setCurrentFolderId, replaceFolder } = useFolderQueryNavigation();
   const [folders, setFolders] = useState<FolderRecord[]>([]);
   const [files, setFiles] = useState<FileRecord[]>([]);
 
@@ -71,6 +72,7 @@ export function useFolderContent(token: string | null) {
   const fetchContent = useCallback(async (isLoadMoreCall = false, background = false) => {
     if (!token) return;
     const seq = ++requestSeq.current;
+    let redirected = false;
     if (!isLoadMoreCall) setIsLoadingContent(true);
     if (isLoadMoreCall) setIsLoadMore(true);
     try {
@@ -107,6 +109,13 @@ export function useFolderContent(token: string | null) {
       if (!isLoadMoreCall && currentFolderId) {
         const bc = await fetchBreadcrumbs(currentFolderId, background);
         if (seq !== requestSeq.current) return;
+        if (bc.length === 0) {
+          // Folder no longer exists or was deleted (e.g. stale URL or Forward into deleted folder).
+          redirected = true;
+          setBreadcrumbs([]);
+          replaceFolder(undefined);
+          return;
+        }
         setBreadcrumbs(bc);
       }
       if (!isLoadMoreCall && !currentFolderId) {
@@ -116,11 +125,11 @@ export function useFolderContent(token: string | null) {
       // 401 handled by axios interceptor
     } finally {
       if (seq === requestSeq.current) {
-        setIsLoadingContent(false);
+        if (!redirected) setIsLoadingContent(false);
         setIsLoadMore(false);
       }
     }
-  }, [currentFolderId, token, sortField, sortDirection]);
+  }, [currentFolderId, token, sortField, sortDirection, replaceFolder]);
 
   const handleLoadMore = useCallback(() => {
     fetchContent(true);

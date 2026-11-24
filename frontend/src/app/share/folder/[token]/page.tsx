@@ -1,17 +1,19 @@
 'use client';
 
+import { Suspense } from 'react';
 import { useParams } from 'next/navigation';
 import { AlertCircle, ChevronRight, Home, UserCircle2, LayoutGrid, List, Download } from 'lucide-react';
 import { useI18n } from '@/providers/i18n-context';
 import { useAuth } from '@/providers/auth-context';
+import Spinner from '@/components/atoms/spinner';
 import SelectionActionBar from '@/components/molecules/selection-action-bar';
 import ContextMenu from '@/components/molecules/context-menu';
 import GuestLanguageSwitcher from '@/components/guest-language-switcher';
 import FileGrid from '@/components/file-grid';
-import SharedFolderPreviewModal from './shared-folder-preview-modal';
-import { useSharedFolder } from './use-shared-folder';
+import SharedFolderPreviewModal from '@/app/share/folder/[token]/shared-folder-preview-modal';
+import { useSharedFolder } from '@/app/share/folder/[token]/use-shared-folder';
 
-export default function SharedFolderPage() {
+function SharedFolderView() {
   const params = useParams();
   const token = params.token as string;
   const { t } = useI18n();
@@ -149,5 +151,19 @@ export default function SharedFolderPage() {
         onDownload={handleBatchDownload}
       />
     </div>
+  );
+}
+
+export default function SharedFolderPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <Spinner size={32} />
+        </div>
+      }
+    >
+      <SharedFolderView />
+    </Suspense>
   );
 }

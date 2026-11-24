@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { isAxiosError } from 'axios';
 import toast from 'react-hot-toast';
 import { useI18n } from '@/providers/i18n-context';
 import { useSelection } from '@/hooks/use-selection';
+import { useFolderQueryNavigation } from '@/hooks/use-folder-query-navigation';
 import { useDownload } from '@/providers/download-context';
 import { resolveTransferLink, api, requestShareFolderDownloadToken, parseBandwidthError, getApiErrorMessage } from '@/lib/api';
 import { LOAD_MORE_ROOT_MARGIN, TOAST_SHORT_MS, DOWNLOAD_CLEANUP_DELAY_MS } from '@/lib/constants';
@@ -24,7 +26,8 @@ export function useSharedFolder(token: string) {
   const { startSharedDownload } = useDownload();
 
   const [rootFolder, setRootFolder] = useState<SharedFolderRoot | null>(null);
-  const [currentFolderId, setCurrentFolderId] = useState<string | undefined>(undefined);
+  const { currentFolderId, navigateToFolder, replaceFolder } = useFolderQueryNavigation();
+  const prevFolderIdRef = useRef(currentFolderId);
   const [folders, setFolders] = useState<FolderRecord[]>([]);
   const [files, setFiles] = useState<FileRecord[]>([]);
   const foldersCursor = useRef<string | null>(null);
@@ -65,11 +68,28 @@ export function useSharedFolder(token: string) {
     return () => document.removeEventListener('click', handler);
   }, []);
 
-  useEffect(() => { clearSelection(); }, [currentFolderId, clearSelection]);
+  const setCurrentFolderId = useCallback(
+    (folderId: string | undefined) => {
+      const normalized =
+        folderId && rootFolder?.id && folderId === rootFolder.id ? undefined : folderId;
+      navigateToFolder(normalized);
+    },
+    [navigateToFolder, rootFolder?.id],
+  );
+
+  useEffect(() => {
+    clearSelection();
+    if (prevFolderIdRef.current === currentFolderId) return;
+    prevFolderIdRef.current = currentFolderId;
+    setPreviewFile(null);
+    setContextMenu(prev => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+    if (typeof window !== 'undefined') window.scrollTo({ top: 0 });
+  }, [currentFolderId, clearSelection]);
 
   const fetchContent = useCallback(async (isInitial = true) => {
     if (!token) return;
     const seq = ++requestSeq.current;
+    let redirected = false;
     if (isInitial) setIsLoading(true); else setIsLoadingMore(true);
     setError(null);
     try {
@@ -87,6 +107,11 @@ export function useSharedFolder(token: string) {
       if (seq !== requestSeq.current) return;
 
       setRootFolder(res.data.rootFolder);
+      if (isInitial && currentFolderId && res.data.rootFolder?.id === currentFolderId) {
+        redirected = true;
+        replaceFolder(undefined);
+        return;
+      }
       if (isInitial) {
         setFolders(res.data.folders || []);
         setFiles(res.data.files || []);
@@ -106,14 +131,23 @@ export function useSharedFolder(token: string) {
       setHasMoreFiles(res.data.nextFileCursor != null);
       setBreadcrumbs(res.data.breadcrumbs || []);
     } catch (err: unknown) {
-      if (seq === requestSeq.current) setError(getApiErrorMessage(err, t('shareFolder.folderNotFound')));
+      if (seq === requestSeq.current) {
+        const status = isAxiosError(err) ? err.response?.status : undefined;
+        if (currentFolderId && status === 400) {
+          // Stale or deleted subfolder within a valid share link: recover cleanly to shared root.
+          redirected = true;
+          replaceFolder(undefined);
+          return;
+        }
+        setError(getApiErrorMessage(err, t('shareFolder.folderNotFound')));
+      }
     } finally {
       if (seq === requestSeq.current) {
-        setIsLoading(false);
+        if (!redirected) setIsLoading(false);
         setIsLoadingMore(false);
       }
     }
-  }, [token, currentFolderId, t, sortField, sortDirection]);
+  }, [token, currentFolderId, t, sortField, sortDirection, replaceFolder]);
 
   const fetchContentRef = useRef(fetchContent);
   fetchContentRef.current = fetchContent;
@@ -223,7 +257,7 @@ export function useSharedFolder(token: string) {
     } else {
       setPreviewFile(item as FileRecord);
     }
-  }, [selection, orderedIds]);
+  }, [selection, orderedIds, setCurrentFolderId]);
 
   return {
     rootFolder, folders, files, breadcrumbs, error, isLoading,

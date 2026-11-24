@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Suspense, useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { useI18n } from '@/providers/i18n-context';
 import { useRequireAuth } from '@/hooks/use-require-auth';
 import { useSelection } from '@/hooks/use-selection';
@@ -29,7 +29,7 @@ import type { FileRecord, FolderRecord } from '@/lib/types';
 type ActiveDialog = 'rename' | 'move' | 'share' | 'details' | 'batchMove' | 'none';
 type ItemType = 'file' | 'folder';
 
-export default function Dashboard() {
+function DashboardView() {
   const { isReady, token } = useRequireAuth();
   const { t, locale } = useI18n();
   const { setCurrentFolderId: setUploadFolderId, setOnUploadSuccess, addFiles, addFolder, resolveConflict, queue } = useUpload();
@@ -126,8 +126,25 @@ export default function Dashboard() {
     return () => document.removeEventListener('mousedown', handler);
   }, [showNewMenu]);
 
+  const prevFolderIdRef = useRef(currentFolderId);
+  const clearSearch = search.clearSearch;
+
   // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => { selection.clearSelection(); }, [currentFolderId, selection.clearSelection]);
+
+  useEffect(() => {
+    if (prevFolderIdRef.current === currentFolderId) return;
+    prevFolderIdRef.current = currentFolderId;
+    clearSearch();
+    setPreviewFileId(null);
+    setShowCreateFolder(false);
+    setActiveDialog('none');
+    setDialogItem(null);
+    setShowNewMenu(false);
+    setShowMobileSearch(false);
+    setContextMenu(prev => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+    if (contentRef.current) contentRef.current.scrollTop = 0;
+  }, [currentFolderId, clearSearch]);
 
   useEffect(() => { setUploadFolderId(currentFolderId); }, [currentFolderId, setUploadFolderId]);
   useEffect(() => {
@@ -320,5 +337,19 @@ export default function Dashboard() {
         />
       )}
     </div>
+  );
+}
+
+export default function Dashboard() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+          <Spinner size={32} />
+        </div>
+      }
+    >
+      <DashboardView />
+    </Suspense>
   );
 }
